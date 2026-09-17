@@ -256,7 +256,8 @@ if (dueReadyAlerts.length > 0) {
   for (const { tender, diffDays } of dueReadyAlerts) {
     const badge = diffDays === 0 ? '<span class="urgent-badge">TODAY (T2)</span>' : '<span class="warning-badge">T2-3 Days</span>';
     const zipName = `Tender_Templates_${tender.id}.zip`;
-    const zipUrl = `http://localhost:3000/documents/${tender.id}/${zipName}`;
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.PORT ? `http://localhost:${process.env.PORT}` : 'http://localhost:8085');
+    const zipUrl = `${appBaseUrl}/documents/${tender.id}/${zipName}`;
     htmlContent += `
       <tr>
         <td><strong>${tender.ref_no || tender.id}</strong></td>
@@ -276,8 +277,7 @@ if (dueReadyAlerts.length > 0) {
 
 htmlContent += `
     <div class="footer">
-      This is an automated warning alert sent by TenderPocket.<br/>
-      Workspace directory: <code>/Users/anuthibhansali/.gemini/antigravity/scratch/tender-pocket</code>
+      This is an automated warning alert sent by TenderPocket.
     </div>
   </div>
 </body>

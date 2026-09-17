@@ -53,9 +53,10 @@ async function runVerification() {
   db.prepare("DELETE FROM status_history WHERE tender_id = ?").run(testId);
 
   // 6. Test GET API Endpoint using axios
-  console.log(`\nCalling GET http://localhost:3000/api/tenders/${id} to test summaries generation...`);
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.PORT ? `http://localhost:${process.env.PORT}` : 'http://localhost:8085');
+  console.log(`\nCalling GET ${baseUrl}/api/tenders/${id} to test summaries generation...`);
   try {
-    const res = await axios.get(`http://localhost:3000/api/tenders/${id}`);
+    const res = await axios.get(`${baseUrl}/api/tenders/${id}`);
     console.log("API Status:", res.status);
     console.log("API Response Summaries:");
     console.log("==================================================");

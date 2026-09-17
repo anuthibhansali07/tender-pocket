@@ -1,6 +1,7 @@
 #!/bin/bash
 # Swings to the correct directory and executes the TenderPocket GeM keyword sync task
-cd /Users/anuthibhansali/.gemini/antigravity/scratch/tender-pocket
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$DIR"
 
 # Set PATH to ensure node can find its executables/libs
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"

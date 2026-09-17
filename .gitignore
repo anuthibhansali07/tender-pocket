@@ -3,5 +3,25 @@
 **/out
 **/target
 **/app.log
+*.log
 backend/public/documents/
 backend/src/main/resources/static/documents/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+tenders.db
+
+# Environment and secret files
+.env*
+!.env.example
+
+# Generated documents, scratch & temporary files
+frontend/public/documents/
+**/scratch/
+scratch/
+*.tmp
+*.temp
+.tempmediaStorage/

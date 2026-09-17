@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db, { Tender, addActivityLog } from '@/lib/db';
+import { getAuthFromRequest } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
 import { generateHtmlTemplates, generateTechnicalSpecificationHtml } from '@/lib/documentTemplates';
@@ -36,7 +37,22 @@ function splitLine(line: string): { left: string, right: string } {
   return { left: line.trim(), right: '' };
 }
 
+let hasPdfToText: boolean | null = null;
+function checkPdfToText(): boolean {
+  if (hasPdfToText !== null) return hasPdfToText;
+  try {
+    execSync('pdftotext -v', { stdio: 'ignore' });
+    hasPdfToText = true;
+  } catch {
+    hasPdfToText = false;
+  }
+  return hasPdfToText;
+}
+
 function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value: string }[] {
+  if (!checkPdfToText()) {
+    return [];
+  }
   const docDir = path.join(process.cwd(), 'public', 'documents', id);
   if (!fs.existsSync(docDir)) {
     console.log(`[extractSpecsFromPdf] Document directory not found at ${docDir}`);
@@ -221,12 +237,29 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userRole = request.headers.get('x-user-role') || 'Unknown';
-  const username = request.headers.get('x-user-username') || 'system';
+  const auth = getAuthFromRequest(request);
+  const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
+  const username = auth?.username || request.headers.get('x-user-username') || 'system';
+
+  const allowedRoles = ['Admin', 'MIS Team', 'MIS Executive', 'Tender Executive', 'Executive'];
+  if (!allowedRoles.includes(userRole) && userRole !== 'system') {
+    return NextResponse.json(
+      { success: false, error: 'Access denied: Executive, MIS Team, or Admin required to generate bid documents' },
+      { status: 403 }
+    );
+  }
 
   try {
     const { id } = await params;
-    const body = await request.json();
+    let body: any = {};
+    try {
+      const text = await request.text();
+      if (text && text.trim().length > 0) {
+        body = JSON.parse(text);
+      }
+    } catch (_) {
+      body = {};
+    }
 
     // Fetch existing tender details to update
     const tenderStmt = db.prepare('SELECT * FROM tenders WHERE id = ?');
@@ -239,13 +272,35 @@ export async function POST(
       );
     }
 
+    // Merge body with tender metadata fallbacks
+    const templateData = {
+      bidNumber: body.bidNumber || tender.ref_no || id,
+      productDescription: body.productDescription || tender.product_name_as_per_tender || tender.title || 'Equipment / Goods',
+      productName: body.productName || tender.product_name_as_per_marken || tender.title || 'Equipment / Goods',
+      authorityName: body.authorityName || tender.authority || '',
+      authorityDept: body.authorityDept || '',
+      authorityAddress: body.authorityAddress || tender.location || '',
+      offeredMake: body.offeredMake || 'MarkEn',
+      offeredModel: body.offeredModel || '-',
+      scheduleNo: body.scheduleNo || '',
+      companyName: body.companyName || 'Mark Enterprises',
+      companyAddress: body.companyAddress || 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      companyEmail: body.companyEmail || 'info@markenworld.com',
+      companyWebsite: body.companyWebsite || 'www.markenworld.com',
+      companyContact: body.companyContact || '09175559646 / 090111 04332',
+      signatoryName: body.signatoryName || 'Korra Praveen Naik',
+      signatoryDesignation: body.signatoryDesignation || 'Partner',
+      date: body.date || new Date().toLocaleDateString('en-GB'),
+      ...body
+    };
+
     const docDir = path.join(process.cwd(), 'public', 'documents', id);
     if (!fs.existsSync(docDir)) {
       fs.mkdirSync(docDir, { recursive: true });
     }
 
     // Generate unified HTML content representing all 15 documents
-    const htmlContent = generateHtmlTemplates(body);
+    const htmlContent = generateHtmlTemplates(templateData);
 
     // 1. Generate and save PDF using Puppeteer
     const pdfFileName = `Bid_Documents_${id}.pdf`;
@@ -273,7 +328,7 @@ export async function POST(
 
     // 3. Generate and save Technical Specification Sheet PDF & DOCX
     const specs = extractSpecsFromPdf(id);
-    const specHtml = generateTechnicalSpecificationHtml(body, specs);
+    const specHtml = generateTechnicalSpecificationHtml(templateData, specs);
 
     const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
     const specPdfFilePath = path.join(docDir, specPdfFileName);
@@ -344,22 +399,73 @@ export async function POST(
     currentDocs.push(specDocsMeta);
     currentDocs.push(specPdfMeta);
 
-    // Update only downloaded_docs metadata (keep existing status)
-    const updateStmt = db.prepare('UPDATE tenders SET downloaded_docs = ? WHERE id = ?');
+    // Update downloaded_docs metadata and advance stage to DOC_VERIFICATION (Pending MIS Approval)
+    const updateStmt = db.prepare(`
+      UPDATE tenders 
+      SET downloaded_docs = ?, 
+          current_stage = 'DOC_VERIFICATION', 
+          verification_status = 'Pending' 
+      WHERE id = ?
+    `);
     updateStmt.run(JSON.stringify(currentDocs), id);
 
-    // Log the activity to activity_log
-    addActivityLog(username, userRole, 'Generated Bid Documents', id, 'Generated Word & PDF bid document package and Technical Specification Sheet');
+    const now = new Date().toISOString();
+    const assignedMis = tender.assigned_mis_member || 'misteam';
 
-    console.log(`[API Generate Bid Docs] Compiled Word (.docx) and PDF (.pdf) successfully for Tender ${id} including Technical Specification Sheet.`);
+    try {
+      const existingDocReq = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").get(id);
+      if (existingDocReq) {
+        db.prepare("UPDATE tender_approval_requests SET requested_by = ?, assigned_to = ?, working_path = ?, updated_at = ? WHERE id = ?")
+          .run(username, assignedMis, docDownloadPath, now, (existingDocReq as any).id);
+      } else {
+        db.prepare(`
+          INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, working_path, status, created_at, updated_at)
+          VALUES (?, 'DOC_VERIFICATION', ?, ?, ?, 'PENDING', ?, ?)
+        `).run(id, username, assignedMis, docDownloadPath, now, now);
+      }
+    } catch (dbErr) {
+      console.error('[API Generate Bid Docs] Error creating approval request:', dbErr);
+    }
+
+    // Attempt notifying Spring Boot backend if available
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
+    if (backendUrl && backendUrl !== 'http://localhost:8080') {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const authH = request.headers.get('authorization');
+        if (authH) headers['authorization'] = authH;
+
+        fetch(`${backendUrl}/api/tenders/${id}/doc-verification-request`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            assignedMisExecutive: assignedMis,
+            workingPath: docDownloadPath,
+            comment: 'Bid document package generated. Submitted for MIS verification & approval.'
+          }),
+          signal: controller.signal,
+          cache: 'no-store'
+        }).catch(() => {});
+        clearTimeout(timeout);
+      } catch (_) {}
+    }
+
+    // Log the activity to activity_log
+    addActivityLog(username, userRole, 'Generated Bid Documents', id, 'Generated Word & PDF bid document package and Technical Specification Sheet. Submitted to MIS Team for approval.');
+
+    console.log(`[API Generate Bid Docs] Compiled Word (.docx) and PDF (.pdf) successfully for Tender ${id}. Advanced stage to DOC_VERIFICATION.`);
 
     return NextResponse.json({
       success: true,
-      message: 'Bid Documents and Technical Specification Sheet generated successfully in Word and PDF formats.',
+      message: 'Bid Documents generated successfully and forwarded to MIS Team for approval.',
       downloadUrl: docDownloadPath,
       pdfDownloadUrl: pdfDownloadPath,
       specDownloadUrl: specDocDownloadPath,
       specPdfDownloadUrl: specPdfDownloadPath,
+      currentStage: 'DOC_VERIFICATION',
+      verificationStatus: 'Pending',
       status: tender.status
     });
 

@@ -6,7 +6,7 @@ const port = parseInt(process.env.IMAP_PORT || '993', 10);
 const secure = process.env.IMAP_SECURE !== 'false';
 const user = process.env.IMAP_USER;
 const password = process.env.IMAP_PASSWORD;
-const apiUrl = process.env.TENDER_API_URL || 'http://localhost:3000/api/process-email';
+const apiUrl = process.env.TENDER_API_URL || (process.env.PORT ? `http://localhost:${process.env.PORT}/api/process-email` : 'http://localhost:8085/api/process-email');
 const senderFilter = process.env.hasOwnProperty('SENDER_FILTER') ? process.env.SENDER_FILTER : ''; // e.g. "sales@tender247.com"
 const subjectFilter = process.env.hasOwnProperty('SUBJECT_FILTER') ? process.env.SUBJECT_FILTER : 'Tender247'; // search criteria subject
 

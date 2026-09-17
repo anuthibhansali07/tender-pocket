@@ -276,8 +276,7 @@ if (dueReadyAlerts.length > 0) {
 
 htmlContent += `
     <div class="footer">
-      This is an automated warning alert sent by TenderPocket.<br/>
-      Workspace directory: <code>/Users/anuthibhansali/.gemini/antigravity/scratch/tender-pocket</code>
+      This is an automated warning alert sent by TenderPocket.
     </div>
   </div>
 </body>

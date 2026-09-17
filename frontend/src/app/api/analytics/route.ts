@@ -18,11 +18,13 @@ export async function GET(request: Request) {
     // Load all tenders to classify in JS (filtered by executive if applicable)
     let rawTenders: any[];
     if (userRole === 'MIS Executive' || userRole === 'Tender Executive') {
-      rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status FROM tenders WHERE mis_executive = ?').all(username) as any[];
-    } else if (userRole === 'Specification Team') {
-      rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status FROM tenders WHERE assigned_mis_member_spec = ?').all(username) as any[];
+      rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders WHERE mis_executive = ?').all(username) as any[];
+    } else if (userRole === 'Clearance Team' || userRole === 'Specification Team') {
+      rawTenders = db.prepare("SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders WHERE assigned_mis_member_spec = ? OR assigned_mis_member_spec = 'clearance' OR assigned_mis_member_spec = 'Clearance Team' OR current_stage = 'SPEC_CLEARANCE'").all(username) as any[];
+    } else if (userRole === 'TPC Team' || userRole === 'TPC Pricing Team') {
+      rawTenders = db.prepare("SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders WHERE current_stage = 'TPC_PRICING' OR tpc_purchase_price IS NOT NULL").all() as any[];
     } else {
-      rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status FROM tenders').all() as any[];
+      rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders').all() as any[];
     }
 
     // Helper functions for dynamic resolution
@@ -82,6 +84,11 @@ export async function GET(request: Request) {
     let specRejectedCount = 0;
     let specTotalCount = rawTenders.length;
 
+    let tpcTotalCount = rawTenders.length;
+    let tpcPendingCount = 0;
+    let tpcApprovedCount = 0;
+    let tpcRejectedCount = 0;
+
     let t2TodayCount = 0;
     let t2_3DaysCount = 0;
 
@@ -106,6 +113,15 @@ export async function GET(request: Request) {
       if (t.spec_verification_status === 'Pending') specPendingCount++;
       else if (t.spec_verification_status === 'Approved') specApprovedCount++;
       else if (t.spec_verification_status === 'Rejected') specRejectedCount++;
+
+      // TPC counters
+      if (t.status === 'Rejected' || t.current_stage === 'REJECTED_TPC') {
+        tpcRejectedCount++;
+      } else if (t.current_stage === 'TPC_PRICING' && (!t.tpc_purchase_price || t.tpc_purchase_price === 0)) {
+        tpcPendingCount++;
+      } else if (t.tpc_purchase_price && t.tpc_purchase_price > 0) {
+        tpcApprovedCount++;
+      }
 
       // Status aggregation
       if (statusCounts[status]) {
@@ -272,7 +288,11 @@ export async function GET(request: Request) {
         specTotalCount,
         specPendingCount,
         specApprovedCount,
-        specRejectedCount
+        specRejectedCount,
+        tpcTotalCount,
+        tpcPendingCount,
+        tpcApprovedCount,
+        tpcRejectedCount
       },
       deadlines: deadlineRows,
       sectors: sectorRows,

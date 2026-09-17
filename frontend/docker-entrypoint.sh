@@ -20,5 +20,5 @@ if [ ! -L "/app/public/documents" ]; then
 fi
 
 # Start Next.js server
-echo "Starting Next.js production server on port ${PORT:-3000}..."
+echo "Starting Next.js production server on port ${PORT:-8085}..."
 exec npm run start

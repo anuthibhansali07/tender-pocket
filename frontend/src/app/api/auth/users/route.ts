@@ -10,7 +10,7 @@ function canManageUsers(request: Request): boolean {
 export async function GET(request: Request) {
   try {
     const userRole = request.headers.get('x-user-role');
-    if (userRole !== 'Admin' && userRole !== 'MIS Team' && userRole !== 'MIS Executive' && userRole !== 'Specification Team') {
+    if (userRole !== 'Admin' && userRole !== 'MIS Team' && userRole !== 'MIS Executive' && userRole !== 'Tender Executive' && userRole !== 'Clearance Team' && userRole !== 'TPC Team' && userRole !== 'TPC Pricing Team') {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     };
 
     const users = rawUsers.map((user: any) => {
-      if (user.role === 'MIS Executive') {
+      if (user.role === 'MIS Executive' || user.role === 'Tender Executive' || user.role === 'Executive') {
         // Query assigned tenders
         const tenders = db.prepare('SELECT status, publish_date, due_date FROM tenders WHERE mis_executive = ?').all(user.username) as any[];
         
@@ -150,10 +150,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Password must be at least 6 characters long' }, { status: 400 });
     }
 
-    const validRoles = ['MIS Team', 'MIS Executive', 'Specification Team'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json({ success: false, error: 'Invalid role. Choose "MIS Team", "MIS Executive", or "Specification Team"' }, { status: 400 });
+    if (role === 'Admin' || role === 'System Admin') {
+      return NextResponse.json({ success: false, error: 'Admin account creation is disabled. Only a single system admin is permitted.' }, { status: 400 });
     }
+
+    const validRoles = [
+      'Tender Executive',
+      'Clearance Team',
+      'TPC Pricing Team',
+      'TPC Team',
+      'MIS Team',
+      'MIS Executive'
+    ];
+    if (!validRoles.includes(role)) {
+      return NextResponse.json({ success: false, error: `Invalid role. Choose from: ${validRoles.join(', ')}` }, { status: 400 });
+    }
+
+    const normalizedRole = role === 'TPC Team' ? 'TPC Pricing Team' : role;
 
     const checkUser = db.prepare('SELECT username FROM users WHERE LOWER(username) = LOWER(?)').get(trimmedUsername);
     if (checkUser) {
@@ -163,9 +176,9 @@ export async function POST(request: Request) {
     const passwordHash = hashPassword(password);
     const userEmail = email ? email.trim() : `${trimmedUsername}@company.com`;
     const insertStmt = db.prepare('INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)');
-    insertStmt.run(trimmedUsername, passwordHash, role, userEmail);
+    insertStmt.run(trimmedUsername, passwordHash, normalizedRole, userEmail);
 
-    addActivityLog(adminUsername, 'Admin', 'Created User', null, `Created user account: ${trimmedUsername} (${userEmail}) with role: ${role}`);
+    addActivityLog(adminUsername, 'Admin', 'Created User', null, `Created user account: ${trimmedUsername} (${userEmail}) with role: ${normalizedRole}`);
 
     return NextResponse.json({ success: true, message: 'User created successfully' });
   } catch (error) {

@@ -5,9 +5,10 @@ services:
     build: .
     container_name: tender-pocket-java-app
     ports:
-      - "8080:8080"
+      - "${SPRING_PORT:-8090}:${SPRING_PORT:-8090}"
     environment:
-      - PORT=8080
+      - SPRING_PORT=${SPRING_PORT:-8090}
+      - PORT=${SPRING_PORT:-8090}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - ./tenders.db:/app/tenders.db

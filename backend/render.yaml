@@ -16,6 +16,6 @@ services:
       - key: IMAP_PASSWORD
         sync: false
       - key: IMAP_SENDER_FILTER
-        value: "anuthibhansali07@gmail.com"
+        sync: false
       - key: GEMINI_API_KEY
         sync: false

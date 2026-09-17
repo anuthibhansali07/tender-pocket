@@ -3,7 +3,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { extractTenderLinks, scrapeTender } from '../src/lib/scraper';
 
-const rawEml = `Delivered-To: anuthibhansali@gmail.com
+const rawEml = `Delivered-To: recipient@example.com
 Received: by 2002:a05:6358:b3d6:b0:299:8a05:3360 with SMTP id pb22csp789509rwc;
         Sat, 23 May 2026 00:34:21 -0700 (PDT)
 Subject: Fw: 38 New Tender/s, Blood Bank and Medical Cold Chain Equipment 22-May-26 (Noon) - Tender247

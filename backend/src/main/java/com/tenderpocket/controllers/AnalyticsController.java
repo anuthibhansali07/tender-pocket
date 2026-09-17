@@ -29,16 +29,25 @@ public class AnalyticsController {
 
     @GetMapping
     public ResponseEntity<?> getAnalytics(
-            @RequestHeader("x-user-role") String userRole,
-            @RequestHeader("x-user-username") String username) {
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username) {
+
 
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
 
-        List<Tender> tenders = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
-                ? tenderRepository.findByMisExecutive(username)
-                : "Specification Team".equalsIgnoreCase(userRole)
-                ? tenderRepository.findByAssignedMisMemberSpec(username)
-                : tenderRepository.findAll();
+        List<Tender> tenders;
+        if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole) || "Executive".equalsIgnoreCase(userRole)) {
+            tenders = tenderRepository.findByMisExecutive(username);
+        } else if ("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole)) {
+            tenders = tenderRepository.findAll().stream()
+                    .filter(t -> username.equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                              || "clearance".equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                              || "Clearance Team".equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                              || "SPEC_CLEARANCE".equalsIgnoreCase(t.getCurrentStage()))
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            tenders = tenderRepository.findAll();
+        }
 
         int issuedCount = 0;
         int participatingCount = 0;

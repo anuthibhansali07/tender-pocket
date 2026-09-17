@@ -8,11 +8,11 @@ services:
     container_name: tender-pocket-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PORT:-8085}:${PORT:-8085}"
     environment:
       # Database Configuration
       - DATABASE_PATH=/app/data/tenders.db
-      - PORT=3000
+      - PORT=${PORT:-8085}
       - NODE_ENV=production
       
       # AI Model Configuration (Client to supply their key)
@@ -26,7 +26,7 @@ services:
       - IMAP_PASSWORD=${IMAP_PASSWORD}
       - SENDER_FILTER=${SENDER_FILTER:-}
       - SUBJECT_FILTER=${SUBJECT_FILTER:-Tender247}
-      - TENDER_API_URL=http://localhost:3000/api/process-email
+      - TENDER_API_URL=http://localhost:${PORT:-8085}/api/process-email
       
       # Alerts Notification Configuration (SMTP)
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}

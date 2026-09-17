@@ -22,8 +22,9 @@ async function run() {
   try {
     let lock = await client.getMailboxLock('INBOX');
     try {
-      console.log('Searching for emails from anuthibhansali07@gmail.com...');
-      const messages = await client.search({ from: 'anuthibhansali07@gmail.com' });
+      const searchSender = process.env.IMAP_SENDER_FILTER || 'authorized_sender@example.com';
+      console.log(`Searching for emails from ${searchSender}...`);
+      const messages = await client.search({ from: searchSender });
       console.log(`Found ${messages.length} message(s).`);
 
       for (const uid of messages) {

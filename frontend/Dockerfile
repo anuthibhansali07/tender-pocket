@@ -45,7 +45,7 @@ RUN pip3 install --no-cache-dir pypdf || pip3 install --no-cache-dir --break-sys
 
 # Set environment to production
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8085
 
 WORKDIR /app
 
@@ -68,6 +68,6 @@ RUN mkdir -p /app/data
 # Set volume mount point
 VOLUME ["/app/data"]
 
-EXPOSE 3000
+EXPOSE 8085
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

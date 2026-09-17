@@ -3,7 +3,7 @@ import db from '@/lib/db';
 
 export async function GET() {
   try {
-    const stmt = db.prepare("SELECT username FROM users WHERE role = 'MIS Executive' ORDER BY username ASC");
+    const stmt = db.prepare("SELECT username FROM users WHERE role = 'MIS Executive' OR role = 'Tender Executive' OR role = 'Executive' ORDER BY username ASC");
     const executives = (stmt.all() as { username: string }[]).map(r => r.username);
 
     return NextResponse.json({

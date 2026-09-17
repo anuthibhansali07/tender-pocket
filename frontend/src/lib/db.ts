@@ -150,7 +150,29 @@ db.exec(`
     created_at TEXT NOT NULL,
     FOREIGN KEY(tender_id) REFERENCES tenders(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS tender_approval_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tender_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    assigned_to TEXT,
+    status TEXT DEFAULT 'PENDING',
+    working_path TEXT,
+    emd_amount REAL,
+    transfer_mode TEXT,
+    transfer_ref_no TEXT,
+    receipt_file_url TEXT,
+    loss_reason_executive TEXT,
+    loss_reason_mis TEXT,
+    tpc_purchase_price REAL,
+    mis_final_price REAL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(tender_id) REFERENCES tenders(id) ON DELETE CASCADE
+  );
 `);
+
 
 // Dynamic schema migration
 const newColumns = [
@@ -191,7 +213,10 @@ const newColumns = [
   { name: 'assigned_mis_member_docs', type: 'TEXT' },
   { name: 'assigned_mis_member_submission', type: 'TEXT' },
   { name: 'spec_verification_status', type: "TEXT DEFAULT 'None'" },
-  { name: 'assigned_mis_member_spec', type: 'TEXT' }
+  { name: 'assigned_mis_member_spec', type: 'TEXT' },
+  { name: 'tpc_purchase_price', type: 'REAL' },
+  { name: 'mis_final_price', type: 'REAL' },
+  { name: 'current_stage', type: 'TEXT' }
 ];
 
 for (const col of newColumns) {
@@ -214,14 +239,31 @@ export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// Seed default admin user if empty or missing
+// Seed default users if missing for all standard roles
 try {
-  const insertUser = db.prepare("INSERT OR IGNORE INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)");
-  insertUser.run('admin', hashPassword('Marken@123$'), 'Admin', 'admin@company.com');
-  console.log('Seeded database with default admin user.');
+  const adminPwd = process.env.ADMIN_DEFAULT_PASSWORD || 'Marken@123$';
+  const execPwd = process.env.EXECUTIVE_DEFAULT_PASSWORD || 'executive123';
+  const clearancePwd = process.env.CLEARANCE_DEFAULT_PASSWORD || 'clearance123';
+  const misPwd = process.env.MISTEAM_DEFAULT_PASSWORD || 'misteam';
+  const tpcPwd = process.env.TPC_DEFAULT_PASSWORD || 'tpc123';
+
+  const insertOrUpdateUser = db.prepare(`
+    INSERT INTO users (username, password_hash, role, email) 
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role
+  `);
+  insertOrUpdateUser.run('admin', hashPassword(adminPwd), 'Admin', 'admin@company.com');
+  insertOrUpdateUser.run('executive', hashPassword(execPwd), 'Tender Executive', 'executive@company.com');
+  insertOrUpdateUser.run('clearance', hashPassword(clearancePwd), 'Clearance Team', 'clearance@company.com');
+  insertOrUpdateUser.run('misteam', hashPassword(misPwd), 'MIS Team', 'mis@company.com');
+  insertOrUpdateUser.run('tpc', hashPassword(tpcPwd), 'TPC Pricing Team', 'tpc@company.com');
+
+  // Purge deprecated accounts
+  db.prepare("DELETE FROM users WHERE username IN ('specteam', 'specteam_1', 'admin_1', 'team_1', 'MIS_TEAM_1', 'clearance_1')").run();
 } catch (err) {
   console.error('Failed to seed default users:', err);
 }
+
 
 // Activity logging helper
 export function addActivityLog(username: string, role: string, action: string, tenderId: string | null, details: string | null = null) {
@@ -297,6 +339,9 @@ export interface Tender {
   spec_verification_status?: 'None' | 'Pending' | 'Approved' | 'Rejected' | 'Generated';
   has_tech_spec?: boolean;
   tech_spec_file?: string | null;
+  tpc_purchase_price?: number | null;
+  mis_final_price?: number | null;
+  current_stage?: string | null;
 }
 
 export interface ProcessedEmail {

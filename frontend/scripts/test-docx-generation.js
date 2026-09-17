@@ -4,7 +4,8 @@ const path = require('path');
 
 async function runTest() {
   const tenderId = '100204425';
-  const url = `http://localhost:3000/api/tenders/${tenderId}/generate-bid-docs`;
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.PORT ? `http://localhost:${process.env.PORT}` : 'http://localhost:8085');
+  const url = `${baseUrl}/api/tenders/${tenderId}/generate-bid-docs`;
 
   console.log(`Sending POST request to generate bid documents: ${url}`);
 

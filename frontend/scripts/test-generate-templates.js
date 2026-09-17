@@ -64,7 +64,8 @@ insertStmt.run(
 
 console.log('Tender inserted successfully.');
 
-const apiUrl = `http://localhost:3000/api/tenders/${testTenderId}/generate-templates`;
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.PORT ? `http://localhost:${process.env.PORT}` : 'http://localhost:8085');
+const apiUrl = `${baseUrl}/api/tenders/${testTenderId}/generate-templates`;
 console.log(`Sending POST request to template generation endpoint: ${apiUrl}...`);
 
 async function runTest() {

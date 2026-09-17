@@ -10,6 +10,7 @@ import com.tenderpocket.repositories.ActivityLogRepository;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.repositories.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -40,6 +41,21 @@ public class AuthController {
     @Autowired
     private JwtUtil jwtUtil;
 
+    @Value("${app.auth.admin-password:${ADMIN_DEFAULT_PASSWORD:Marken@123$}}")
+    private String adminDefaultPassword;
+
+    @Value("${app.auth.misteam-password:${MISTEAM_DEFAULT_PASSWORD:misteam}}")
+    private String misteamDefaultPassword;
+
+    @Value("${app.auth.executive-password:${EXECUTIVE_DEFAULT_PASSWORD:executive123}}")
+    private String executiveDefaultPassword;
+
+    @Value("${app.auth.clearance-password:${CLEARANCE_DEFAULT_PASSWORD:clearance123}}")
+    private String clearanceDefaultPassword;
+
+    @Value("${app.auth.tpc-password:${TPC_DEFAULT_PASSWORD:tpc123}}")
+    private String tpcDefaultPassword;
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     @PostMapping("/login")
@@ -51,21 +67,21 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Username and password required"));
         }
 
-        // Auto-seed default accounts if missing for all 4 primary roles
+        // Auto-seed default accounts if missing for all standard roles
         if (!userRepository.existsById("admin")) {
-            userRepository.save(new User("admin", passwordEncoder.encode("Marken@123$"), "Admin", "admin@company.com"));
+            userRepository.save(new User("admin", passwordEncoder.encode(adminDefaultPassword), "Admin", "admin@company.com"));
         }
         if (!userRepository.existsById("misteam")) {
-            userRepository.save(new User("misteam", passwordEncoder.encode("misteam"), "MIS Team", "mis@company.com"));
+            userRepository.save(new User("misteam", passwordEncoder.encode(misteamDefaultPassword), "MIS Team", "mis@company.com"));
         }
         if (!userRepository.existsById("executive")) {
-            userRepository.save(new User("executive", passwordEncoder.encode("executive123"), "Tender Executive", "executive@company.com"));
+            userRepository.save(new User("executive", passwordEncoder.encode(executiveDefaultPassword), "Tender Executive", "executive@company.com"));
         }
         if (!userRepository.existsById("clearance")) {
-            userRepository.save(new User("clearance", passwordEncoder.encode("clearance123"), "Clearance Team", "clearance@company.com"));
+            userRepository.save(new User("clearance", passwordEncoder.encode(clearanceDefaultPassword), "Clearance Team", "clearance@company.com"));
         }
         if (!userRepository.existsById("tpc")) {
-            userRepository.save(new User("tpc", passwordEncoder.encode("tpc123"), "TPC Team", "tpc@company.com"));
+            userRepository.save(new User("tpc", passwordEncoder.encode(tpcDefaultPassword), "TPC Team", "tpc@company.com"));
         }
 
         Optional<User> opt = userRepository.findById(username);
@@ -208,11 +224,11 @@ public class AuthController {
             role = "Tender Executive";
         }
 
-        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team");
+        List<String> validRoles = List.of("Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Team", "Specification Team");
         if (!validRoles.contains(role)) {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "error", "Invalid role specified. Allowed roles: MIS Team, Tender Executive, Clearance Team, TPC Team, Admin"
+                "error", "Invalid role specified. Allowed roles: Tender Executive, Clearance Team, TPC Team, MIS Team, Specification Team, Admin"
             ));
         }
 
@@ -306,11 +322,12 @@ public class AuthController {
     @GetMapping("/roles")
     public ResponseEntity<?> getAvailableRoles() {
         List<String> roles = List.of(
-            "Admin",
+            "Tender Executive",
             "Clearance Team",
             "TPC Team",
             "MIS Team",
-            "Tender Executive"
+            "Specification Team",
+            "Admin"
         );
         return ResponseEntity.ok(Map.of("success", true, "roles", roles));
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db, { Tender } from '@/lib/db';
+import { getAuthFromRequest } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
@@ -23,20 +24,23 @@ export async function GET(request: Request) {
     const year = parts.find(p => p.type === 'year')?.value || '2026';
     const todayISTString = `${year}-${month}-${day}`;
 
-    // Get user role from headers
-    const userRole = request.headers.get('x-user-role');
-    const username = request.headers.get('x-user-username');
+    // Get user role from auth helper or headers
+    const auth = getAuthFromRequest(request);
+    const userRole = auth?.role || request.headers.get('x-user-role') || '';
+    const username = auth?.username || request.headers.get('x-user-username') || '';
 
     // Build SQL query
     let query = 'SELECT * FROM tenders WHERE 1=1';
     const params: any[] = [];
 
-    if (userRole === 'MIS Executive') {
+    if (userRole === 'MIS Executive' || userRole === 'Tender Executive' || userRole === 'Executive') {
       query += ' AND mis_executive = ?';
       params.push(username);
-    } else if (userRole === 'Specification Team') {
-      query += ' AND assigned_mis_member_spec = ?';
+    } else if (userRole === 'Clearance Team' || userRole === 'Specification Team') {
+      query += " AND (assigned_mis_member_spec = ? OR assigned_mis_member_spec = 'clearance' OR assigned_mis_member_spec = 'Clearance Team' OR current_stage = 'SPEC_CLEARANCE')";
       params.push(username);
+    } else if (userRole === 'TPC Team' || userRole === 'TPC Pricing Team') {
+      query += " AND (current_stage = 'TPC_PRICING' OR tpc_purchase_price IS NOT NULL)";
     } else if (misExecutive) {
       query += ' AND mis_executive = ?';
       params.push(misExecutive);
@@ -48,7 +52,15 @@ export async function GET(request: Request) {
     }
 
     if (status) {
-      if (status === 'Pending' || status === 'Approved' || status === 'Rejected') {
+      if (userRole === 'TPC Team' || userRole === 'TPC Pricing Team') {
+        if (status === 'Pending') {
+          query += " AND (current_stage = 'TPC_PRICING' AND (tpc_purchase_price IS NULL OR tpc_purchase_price = 0) AND (status != 'Rejected' OR status IS NULL))";
+        } else if (status === 'Approved') {
+          query += " AND (tpc_purchase_price IS NOT NULL AND tpc_purchase_price > 0)";
+        } else if (status === 'Rejected') {
+          query += " AND (status = 'Rejected' OR current_stage = 'REJECTED_TPC')";
+        }
+      } else if (status === 'Pending' || status === 'Approved' || status === 'Rejected') {
         query += " AND spec_verification_status = ?";
         params.push(status);
       } else if (status === 'New') {
@@ -60,11 +72,11 @@ export async function GET(request: Request) {
       } else if (status === 'Not Participating') {
         query += " AND status = 'Not Participating'";
       } else if (status === 'Submitted') {
-        query += " AND status = 'Filed'";
+        query += " AND (status = 'Filed' OR status = 'Submitted')";
       } else if (status === 'Won') {
-        query += " AND status = 'Awarded'";
+        query += " AND (status = 'Awarded' OR status = 'Won')";
       } else if (status === 'Lost') {
-        query += " AND status = 'Not Awarded'";
+        query += " AND (status = 'Not Awarded' OR status = 'Lost')";
       } else if (status === 'Missed Deadline') {
         query += " AND (status = 'Issued' OR status IS NULL OR status = 'Participating') AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
         params.push(todayISTString);
@@ -128,9 +140,9 @@ export async function GET(request: Request) {
     const resolveStatus = (t: any, todayIST: string): string => {
       const hasPassedDueDate = t.due_date && t.due_date < todayIST;
 
-      if (t.status === 'Awarded') return 'Won';
-      if (t.status === 'Not Awarded') return 'Lost';
-      if (t.status === 'Filed') return 'Submitted';
+      if (t.status === 'Awarded' || t.status === 'Won') return 'Won';
+      if (t.status === 'Not Awarded' || t.status === 'Lost') return 'Lost';
+      if (t.status === 'Filed' || t.status === 'Submitted') return 'Submitted';
 
       if (hasPassedDueDate) {
         if (t.status === 'Not Participating') {
@@ -199,6 +211,13 @@ export async function GET(request: Request) {
       const secStmt = db.prepare("SELECT DISTINCT sector FROM tenders WHERE sector IS NOT NULL AND sector != '' ORDER BY sector");
       locations = (locStmt.all() as { location: string }[]).map(r => r.location);
       sectors = (secStmt.all() as { sector: string }[]).map(r => r.sector);
+    }
+
+    // Confidentiality Rule: strictly hide TPC Purchase Price from Tender Executives
+    if (userRole && userRole.toLowerCase().includes('executive')) {
+      tenders.forEach((t: any) => {
+        t.tpc_purchase_price = null;
+      });
     }
 
     return NextResponse.json({

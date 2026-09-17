@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import db, { addActivityLog } from '@/lib/db';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getAuthFromRequest } from '@/lib/auth';
+import { reconcileApprovalRequests } from '@/lib/approvalsSync';
 
 export async function GET(
   request: Request,
@@ -20,15 +22,19 @@ export async function GET(
       );
     }
 
-    const userRole = request.headers.get('x-user-role');
-    const username = request.headers.get('x-user-username');
+    const auth = getAuthFromRequest(request);
+    const userRole = auth?.role || request.headers.get('x-user-role') || '';
+    const username = auth?.username || request.headers.get('x-user-username') || '';
 
-    if (userRole === 'Specification Team' && tender.assigned_mis_member_spec && tender.assigned_mis_member_spec !== username) {
-      return NextResponse.json(
-        { success: false, error: 'Access denied: This tender is assigned to another Specification Team member' },
-        { status: 403 }
-      );
+    // Confidentiality Rule: strictly hide TPC Purchase Price from Tender Executives
+    if (userRole.toLowerCase().includes('executive')) {
+      tender.tpc_purchase_price = null;
     }
+
+    // Note: The tenders list (/api/tenders) already scopes results for Specification Team
+    // members to only their assigned tenders. But the detail page should be accessible
+    // to any authenticated role who navigates directly (e.g., from Approvals Center).
+    // We do NOT block detail-page access here — role-specific filtering is handled at list level.
 
     // Fetch history
     let history = db.prepare('SELECT * FROM status_history WHERE tender_id = ? ORDER BY changed_at ASC').all(id) as any[];
@@ -71,9 +77,9 @@ export async function GET(
     const resolveStatus = (t: any, todayIST: string): string => {
       const hasPassedDueDate = t.due_date && t.due_date < todayIST;
 
-      if (t.status === 'Awarded') return 'Won';
-      if (t.status === 'Not Awarded') return 'Lost';
-      if (t.status === 'Filed') return 'Submitted';
+      if (t.status === 'Awarded' || t.status === 'Won') return 'Won';
+      if (t.status === 'Not Awarded' || t.status === 'Lost') return 'Lost';
+      if (t.status === 'Filed' || t.status === 'Submitted') return 'Submitted';
 
       if (hasPassedDueDate) {
         if (t.status === 'Not Participating') {
@@ -170,8 +176,9 @@ export async function PATCH(
   try {
     const { id } = await params;
     
-    const userRole = request.headers.get('x-user-role') || 'Unknown';
-    const username = request.headers.get('x-user-username') || 'system';
+    const auth = getAuthFromRequest(request);
+    const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
+    const username = auth?.username || request.headers.get('x-user-username') || 'system';
 
 
 
@@ -197,7 +204,10 @@ export async function PATCH(
       assigned_mis_member_docs,
       assigned_mis_member_submission,
       assigned_mis_member_spec,
-      spec_verification_status
+      spec_verification_status,
+      tpc_purchase_price,
+      mis_final_price,
+      current_stage
     } = body;
 
     // Check if tender exists
@@ -211,9 +221,9 @@ export async function PATCH(
       );
     }
 
-    if (userRole === 'Specification Team' && oldTender.assigned_mis_member_spec !== username) {
+    if ((userRole === 'Clearance Team' || userRole === 'Specification Team') && oldTender.assigned_mis_member_spec !== username) {
       return NextResponse.json(
-        { success: false, error: 'Access denied: This tender is not assigned to your Specification Team account' },
+        { success: false, error: 'Access denied: This tender is not assigned to your Clearance Team account' },
         { status: 403 }
       );
     }
@@ -227,6 +237,14 @@ export async function PATCH(
       fieldsToUpdate.push('status = ?');
       updateParams.push(status);
       logDetails.push(`status changed from '${oldTender.status}' to '${status}'`);
+
+      if (status === 'Awarded' || status === 'Won') {
+        fieldsToUpdate.push("current_stage = 'WON'");
+        fieldsToUpdate.push("outcome_status = 'Won'");
+      } else if (status === 'Not Awarded' || status === 'Lost') {
+        fieldsToUpdate.push("current_stage = 'LOST'");
+        fieldsToUpdate.push("outcome_status = 'Lost'");
+      }
     }
 
     if (notes !== undefined && notes !== oldTender.notes) {
@@ -327,22 +345,48 @@ export async function PATCH(
       logDetails.push(`loss reason updated`);
     }
 
+    if (current_stage !== undefined && current_stage !== oldTender.current_stage) {
+      fieldsToUpdate.push('current_stage = ?');
+      updateParams.push(current_stage || null);
+      logDetails.push(`current stage changed to '${current_stage}'`);
+    }
+
     if (payment_status !== undefined && payment_status !== oldTender.payment_status) {
       fieldsToUpdate.push('payment_status = ?');
       updateParams.push(payment_status);
       logDetails.push(`payment status changed from '${oldTender.payment_status}' to '${payment_status}'`);
+
+      if (payment_status === 'Approved' && current_stage === undefined) {
+        fieldsToUpdate.push('current_stage = ?');
+        updateParams.push('SUBMISSION_PENDING');
+        logDetails.push("advanced stage to 'SUBMISSION_PENDING'");
+      }
     }
 
     if (verification_status !== undefined && verification_status !== oldTender.verification_status) {
       fieldsToUpdate.push('verification_status = ?');
       updateParams.push(verification_status);
       logDetails.push(`verification status changed from '${oldTender.verification_status}' to '${verification_status}'`);
+
+      if (verification_status === 'Approved' && current_stage === undefined) {
+        fieldsToUpdate.push('current_stage = ?');
+        updateParams.push('PAYMENT_APPROVAL');
+        logDetails.push("advanced stage to 'PAYMENT_APPROVAL'");
+      }
     }
 
     if (submission_status !== undefined && submission_status !== oldTender.submission_status) {
       fieldsToUpdate.push('submission_status = ?');
       updateParams.push(submission_status);
       logDetails.push(`submission status changed from '${oldTender.submission_status}' to '${submission_status}'`);
+
+      if (submission_status === 'Approved' && outcome_status === undefined && oldTender.outcome_status !== 'Won' && oldTender.outcome_status !== 'Lost') {
+        fieldsToUpdate.push('outcome_status = ?');
+        updateParams.push('Pending');
+        fieldsToUpdate.push('current_stage = ?');
+        updateParams.push('WIN_LOSS_PENDING');
+        logDetails.push("advanced to outcome verification pending ('WIN_LOSS_PENDING')");
+      }
     }
 
     if (outcome_status !== undefined && outcome_status !== oldTender.outcome_status) {
@@ -363,11 +407,20 @@ export async function PATCH(
       logDetails.push(`assigned Specification Team member changed to '${assigned_mis_member_spec}'`);
     }
 
+    if (tpc_purchase_price !== undefined && tpc_purchase_price !== oldTender.tpc_purchase_price) {
+      fieldsToUpdate.push('tpc_purchase_price = ?');
+      updateParams.push(tpc_purchase_price === null ? null : parseFloat(tpc_purchase_price));
+      logDetails.push(`TPC purchase price updated to ₹${tpc_purchase_price}`);
+    }
+
+    if (mis_final_price !== undefined && mis_final_price !== oldTender.mis_final_price) {
+      fieldsToUpdate.push('mis_final_price = ?');
+      updateParams.push(mis_final_price === null ? null : parseFloat(mis_final_price));
+      logDetails.push(`MIS final price updated to ₹${mis_final_price}`);
+    }
+
     if (fieldsToUpdate.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'No fields to update' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: true, message: 'Tender is already up to date' });
     }
 
     // Invalidate cached AI summaries since the tender state has changed
@@ -379,6 +432,42 @@ export async function PATCH(
 
     const updateStmt = db.prepare(query);
     updateStmt.run(...updateParams);
+
+    // Handle explicit rejection status transitions in tender_approval_requests
+    const nowIso = new Date().toISOString();
+    if (payment_status === 'Rejected') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'REJECTED', updated_at = ? WHERE tender_id = ? AND stage = 'PAYMENT_APPROVAL' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (verification_status === 'Rejected') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'REJECTED', updated_at = ? WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (submission_status === 'Rejected') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'REJECTED', updated_at = ? WHERE tender_id = ? AND stage = 'SUBMISSION_PENDING' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (spec_verification_status === 'Rejected') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'REJECTED', updated_at = ? WHERE tender_id = ? AND stage = 'SPEC_CLEARANCE' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (spec_verification_status === 'Approved') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'SPEC_CLEARANCE' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (verification_status === 'Approved') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (payment_status === 'Approved') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'PAYMENT_APPROVAL' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (submission_status === 'Approved') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'SUBMISSION_PENDING' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (status === 'Awarded' || status === 'Won' || outcome_status === 'Approved' || outcome_status === 'Won') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'WIN_LOSS_PENDING' AND status = 'PENDING'").run(nowIso, id);
+    }
+    if (status === 'Not Awarded' || status === 'Lost' || outcome_status === 'Rejected' || outcome_status === 'Lost') {
+      db.prepare("UPDATE tender_approval_requests SET status = 'APPROVED', updated_at = ? WHERE tender_id = ? AND stage = 'WIN_LOSS_PENDING' AND status = 'PENDING'").run(nowIso, id);
+    }
+
+    // Keep all approvals in sync with tender state
+    reconcileApprovalRequests();
 
     // Log the activity to activity_log
     const logAction = (mis_executive !== undefined && mis_executive !== oldTender.mis_executive)
@@ -403,8 +492,17 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const userRole = request.headers.get('x-user-role') || 'Unknown';
-    const username = request.headers.get('x-user-username') || 'system';
+    const auth = getAuthFromRequest(request);
+    const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
+    const username = auth?.username || request.headers.get('x-user-username') || 'system';
+
+    const allowedRoles = ['Admin', 'MIS Team', 'system'];
+    if (!allowedRoles.includes(userRole)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied: Admin or MIS Team required to delete a tender' },
+        { status: 403 }
+      );
+    }
 
 
 

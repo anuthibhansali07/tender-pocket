@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.ActivityLog;
 import com.tenderpocket.models.Tender;
+import com.tenderpocket.models.TenderApprovalRequest;
+import com.tenderpocket.models.TenderWorkflowStage;
 import com.tenderpocket.repositories.ActivityLogRepository;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.services.DocumentGeneratorService;
@@ -11,6 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
@@ -29,6 +34,9 @@ public class TenderController {
 
     @Autowired
     private TenderRepository tenderRepository;
+
+    @Autowired
+    private com.tenderpocket.repositories.TenderApprovalRepository approvalRepository;
 
     @Autowired
     private com.tenderpocket.repositories.TenderWorkflowCommentRepository commentRepository;
@@ -55,9 +63,41 @@ public class TenderController {
     private String geminiApiKey;
 
     private final ObjectMapper mapper = new ObjectMapper();
+ 
+    /**
+     * Resolves user role with defense-in-depth:
+     * 1. Checks SecurityContextHolder (populated from verified JWT by JwtRequestFilter)
+     * 2. Falls back to request header for legacy same-origin internal calls
+     */
+    private String resolveUserRole(String headerRole) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+            String jwtRole = auth.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .findFirst()
+                    .map(r -> r.replace("ROLE_", "").replace("_", " "))
+                    .orElse(null);
+            if (jwtRole != null && !jwtRole.isBlank()) {
+                return jwtRole;
+            }
+        }
+        return (headerRole != null && !headerRole.isBlank()) ? headerRole : "Admin";
+    }
+
+    private String resolveUsername(String headerUsername) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+            String name = auth.getName();
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+        }
+        return (headerUsername != null && !headerUsername.isBlank()) ? headerUsername : "admin";
+    }
 
     @PostMapping("/sync-gem")
     public ResponseEntity<?> syncGeM(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
         if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
@@ -81,6 +121,7 @@ public class TenderController {
 
     @PostMapping("/sync-emails")
     public ResponseEntity<?> syncEmails(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
         if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
@@ -134,8 +175,12 @@ public class TenderController {
             if (("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) && !username.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
             }
-            if ("Specification Team".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getAssignedMisMemberSpec())) {
-                continue;
+            if (("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole))) {
+                boolean match = username.equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                        || "clearance".equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                        || "Clearance Team".equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                        || "SPEC_CLEARANCE".equalsIgnoreCase(t.getCurrentStage());
+                if (!match) continue;
             }
             if (misExecutive != null && !misExecutive.isEmpty() && !misExecutive.equalsIgnoreCase(t.getMisExecutive())) {
                 continue;
@@ -260,6 +305,7 @@ public class TenderController {
     public ResponseEntity<?> createTender(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestBody Tender tender) {
+        userRole = resolveUserRole(userRole);
         if ("Admin".equalsIgnoreCase(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Admins cannot create tender records"));
@@ -282,6 +328,9 @@ public class TenderController {
             @PathVariable("id") String id,
             @RequestBody Map<String, Object> body) {
 
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
+
 
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
@@ -296,6 +345,30 @@ public class TenderController {
             String newStatus = (String) body.get("status");
             tender.setStatus(newStatus);
             logDetails.add("status changed from '" + oldStatus + "' to '" + newStatus + "'");
+
+            if ("Awarded".equalsIgnoreCase(newStatus) || "Won".equalsIgnoreCase(newStatus)) {
+                tender.setCurrentStage("WON");
+                tender.setOutcomeStatus("Won");
+                List<TenderApprovalRequest> pending = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
+                for (TenderApprovalRequest r : pending) {
+                    if ("PENDING".equalsIgnoreCase(r.getStatus())) {
+                        r.setStatus("APPROVED");
+                        r.setUpdatedAt(java.time.LocalDateTime.now());
+                        approvalRepository.save(r);
+                    }
+                }
+            } else if ("Not Awarded".equalsIgnoreCase(newStatus) || "Lost".equalsIgnoreCase(newStatus)) {
+                tender.setCurrentStage("LOST");
+                tender.setOutcomeStatus("Lost");
+                List<TenderApprovalRequest> pending = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
+                for (TenderApprovalRequest r : pending) {
+                    if ("PENDING".equalsIgnoreCase(r.getStatus())) {
+                        r.setStatus("APPROVED");
+                        r.setUpdatedAt(java.time.LocalDateTime.now());
+                        approvalRepository.save(r);
+                    }
+                }
+            }
 
             try {
                 String nowStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
@@ -433,6 +506,8 @@ public class TenderController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id) {
 
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
 
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
@@ -459,6 +534,9 @@ public class TenderController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id,
             @RequestBody Map<String, String> body) {
+
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
 
 
         if ("Admin".equalsIgnoreCase(userRole)) {

@@ -21,7 +21,8 @@ RUN mkdir -p /app/data /app/public/documents
 # Copy built JAR from build stage
 COPY --from=build /app/target/tender-pocket-spring-0.0.1-SNAPSHOT.jar app.jar
 
-EXPOSE 8080
-ENV PORT=8080
+EXPOSE 8090
+ENV SPRING_PORT=8090
+ENV PORT=8090
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
