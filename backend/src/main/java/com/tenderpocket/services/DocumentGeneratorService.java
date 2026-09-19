@@ -8,6 +8,7 @@ import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -1476,6 +1477,17 @@ public class DocumentGeneratorService {
     // --- TECHNICAL SPECIFICATION CLAUSE PARSER & OCR INTEGRATION ---
     /** Inline request payloads are base64-encoded, so keep the raw file well under the 20 MB ceiling. */
     private static final int MAX_INLINE_PDF_BYTES = 12 * 1024 * 1024;
+    // Four pages keeps dense tables within one response; recovery never recursively expands API work.
+    private static final int MAX_NATIVE_PDF_BATCH_PAGES = 4;
+
+    @FunctionalInterface
+    public interface ConversionProgressListener {
+        void onProgress(String stage, String message, int percent,
+                        int completedBatches, int totalBatches, int clauses);
+    }
+
+    private static final ConversionProgressListener NO_PROGRESS =
+            (stage, message, percent, completed, total, clauses) -> { };
 
     /**
      * Groups clauses by the equipment they describe, keeping the order the extractor returned. A tender
@@ -1503,6 +1515,56 @@ public class DocumentGeneratorService {
         // one schedule at this point and printed their shared clause numbers twice.
         grouped.replaceAll((component, rows) -> dedupeAndSort(rows));
         return grouped;
+    }
+
+    /** Review sheets preserve every dynamically named variant and conflicting clause wording. */
+    private java.util.LinkedHashMap<String, List<String[]>> groupReviewRows(List<String[]> clauses, String fallbackName) {
+        java.util.LinkedHashMap<String, List<String[]>> grouped = new java.util.LinkedHashMap<>();
+        for (String[] clause : clauses) {
+            String rawComponent = clause.length > 5 && clause[5] != null && !clause[5].isBlank()
+                    ? clause[5] : fallbackName;
+            grouped.computeIfAbsent(normalizeCategoryName(rawComponent), key -> new ArrayList<>()).add(clause);
+        }
+        grouped.replaceAll((component, rows) -> dedupeAndSortReviewRows(rows));
+        return grouped;
+    }
+
+    private List<String[]> dedupeAndSortReviewRows(List<String[]> rows) {
+        LinkedHashMap<String, String[]> unique = new LinkedHashMap<>();
+        for (String[] row : rows) {
+            String clause = reviewValue(row, 0);
+            String requirement = reviewValue(row, 1).toLowerCase().replaceAll("\\s+", " ").trim();
+            String key = clause + "|" + requirement;
+            String[] existing = unique.get(key);
+            if (existing == null) unique.put(key, row);
+            else if (existing.length > 7 && row.length > 7) existing[7] = mergeSourceReferences(existing[7], row[7]);
+        }
+        List<String[]> sorted = new ArrayList<>(unique.values());
+        sorted.sort((left, right) -> compareClauseNumbers(reviewValue(left, 0), reviewValue(right, 0)));
+        return sorted;
+    }
+
+    private String reviewValue(String[] row, int index) {
+        return row != null && row.length > index && row[index] != null ? row[index].trim() : "";
+    }
+
+    private String reviewReference(String[] row) {
+        String clause = reviewValue(row, 0);
+        String source = reviewValue(row, 7);
+        if (clause.isEmpty()) clause = "No clause reference";
+        return source.isEmpty() ? clause : clause + "\n" + source;
+    }
+
+    private String reviewBidderResponse(String[] row) {
+        String value = reviewValue(row, 2);
+        return value.isEmpty() || "Comply".equalsIgnoreCase(value)
+                ? "Not provided \u2014 bidder response not available."
+                : value;
+    }
+
+    private String reviewRemarks(String[] row) {
+        String value = row != null && row.length > 6 ? reviewValue(row, 6) : reviewValue(row, 4);
+        return value.isEmpty() ? "-" : value;
     }
 
     /** Drops repeats within one schedule and puts the rows into the document's own clause order. */
@@ -1622,12 +1684,30 @@ public class DocumentGeneratorService {
     }
 
     public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName, Map<String, String> data) {
+        return parseSpecificationClauses(fileBytes, fileName, data, NO_PROGRESS);
+    }
+
+    public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName, Map<String, String> data,
+                                                    ConversionProgressListener progressListener) {
+        return parseSpecificationClauses(fileBytes, fileName, data, progressListener, null);
+    }
+
+    public List<String[]> parseSpecificationClauses(byte[] fileBytes, String fileName, Map<String, String> data,
+                                                    ConversionProgressListener progressListener,
+                                                    ComplianceConversionMetrics metrics) {
+        ConversionProgressListener progress = progressListener == null ? NO_PROGRESS : progressListener;
         String text = "";
 
+        if (metrics != null) metrics.beginExtraction();
+        try {
+
+            if (fileBytes != null && fileBytes.length > 0 && fileName != null
+                    && fileName.toLowerCase().endsWith(".pdf")) {
+                return parsePdfSpecificationClauses(fileBytes, data, progress, metrics);
+            }
+
         if (fileBytes != null && fileBytes.length > 0) {
-            if (fileName != null && fileName.toLowerCase().endsWith(".pdf")) {
-                text = extractPdfText(fileBytes);
-            } else if (fileName != null && (fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc"))) {
+            if (fileName != null && (fileName.toLowerCase().endsWith(".docx") || fileName.toLowerCase().endsWith(".doc"))) {
                 try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(fileBytes);
                      org.apache.poi.xwpf.usermodel.XWPFDocument docx = new org.apache.poi.xwpf.usermodel.XWPFDocument(bais)) {
                     StringBuilder sb = new StringBuilder();
@@ -1649,47 +1729,401 @@ public class DocumentGeneratorService {
             }
         }
 
-        // Gemini reads PDFs natively, so send the whole document and let it see every page.
-        // Only oversized files fall back to a rendered page, which keeps the request inline-safe.
-        byte[] imageBytesToPass = fileBytes;
-        if (fileName != null && fileName.toLowerCase().endsWith(".pdf") && fileBytes != null
-                && fileBytes.length > MAX_INLINE_PDF_BYTES) {
-            byte[] pngBytes = renderFirstPageToPng(fileBytes);
-            if (pngBytes != null && pngBytes.length > 0) {
-                imageBytesToPass = pngBytes;
-                System.out.println("[DocumentGeneratorService] PDF exceeds inline limit; sending rendered first page instead.");
-            }
-        }
+        // DOCX has already been parsed locally; it is not a PDF input_file.
+        byte[] imageBytesToPass = null;
 
         if (aiSpecificationIntelligenceService == null) {
             aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
         }
 
-        System.out.println("[DocumentGeneratorService] Executing Gemini Vision Engine on document (" + (imageBytesToPass != null ? imageBytesToPass.length : 0) + " bytes)...");
-        List<String[]> clauses = aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(text, imageBytesToPass, data);
-        if (clauses != null && !clauses.isEmpty()) {
-            return clauses;
+            if (metrics != null) metrics.setDocumentCounts(0, 1);
+            progress.onProgress("EXTRACTING", "Sending document to the configured AI provider for requirement extraction.",
+                    20, 0, 1, 0);
+            System.out.println("[DocumentGeneratorService] Executing AI extraction on document (" + (imageBytesToPass != null ? imageBytesToPass.length : 0) + " bytes)...");
+            List<String[]> clauses = runAiExtraction(text, imageBytesToPass, data,
+                    Collections.emptyList(), progress, metrics);
+            if (AISpecificationIntelligenceService.isCompletedEmpty(clauses)) return clauses;
+            if (clauses != null && !clauses.isEmpty()) {
+                if (metrics != null) metrics.setResultCounts(0, clauses.size());
+                progress.onProgress("VALIDATING", "Validated " + clauses.size() + " extracted requirements.",
+                        78, 1, 1, clauses.size());
+                return clauses;
+            }
+
+            return Collections.emptyList();
+        } finally {
+            if (metrics != null) metrics.endExtraction();
+        }
+    }
+
+    private static final class PdfBatch {
+        final byte[] bytes;
+        final int firstPhysicalPage;
+        final int pageCount;
+        final String sourceContext;
+        final boolean ocrAttempted;
+
+        PdfBatch(byte[] bytes, int firstPhysicalPage, int pageCount, String sourceContext) {
+            this(bytes, firstPhysicalPage, pageCount, sourceContext, false);
         }
 
-        // Fail-safe backup: If Gemini Vision AI is rate-limited (HTTP 429), use local digital text parser
-        if (text != null && text.trim().length() > 50) {
-            // Said plainly, because the two paths produce documents that look alike and are not. The
-            // local parser hardcodes its product list and its clause numbering, so a sheet built this way
-            // has been judged several times over as though it were the model's work.
-            System.out.println("[DocumentGeneratorService] ==================================================");
-            System.out.println("[DocumentGeneratorService] WARNING: the AI returned nothing, so this sheet is");
-            System.out.println("[DocumentGeneratorService] being built by the local keyword parser instead.");
-            System.out.println("[DocumentGeneratorService] Its product list and clause numbers are hardcoded");
-            System.out.println("[DocumentGeneratorService] and it does not read the tender's own structure.");
-            System.out.println("[DocumentGeneratorService] Check the Gemini errors logged above before using it.");
-            System.out.println("[DocumentGeneratorService] ==================================================");
-            List<String[]> fallbackClauses = parseClausesFromDigitalText(text);
-            if (fallbackClauses != null && !fallbackClauses.isEmpty()) {
-                return fallbackClauses;
+        PdfBatch(byte[] bytes, int firstPhysicalPage, int pageCount, String sourceContext,
+                  boolean ocrAttempted) {
+            this.bytes = bytes;
+            this.firstPhysicalPage = firstPhysicalPage;
+            this.pageCount = pageCount;
+            this.sourceContext = sourceContext;
+            this.ocrAttempted = ocrAttempted;
+        }
+    }
+
+    /** Native PDF understanding is primary; OCR is used only after a native batch cannot be validated. */
+    private List<String[]> parsePdfSpecificationClauses(byte[] pdfBytes, Map<String, String> data,
+                                                        ConversionProgressListener progress,
+                                                        ComplianceConversionMetrics metrics) {
+        if (aiSpecificationIntelligenceService == null) {
+            aiSpecificationIntelligenceService = new AISpecificationIntelligenceService();
+        }
+        List<PdfBatch> batches;
+        try {
+            progress.onProgress("INSPECTING", "Inspecting PDF pages and preparing bounded batches.",
+                    4, 0, 0, 0);
+            batches = createPdfBatches(pdfBytes, 1);
+        } catch (Exception e) {
+            System.err.println("[DocumentGeneratorService] Could not prepare PDF batches: " + e.getMessage());
+            return Collections.emptyList();
+        }
+
+        LinkedHashMap<String, String[]> merged = new LinkedHashMap<>();
+        int totalPages = batches.stream().mapToInt(batch -> batch.pageCount).sum();
+        if (metrics != null) metrics.setDocumentCounts(totalPages, batches.size());
+        progress.onProgress("BATCHING", "Prepared " + batches.size() + " batches covering "
+                + totalPages + " PDF pages.", 8, 0, batches.size(), 0);
+        StringBuilder fullSourceContext = new StringBuilder();
+        for (PdfBatch batch : batches) fullSourceContext.append(batch.sourceContext).append('\n');
+        List<String> knownProducts = aiSpecificationIntelligenceService.productNameHints(fullSourceContext.toString());
+        progress.onProgress("DISCOVERING_PRODUCTS",
+                "Product detection and technical extraction will run together in one call per PDF batch.",
+                10, 0, batches.size(), 0);
+        batches = annotateProductContexts(batches, knownProducts);
+        List<List<String[]>> extracted = extractPdfBatchesConcurrently(batches, data, knownProducts, progress, metrics);
+        if (extracted.isEmpty()) return Collections.emptyList();
+        // Merge in PDF order, not completion order, so both output formats remain deterministic.
+        for (List<String[]> rows : extracted) {
+            for (String[] row : rows) mergeConversionRow(merged, row);
+        }
+        int productCount = (int) merged.values().stream().map(row -> row[5]).distinct().count();
+        progress.onProgress("VALIDATING", "Extraction complete. Validated " + merged.size()
+                + " unique requirements across " + productCount + " products.",
+                78, batches.size(), batches.size(), merged.size());
+        if (metrics != null) metrics.setResultCounts(productCount, merged.size());
+        if (merged.isEmpty()) progress.onProgress("NO_PRODUCTS",
+                "No products found with technical specifications.", 100, batches.size(), batches.size(), 0);
+        return merged.isEmpty() ? AISpecificationIntelligenceService.completedEmptyRows()
+                : new ArrayList<>(merged.values());
+    }
+
+    private List<PdfBatch> annotateProductContexts(List<PdfBatch> batches, List<String> products) {
+        List<PdfBatch> annotated = new ArrayList<>();
+        String active = "";
+        for (PdfBatch batch : batches) {
+            StringBuilder context = new StringBuilder();
+            if (!active.isBlank()) context.append("[SOURCE_PRODUCT name=\"").append(active).append("\"]\n");
+            for (String line : batch.sourceContext.split("\\R")) {
+                String heading = aiSpecificationIntelligenceService.productForSourceHeading(line, products);
+                if (heading != null) {
+                    active = heading;
+                    context.append("[SOURCE_PRODUCT name=\"").append(active).append("\"]\n");
+                }
+                context.append(line).append('\n');
+            }
+            annotated.add(new PdfBatch(batch.bytes, batch.firstPhysicalPage, batch.pageCount,
+                    context.toString(), batch.ocrAttempted));
+        }
+        return annotated;
+    }
+
+    private List<List<String[]>> extractPdfBatchesConcurrently(List<PdfBatch> batches,
+            Map<String, String> data, List<String> knownProducts, ConversionProgressListener progress,
+            ComplianceConversionMetrics metrics) {
+        if (batches.isEmpty()) return Collections.emptyList();
+        int workers = Math.min(5, batches.size());
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(workers);
+        java.util.concurrent.CompletionService<Map.Entry<Integer, List<String[]>>> completed =
+                new java.util.concurrent.ExecutorCompletionService<>(executor);
+        List<java.util.concurrent.Future<Map.Entry<Integer, List<String[]>>>> futures = new ArrayList<>();
+        List<List<String[]>> results = new ArrayList<>(Collections.nCopies(batches.size(), null));
+        Object progressLock = new Object();
+        int[] counters = {0, 0};
+        boolean[] reportingOpen = {true};
+        try {
+            for (int i = 0; i < batches.size(); i++) {
+                final int index = i;
+                PdfBatch batch = batches.get(i);
+                Map<String, String> batchData = data == null ? new HashMap<>() : new HashMap<>(data);
+                ConversionProgressListener batchProgress = (stage, message, percent, done, total, clauses) -> {
+                    synchronized (progressLock) {
+                        if (!reportingOpen[0]) return;
+                        progress.onProgress(stage, "Batch " + (index + 1) + "/" + batches.size()
+                                + ": " + message, -1, counters[0], batches.size(), counters[1]);
+                    }
+                };
+                futures.add(completed.submit(() -> {
+                    aiSpecificationIntelligenceService.beginBatch();
+                    try {
+                    batchProgress.onProgress("EXTRACTING", "Sending PDF pages " + batch.firstPhysicalPage
+                            + "-" + (batch.firstPhysicalPage + batch.pageCount - 1)
+                            + " for one-pass AI extraction (" + workers
+                            + " concurrent workers; at most one recovery call).", -1, 0, 0, 0);
+                    List<String[]> rows = extractPdfBatch(batch, batchData, knownProducts, true,
+                            batchProgress, index + 1, batches.size(), 0, 0, metrics);
+                    return new AbstractMap.SimpleImmutableEntry<>(index, rows);
+                    } finally {
+                        aiSpecificationIntelligenceService.endBatch();
+                    }
+                }));
+            }
+            for (int i = 0; i < batches.size(); i++) {
+                Map.Entry<Integer, List<String[]>> result = completed.take().get();
+                if (result.getValue() == null || (result.getValue().isEmpty()
+                        && !AISpecificationIntelligenceService.isCompletedEmpty(result.getValue()))) {
+                    System.err.println("[DocumentGeneratorService] Required PDF batch " + (result.getKey() + 1)
+                            + "/" + batches.size() + " failed; refusing a partial compliance sheet.");
+                    return Collections.emptyList();
+                }
+                results.set(result.getKey(), result.getValue());
+                synchronized (progressLock) {
+                    counters[0]++;
+                    counters[1] += result.getValue().size();
+                    progress.onProgress("VALIDATING", "Batch " + (result.getKey() + 1)
+                            + " validated; " + counters[0] + "/" + batches.size() + " batches complete.",
+                            12 + (int) (counters[0] * 63.0 / batches.size()),
+                            counters[0], batches.size(), counters[1]);
+                }
+            }
+            return results;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Collections.emptyList();
+        } catch (java.util.concurrent.ExecutionException e) {
+            System.err.println("[DocumentGeneratorService] Parallel compliance extraction failed: "
+                    + e.getCause().getClass().getSimpleName());
+            return Collections.emptyList();
+        } finally {
+            synchronized (progressLock) {
+                reportingOpen[0] = false;
+            }
+            for (java.util.concurrent.Future<?> future : futures) future.cancel(true);
+            executor.shutdownNow();
+        }
+    }
+
+    private List<String[]> extractPdfBatch(PdfBatch batch, Map<String, String> data,
+                                           List<String> knownProducts, boolean allowSplit,
+                                           ConversionProgressListener progress, int batchNumber,
+                                           int totalBatches, int splitDepth, int clausesSoFar,
+                                           ComplianceConversionMetrics metrics) {
+        if (Thread.currentThread().isInterrupted()) return Collections.emptyList();
+        List<String[]> rows = runAiExtraction(batch.sourceContext, batch.bytes, data,
+                knownProducts, progress, metrics);
+        if (AISpecificationIntelligenceService.isCompletedEmpty(rows)) return rows;
+        boolean nativeSucceeded = rows != null && !rows.isEmpty();
+        boolean unclearReading = nativeSucceeded && hasUnclearReading(rows);
+        if (nativeSucceeded && !unclearReading) return rows;
+
+        // The original PDF is always sent first. OCR is deferred until native document understanding
+        // fails validation or explicitly reports an unclear reading, and is limited to pages whose text
+        // layer is unreadable by extractPdfText.
+        PdfBatch retryBatch = batch;
+        boolean ocrImproved = false;
+        if (!batch.ocrAttempted && hasUnreadablePage(batch.sourceContext)
+                && aiSpecificationIntelligenceService.canRetryBatch()) {
+            if (metrics != null) metrics.incrementOcrRetries();
+            progress.onProgress("OCR", (unclearReading ? "Rechecking an unclear reading in batch "
+                    : "Recovering unreadable content after batch ") + batchNumber + " with OCR fallback.",
+                    -1, batchNumber - 1, totalBatches, clausesSoFar);
+            String rawOcrContext = extractOcrFallbackText(batch.bytes, batch.firstPhysicalPage - 1);
+            ocrImproved = documentTextLength(rawOcrContext) > documentTextLength(batch.sourceContext);
+            String recoveredContext = ocrImproved
+                    ? inheritLeadingProductContext(batch.sourceContext, rawOcrContext) : batch.sourceContext;
+            PdfBatch recovered = new PdfBatch(batch.bytes, batch.firstPhysicalPage,
+                    batch.pageCount, recoveredContext, true);
+            retryBatch = annotateProductContexts(List.of(recovered), knownProducts).get(0);
+        }
+        if (ocrImproved && aiSpecificationIntelligenceService.canRetryBatch()) {
+            List<String[]> ocrRows = runAiExtraction(retryBatch.sourceContext, null,
+                    data, knownProducts, progress, metrics);
+            if (ocrRows != null && !ocrRows.isEmpty()) return ocrRows;
+            if (!nativeSucceeded && AISpecificationIntelligenceService.isCompletedEmpty(ocrRows)) return ocrRows;
+        }
+
+        // An uncertain but otherwise validated native reading is preferable to silently dropping the
+        // requirement when local OCR is unavailable or cannot improve the page.
+        if (nativeSucceeded) return rows;
+
+        progress.onProgress("BATCH_FAILED", "PDF pages " + batch.firstPhysicalPage + "-"
+                + (batch.firstPhysicalPage + batch.pageCount - 1)
+                + " could not be validated within the two-call limit. No partial sheet will be generated.",
+                -1, batchNumber - 1, totalBatches, clausesSoFar);
+        return Collections.emptyList();
+    }
+
+    private String sourceContextForRange(String context, int first, int count) {
+        StringBuilder sliced = new StringBuilder();
+        String active = "";
+        var tokens = java.util.regex.Pattern.compile(
+                "(?m)^\\[SOURCE_PRODUCT name=\"(.*)\"]|(?s:\\[SOURCE_PAGE pdf=\"(\\d+)\"[^]]*].*?\\[/SOURCE_PAGE])")
+                .matcher(context);
+        while (tokens.find()) {
+            if (tokens.group(1) != null) {
+                active = tokens.group(1);
+                continue;
+            }
+            int page = Integer.parseInt(tokens.group(2));
+            if (page >= first && page < first + count) {
+                if (!active.isBlank()) sliced.append("[SOURCE_PRODUCT name=\"").append(active).append("\"]\n");
+                sliced.append(tokens.group()).append('\n');
+            }
+            var inner = java.util.regex.Pattern.compile("\\[SOURCE_PRODUCT name=\"(.*)\"]").matcher(tokens.group());
+            while (inner.find()) active = inner.group(1);
+        }
+        return sliced.toString();
+    }
+
+    private String inheritLeadingProductContext(String originalContext, String recoveredContext) {
+        var marker = java.util.regex.Pattern.compile("(?m)^\\[SOURCE_PRODUCT name=\".*\"]$")
+                .matcher(originalContext == null ? "" : originalContext);
+        return marker.find() ? marker.group() + "\n" + recoveredContext : recoveredContext;
+    }
+
+    private List<String[]> runAiExtraction(String text, byte[] bytes, Map<String, String> data,
+                                           List<String> knownProducts,
+                                           ConversionProgressListener progress,
+                                           ComplianceConversionMetrics metrics) {
+        aiSpecificationIntelligenceService.setProgressReporter(message ->
+                progress.onProgress("AI", message, -1, 0, 0, 0));
+        aiSpecificationIntelligenceService.setConversionMetrics(metrics);
+        try {
+            if (text != null && text.contains("[SOURCE_PAGE ")) {
+                String hintedText = knownProducts.isEmpty() ? text : "[PRODUCT_NAME_HINTS]\n"
+                        + String.join("\n", knownProducts) + "\n[/PRODUCT_NAME_HINTS]\n" + text;
+                // Product names are discovered in this same native-PDF request, not in a separate AI pass.
+                return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(
+                        hintedText, bytes, data, Collections.emptyList());
+            }
+            LinkedHashSet<String> scopedProducts = new LinkedHashSet<>();
+            var productMarkers = java.util.regex.Pattern.compile("\\[SOURCE_PRODUCT name=\"(.*)\"]").matcher(text);
+            while (productMarkers.find()) {
+                if (knownProducts.contains(productMarkers.group(1))) scopedProducts.add(productMarkers.group(1));
+            }
+            return aiSpecificationIntelligenceService.processOcrAndSynthesizeClauses(
+                    text, bytes, data, scopedProducts.isEmpty() ? knownProducts : new ArrayList<>(scopedProducts));
+        } finally {
+            aiSpecificationIntelligenceService.clearProgressReporter();
+            aiSpecificationIntelligenceService.clearConversionMetrics();
+        }
+    }
+
+    private boolean hasUnreadablePage(String sourceContext) {
+        if (sourceContext == null || sourceContext.isBlank()) return true;
+        java.util.regex.Matcher pages = java.util.regex.Pattern
+                .compile("(?s)\\[SOURCE_PAGE[^]]*](.*?)\\[/SOURCE_PAGE]")
+                .matcher(sourceContext);
+        boolean foundPage = false;
+        while (pages.find()) {
+            foundPage = true;
+            if (cleanExtractedText(pages.group(1)).length() < MIN_PAGE_TEXT_CHARS) return true;
+        }
+        return !foundPage;
+    }
+
+    private int documentTextLength(String sourceContext) {
+        if (sourceContext == null) return 0;
+        return sourceContext.replaceAll("(?s)\\[/?SOURCE_PAGE[^]]*]", "")
+                .replaceAll("\\s+", "").length();
+    }
+
+    String extractOcrFallbackText(byte[] pdfBytes, int physicalPageOffset) {
+        return extractPdfText(pdfBytes, true, physicalPageOffset);
+    }
+
+    private boolean hasUnclearReading(List<String[]> rows) {
+        for (String[] row : rows) {
+            String remarks = row.length > 6 && row[6] != null ? row[6] : "";
+            if (remarks.toLowerCase(Locale.ROOT).contains("unclear")
+                    || remarks.toLowerCase(Locale.ROOT).contains("requires clarification")) return true;
+        }
+        return false;
+    }
+
+    private List<PdfBatch> createPdfBatches(byte[] pdfBytes, int firstPhysicalPage) throws IOException {
+        return createPdfBatches(pdfBytes, firstPhysicalPage, MAX_NATIVE_PDF_BATCH_PAGES);
+    }
+
+    private List<PdfBatch> createPdfBatches(byte[] pdfBytes, int firstPhysicalPage, int pagesPerBatch) throws IOException {
+        List<PdfBatch> batches = new ArrayList<>();
+        try (org.apache.pdfbox.pdmodel.PDDocument source = org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+            for (int start = 0; start < source.getNumberOfPages(); start += pagesPerBatch) {
+                int end = Math.min(source.getNumberOfPages(), start + pagesPerBatch);
+                addSizedBatch(source, start, end, firstPhysicalPage + start, batches);
             }
         }
+        return batches;
+    }
 
-        return Collections.emptyList();
+    private void addSizedBatch(org.apache.pdfbox.pdmodel.PDDocument source, int start, int end,
+                               int firstPhysicalPage, List<PdfBatch> batches) throws IOException {
+        byte[] bytes = copyPdfRange(source, start, end);
+        if (bytes.length > MAX_INLINE_PDF_BYTES && end - start > 1) {
+            int mid = start + (end - start) / 2;
+            addSizedBatch(source, start, mid, firstPhysicalPage, batches);
+            addSizedBatch(source, mid, end, firstPhysicalPage + (mid - start), batches);
+            return;
+        }
+        if (bytes.length > MAX_INLINE_PDF_BYTES) {
+            throw new IOException("PDF page " + firstPhysicalPage + " exceeds the inline request limit");
+        }
+        batches.add(new PdfBatch(bytes, firstPhysicalPage, end - start,
+                extractPdfText(bytes, false, firstPhysicalPage - 1)));
+    }
+
+    private byte[] copyPdfRange(org.apache.pdfbox.pdmodel.PDDocument source, int start, int end) throws IOException {
+        try (org.apache.pdfbox.pdmodel.PDDocument target = new org.apache.pdfbox.pdmodel.PDDocument();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            for (int page = start; page < end; page++) target.importPage(source.getPage(page));
+            target.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    private void mergeConversionRow(LinkedHashMap<String, String[]> merged, String[] row) {
+        String productIdentity = reviewValue(row, 5).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+        for (String[] previous : merged.values()) {
+            if (reviewValue(previous, 5).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim()
+                    .equals(productIdentity)) {
+                row[5] = previous[5];
+                break;
+            }
+        }
+        String component = row.length > 5 && row[5] != null ? normalizeCategoryName(row[5]).toLowerCase() : "";
+        String clause = row.length > 0 && row[0] != null ? row[0].trim() : "";
+        String requirement = row.length > 1 && row[1] != null ? row[1].toLowerCase().replaceAll("\\s+", " ").trim() : "";
+        String key = component + "|" + clause + "|" + requirement;
+        String[] existing = merged.get(key);
+        if (existing == null) {
+            merged.put(key, row);
+        } else if (existing.length > 7 && row.length > 7) {
+            existing[7] = mergeSourceReferences(existing[7], row[7]);
+        }
+    }
+
+    private String mergeSourceReferences(String left, String right) {
+        LinkedHashSet<String> refs = new LinkedHashSet<>();
+        for (String value : new String[]{left, right}) {
+            if (value == null) continue;
+            for (String ref : value.split("\\s*;\\s*")) if (!ref.isBlank()) refs.add(ref.trim());
+        }
+        return String.join("; ", refs);
     }
 
     public List<String[]> parseClausesFromDigitalText(String text) {
@@ -1804,7 +2238,7 @@ public class DocumentGeneratorService {
      * whole file lets the readable section mask the scanned one, so the pages that carry the actual
      * specifications never get read.
      */
-    private String extractPdfText(byte[] pdfBytes) {
+    private String extractPdfText(byte[] pdfBytes, boolean allowOcr, int physicalPageOffset) {
         StringBuilder combined = new StringBuilder();
         int ocrPageCount = 0;
         int ocrBudget = MAX_OCR_PAGES;
@@ -1825,8 +2259,9 @@ public class DocumentGeneratorService {
                     System.err.println("[DocumentGeneratorService] Text extraction failed on page " + page + ": " + e.getMessage());
                 }
 
+                String printedPage = detectPrintedPageLabel(pageText);
                 boolean scannedPage = cleanExtractedText(pageText).length() < MIN_PAGE_TEXT_CHARS;
-                if (scannedPage && ocrBudget > 0) {
+                if (allowOcr && scannedPage && ocrBudget > 0) {
                     if (ocrAvailable == null) {
                         ocrAvailable = isTesseractAvailable();
                         if (!ocrAvailable) {
@@ -1838,13 +2273,19 @@ public class DocumentGeneratorService {
                         String ocrText = ocrPage(renderer, page - 1);
                         if (!ocrText.isBlank()) {
                             pageText = ocrText;
+                            String ocrPrintedPage = detectPrintedPageLabel(ocrText);
+                            if (!ocrPrintedPage.isEmpty()) printedPage = ocrPrintedPage;
                             ocrPageCount++;
                         }
                         ocrBudget--;
                     }
                 }
 
-                combined.append(pageText).append("\n");
+                int physicalPage = physicalPageOffset + page;
+                combined.append("[SOURCE_PAGE pdf=\"").append(physicalPage).append("\"");
+                if (!printedPage.isEmpty()) combined.append(" printed=\"").append(printedPage).append("\"");
+                combined.append("]\n").append(cleanExtractedText(pageText))
+                        .append("\n[/SOURCE_PAGE]\n");
             }
 
             System.out.println("[DocumentGeneratorService] Extracted " + pageCount + " page(s); "
@@ -1853,7 +2294,15 @@ public class DocumentGeneratorService {
             System.err.println("[DocumentGeneratorService] PDF extraction error: " + e.getMessage());
         }
 
-        return cleanExtractedText(combined.toString());
+        return combined.toString().trim();
+    }
+
+    private String detectPrintedPageLabel(String pageText) {
+        if (pageText == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?i)page\\s+(\\d+)\\s+of\\s+\\d+")
+                .matcher(pageText);
+        return matcher.find() ? matcher.group(1) : "";
     }
 
     /**
@@ -1902,7 +2351,11 @@ public class DocumentGeneratorService {
             tempImg = java.io.File.createTempFile("ocr_page_" + pageIndex + "_", ".png");
             javax.imageio.ImageIO.write(image, "png", tempImg);
 
-            Process process = new ProcessBuilder(resolveTesseractPath(), tempImg.getAbsolutePath(), "stdout").start();
+            ProcessBuilder ocr = new ProcessBuilder(resolveTesseractPath(), tempImg.getAbsolutePath(), "stdout")
+                    .redirectError(ProcessBuilder.Redirect.DISCARD);
+            // Pages already run concurrently; avoid nested OpenMP worker pools competing for CPU.
+            ocr.environment().put("OMP_THREAD_LIMIT", "1");
+            Process process = ocr.start();
             StringBuilder pageText = new StringBuilder();
             try (java.io.BufferedReader reader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
@@ -1911,7 +2364,7 @@ public class DocumentGeneratorService {
                     pageText.append(line).append("\n");
                 }
             }
-            process.waitFor();
+            if (process.waitFor() != 0) return "";
             return pageText.toString();
         } catch (Exception e) {
             System.err.println("[DocumentGeneratorService] OCR failed on page " + (pageIndex + 1) + ": " + e.getMessage());
@@ -1933,7 +2386,19 @@ public class DocumentGeneratorService {
     }
 
     public byte[] generateTechSpecPdf(Map<String, String> data, List<String[]> customClauses) throws Exception {
-        String htmlContent = cleanXmlForOpenHtmlPdf(generateTechSpecHtml(data, customClauses));
+        return renderSpecificationPdf(generateTechSpecHtml(data, customClauses));
+    }
+
+    public byte[] generateProductSheetPdf(Map<String, String> data, SpecificationSheetContent.Product product) throws Exception {
+        return renderSpecificationPdf(specificationHtml(data, List.of(product)));
+    }
+
+    public byte[] generateProductSheetDocx(Map<String, String> data, SpecificationSheetContent.Product product) throws Exception {
+        return specificationDocx(data, List.of(product));
+    }
+
+    private byte[] renderSpecificationPdf(String html) throws Exception {
+        String htmlContent = cleanXmlForOpenHtmlPdf(html);
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         
         com.openhtmltopdf.pdfboxout.PdfRendererBuilder builder = new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
@@ -2076,22 +2541,68 @@ public class DocumentGeneratorService {
         return generateTechSpecDocx(data, null);
     }
 
-    public byte[] generateTechSpecDocx(Map<String, String> data, List<String[]> customClauses) throws Exception {
-        try (org.apache.poi.xwpf.usermodel.XWPFDocument document = new org.apache.poi.xwpf.usermodel.XWPFDocument();
-             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+    private void writeTenderReviewComplianceSheet(org.apache.poi.xwpf.usermodel.XWPFDocument document,
+                                                   Map<String, String> data, List<String[]> clauses) {
+        writeHeader(document, data, "Technical Compliance Clause by Clause", true);
+        LinkedHashMap<String, List<String[]>> grouped = groupReviewRows(clauses,
+                data.getOrDefault("productDescription", data.getOrDefault("productName", "Equipment Specification")));
 
-            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr sectPr = document.getDocument().getBody().addNewSectPr();
-            org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar pageMar = sectPr.addNewPgMar();
-            pageMar.setTop(java.math.BigInteger.valueOf(1960));
-            pageMar.setBottom(java.math.BigInteger.valueOf(800));
-            pageMar.setLeft(java.math.BigInteger.valueOf(850));
-            pageMar.setRight(java.math.BigInteger.valueOf(850));
+        int scheduleNo = 1;
+        for (Map.Entry<String, List<String[]>> group : grouped.entrySet()) {
+            org.apache.poi.xwpf.usermodel.XWPFParagraph heading = document.createParagraph();
+            if (scheduleNo > 1) heading.createRun().addBreak(org.apache.poi.xwpf.usermodel.BreakType.PAGE);
+            org.apache.poi.xwpf.usermodel.XWPFRun headingRun = heading.createRun();
+            headingRun.setBold(true);
+            headingRun.setFontSize(11);
+            headingRun.setText("Schedule No. " + scheduleNo + " - " + group.getKey());
 
-            writeDoc16(document, data, customClauses);
+            List<String[]> rows = group.getValue();
+            org.apache.poi.xwpf.usermodel.XWPFTable table = document.createTable(rows.size() + 1, 6);
+            setTableBordersSingle(table);
+            org.apache.poi.xwpf.usermodel.XWPFTableRow header = table.getRow(0);
+            setCellHeader(header.getCell(0), "Clause / Reference", "1500");
+            setCellHeader(header.getCell(1), "Requirement / Criteria", "3300");
+            setCellHeader(header.getCell(2), "Bidder Response / Evidence Required", "2100");
+            setCellHeader(header.getCell(3), "Compliance", "1600");
+            setCellHeader(header.getCell(4), "Deviation", "1500");
+            setCellHeader(header.getCell(5), "Reviewer Remarks", "1700");
 
-            document.write(baos);
-            return baos.toByteArray();
+            for (int i = 0; i < rows.size(); i++) {
+                String[] row = rows.get(i);
+                org.apache.poi.xwpf.usermodel.XWPFTableRow output = table.getRow(i + 1);
+                output.getCell(0).setText(reviewReference(row));
+                output.getCell(1).setText(reviewValue(row, 1));
+                output.getCell(2).setText(reviewBidderResponse(row));
+                output.getCell(3).setText("To Be Assessed During Bid Evaluation");
+                output.getCell(4).setText("To be assessed during bid evaluation.");
+                output.getCell(5).setText(reviewRemarks(row));
+            }
+            scheduleNo++;
         }
+    }
+
+    public byte[] generateTechSpecDocx(Map<String, String> data, List<String[]> customClauses) throws Exception {
+        if (customClauses == null) {
+            // Preserve the existing no-upload/bid-pack contract.
+            try (org.apache.poi.xwpf.usermodel.XWPFDocument document = new org.apache.poi.xwpf.usermodel.XWPFDocument();
+                 ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                var margins = document.getDocument().getBody().addNewSectPr().addNewPgMar();
+                margins.setTop(BigInteger.valueOf(1960)); margins.setBottom(BigInteger.valueOf(800));
+                margins.setLeft(BigInteger.valueOf(850)); margins.setRight(BigInteger.valueOf(850));
+                writeDoc16(document, data, null);
+                document.write(out);
+                return out.toByteArray();
+            }
+        }
+        return specificationDocx(data, SpecificationSheetContent.from(
+                customClauses));
+    }
+
+    private byte[] specificationDocx(Map<String, String> data,
+                                     List<SpecificationSheetContent.Product> products) throws Exception {
+        return SpecificationSheetRenderer.docx(data, products,
+                loadImageBytes("public/images/logo.png", "/static/images/logo.png"),
+                loadImageBytes("public/images/partner.png", "/static/images/partner.png"));
     }
 
     private void setTableBordersSingle(org.apache.poi.xwpf.usermodel.XWPFTable table) {
@@ -2219,6 +2730,18 @@ public class DocumentGeneratorService {
     }
 
     public String generateTechSpecHtml(Map<String, String> rawData, List<String[]> customClauses) {
+        if (customClauses == null) return legacyReviewHtml(rawData, null);
+        return specificationHtml(rawData, SpecificationSheetContent.from(
+                customClauses));
+    }
+
+    private String specificationHtml(Map<String, String> data, List<SpecificationSheetContent.Product> products) {
+        return SpecificationSheetRenderer.html(data, products,
+                loadImageBytes("public/images/logo.png", "/static/images/logo.png"),
+                loadImageBytes("public/images/partner.png", "/static/images/partner.png"));
+    }
+
+    private String legacyReviewHtml(Map<String, String> rawData, List<String[]> customClauses) {
         Map<String, String> data = new java.util.HashMap<>();
         for (Map.Entry<String, String> entry : rawData.entrySet()) {
             data.put(entry.getKey(), escapeHtml(entry.getValue()));

@@ -12,6 +12,20 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class SpecificationUploadContractTest {
+    @org.junit.jupiter.api.BeforeEach
+    void authenticate() { authenticateAs("Admin"); }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(String role) {
+        var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "test", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                        "ROLE_" + role.toUpperCase(Locale.ROOT).replace(' ', '_'))));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+    }
     @org.junit.jupiter.api.io.TempDir
     Path testHome;
 
@@ -66,8 +80,10 @@ class SpecificationUploadContractTest {
         }
     }
 
-    @Test
-    void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"Admin", "Tender Executive", "MIS Executive"})
+    void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered(String role) throws Exception {
+        authenticateAs(role);
         String id = "compliance-contract-test-" + UUID.randomUUID();
         Path output = Path.of("public", "documents", id);
         Tender tender = new Tender();
@@ -102,7 +118,7 @@ class SpecificationUploadContractTest {
         String originalHome = System.getProperty("user.home");
         try {
             System.setProperty("user.home", testHome.toString());
-            var response = controller.uploadTechSpec("Admin", "test", id,
+            var response = controller.uploadTechSpec(role, "test", id,
                     new MockMultipartFile("file", "spec.pdf", "application/pdf", new byte[]{1}),
                     null, null, null, null, null);
             assertEquals(200, response.getStatusCode().value(), String.valueOf(response.getBody()));
@@ -133,5 +149,15 @@ class SpecificationUploadContractTest {
                 Files.delete(output);
             }
         }
+    }
+
+    @Test
+    void adminBidPackPermissionStillRequiresARealTender() {
+        var controller = new TenderController();
+        var repository = mock(TenderRepository.class);
+        when(repository.findById("test-tender")).thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(controller, "tenderRepository", repository);
+        var response = controller.generateBidDocs("Admin", "test", "test-tender", Map.of());
+        assertEquals(404, response.getStatusCode().value());
     }
 }

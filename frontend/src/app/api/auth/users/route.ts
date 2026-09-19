@@ -1,21 +1,21 @@
 import { NextResponse } from 'next/server';
 import db, { hashPassword, addActivityLog } from '@/lib/db';
-
-// Helper to check authorization for user management
-function canManageUsers(request: Request): boolean {
-  const userRole = request.headers.get('x-user-role');
-  return userRole === 'Admin' || userRole === 'MIS Team';
-}
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
-    const userRole = request.headers.get('x-user-role');
+    const actor = workflowActor(request, 'viewTenders');
+    if (!actor) return workflowForbidden();
+    const userRole = actor.role;
     if (userRole !== 'Admin' && userRole !== 'MIS Team' && userRole !== 'MIS Executive' && userRole !== 'Tender Executive' && userRole !== 'Clearance Team' && userRole !== 'TPC Team' && userRole !== 'TPC Pricing Team') {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Fetch all users sorted by role and username with email
     const rawUsers = db.prepare('SELECT username, role, email FROM users ORDER BY role DESC, username ASC').all() as { username: string; role: string; email?: string }[];
+    if (!workflowActor(request, 'manageUsers')) {
+      return NextResponse.json({ success: true, users: rawUsers.map(({ username, role }) => ({ username, role })) });
+    }
 
     // Get IST date variables for dynamic status resolution
     const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
@@ -124,11 +124,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    if (!canManageUsers(request)) {
-      return NextResponse.json({ success: false, error: 'Access denied: Admin or MIS Team only' }, { status: 403 });
-    }
+    const manager = workflowActor(request, 'manageUsers');
+    if (!manager) return workflowForbidden();
 
-    const adminUsername = request.headers.get('x-user-username') || 'admin';
+    const adminUsername = manager.username;
     const body = await request.json();
     const { username, password, role, email } = body;
 
@@ -192,11 +191,10 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    if (!canManageUsers(request)) {
-      return NextResponse.json({ success: false, error: 'Access denied: Admin or MIS Team only' }, { status: 403 });
-    }
+    const manager = workflowActor(request, 'manageUsers');
+    if (!manager) return workflowForbidden();
 
-    const adminUsername = request.headers.get('x-user-username') || 'admin';
+    const adminUsername = manager.username;
     const { searchParams } = new URL(request.url);
     const username = searchParams.get('username');
 

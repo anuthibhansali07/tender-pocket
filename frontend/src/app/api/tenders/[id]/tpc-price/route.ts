@@ -1,20 +1,29 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    if (!workflowActor(request, 'setTpcPrice')) return workflowForbidden();
     const { id } = await params;
     const body = await request.json();
-    const price = parseFloat(body.tpcPurchasePrice);
+    const rawPrice = body?.tpcPurchasePrice;
+    const price = typeof rawPrice === 'number' || typeof rawPrice === 'string' ? Number(rawPrice) : NaN;
 
-    if (isNaN(price) || price <= 0) {
+    if (!Number.isFinite(price) || price <= 0) {
       return NextResponse.json(
         { success: false, error: 'Valid manufacturer purchase price is required' },
         { status: 400 }
       );
+    }
+    const tender = db.prepare('SELECT spec_verification_status FROM tenders WHERE id = ?').get(id) as
+      { spec_verification_status: string } | undefined;
+    if (!tender) return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (tender.spec_verification_status !== 'Approved') {
+      return NextResponse.json({ success: false, error: 'Specification clearance is required before TPC pricing.' }, { status: 409 });
     }
 
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';

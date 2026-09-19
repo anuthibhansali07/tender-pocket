@@ -1,4 +1,6 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.config.WorkflowPermissions;
+import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.tenderpocket.models.*;
 import com.tenderpocket.repositories.*;
@@ -58,6 +60,7 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-role", required = false) String userRole,
             @RequestHeader(value = "x-user-username", required = false) String username) {
 
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         String authRole = getAuthenticatedRole();
         if (authRole != null && !authRole.isBlank()) userRole = authRole;
         String authUser = getAuthenticatedUsername();
@@ -110,10 +113,10 @@ public class WorkflowController {
         String authUser = getAuthenticatedUsername();
         if (authUser != null && !authUser.isBlank()) username = authUser;
 
-        if ("Admin".equalsIgnoreCase(userRole)) {
+        if (!WorkflowPermissions.allowed(UPLOAD_SPEC)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
                     "success", false,
-                    "error", "Access denied: Only Tender Executives have permission to submit specifications for clearance. Admin role is for system administration only."
+                    "error", "Access denied: Tender Executive or Admin required to submit specifications."
             ));
         }
 
@@ -121,6 +124,12 @@ public class WorkflowController {
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
         Tender tender = tOpt.get();
+        if (!List.of("Generated", "Rejected", "Pending", "Approved").contains(
+                String.valueOf(tender.getSpecVerificationStatus()))
+                || tender.getDownloadedDocs() == null || "[]".equals(tender.getDownloadedDocs())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Technical specifications must be generated before clearance submission."));
+        }
         tender.setCurrentStage("SPEC_CLEARANCE");
         tender.setSpecVerificationStatus("Pending");
         String assigned = (body != null && body.containsKey("assignedClearanceRep")) ? body.get("assignedClearanceRep") : "clearance";
@@ -165,10 +174,16 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "clearance") String username,
             @RequestBody(required = false) Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(APPROVE_SPEC)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
         Tender tender = tOpt.get();
+        if (!"Pending".equals(tender.getSpecVerificationStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Specification clearance is not pending."));
+        }
         tender.setCurrentStage("TPC_PRICING");
         tender.setSpecVerificationStatus("Approved");
         tenderRepository.save(tender);
@@ -225,11 +240,18 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "tpc") String username,
             @RequestBody Map<String, Object> body) {
 
+        if (!WorkflowPermissions.allowed(SET_TPC_PRICE)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
-        Double price = Double.parseDouble(body.get("tpcPurchasePrice").toString());
+        Double price = positivePrice(body.get("tpcPurchasePrice"));
+        if (price == null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Valid manufacturer purchase price is required"));
         Tender tender = tOpt.get();
+        if (!"Approved".equals(tender.getSpecVerificationStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Specification clearance is required before TPC pricing."));
+        }
         tender.setTpcPurchasePrice(price);
         tender.setCurrentStage("MIS_PRICING");
         tenderRepository.save(tender);
@@ -282,11 +304,19 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "misteam") String username,
             @RequestBody Map<String, Object> body) {
 
+        if (!WorkflowPermissions.allowed(SET_MIS_PRICE)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
-        Double price = Double.parseDouble(body.get("misFinalPrice").toString());
+        Double price = positivePrice(body.get("misFinalPrice"));
+        if (price == null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Valid MIS final price is required"));
         Tender tender = tOpt.get();
+        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getTpcPurchasePrice() == null
+                || !Double.isFinite(tender.getTpcPurchasePrice()) || tender.getTpcPurchasePrice() <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Approved specifications and a TPC quote are required before MIS pricing."));
+        }
         tender.setMisFinalPrice(price);
         tender.setCurrentStage("BID_DOC_PENDING");
         tenderRepository.save(tender);
@@ -313,6 +343,8 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody Map<String, Object> body) {
 
+        if (!WorkflowPermissions.allowed(RECORD_PAYMENT)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
@@ -329,6 +361,10 @@ public class WorkflowController {
 
         Tender tender = tOpt.get();
 
+        if (!"Approved".equals(tender.getVerificationStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Bid document approval is required before payment."));
+        }
         tender.setAssignedMisExecutive(assignedMis);
         tender.setCurrentStage("PAYMENT_APPROVAL");
         tenderRepository.save(tender);
@@ -377,6 +413,8 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(GENERATE_BIDS)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
@@ -385,6 +423,11 @@ public class WorkflowController {
         String comment = body.getOrDefault("comment", "Submitted document verification request.");
 
         Tender tender = tOpt.get();
+        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getMisFinalPrice() == null
+                || !Double.isFinite(tender.getMisFinalPrice()) || tender.getMisFinalPrice() <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Specification clearance and finalized MIS pricing are required before document verification."));
+        }
         tender.setAssignedMisExecutive(assignedMis);
         tender.setWorkingPath(workingPath);
         tender.setCurrentStage("DOC_VERIFICATION");
@@ -428,10 +471,16 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody(required = false) Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(RECORD_SUBMISSION)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
         Tender tender = tOpt.get();
+        if (!"Approved".equals(tender.getPaymentStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Payment approval is required before submission."));
+        }
         tender.setCurrentStage("SUBMISSION_PENDING");
         tenderRepository.save(tender);
 
@@ -472,6 +521,8 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(RECORD_OUTCOME)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
@@ -526,7 +577,8 @@ public class WorkflowController {
         String authRole = getAuthenticatedRole();
         String authUsername = getAuthenticatedUsername();
 
-        if (authRole == null || (!"Admin".equalsIgnoreCase(authRole) && !"MIS Team".equalsIgnoreCase(authRole))) {
+        if (!WorkflowPermissions.allowed(REVIEW_BIDS) && !WorkflowPermissions.allowed(APPROVE_SPEC)
+                && !WorkflowPermissions.allowed(SET_TPC_PRICE)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("success", false, "error", "Access denied: Valid MIS Team or Admin authentication required"));
         }
@@ -540,6 +592,9 @@ public class WorkflowController {
         }
 
         TenderApprovalRequest latest = requests.get(0);
+        if (!WorkflowPermissions.allowed(WorkflowPermissions.reviewAction(latest.getStage().name()))) {
+            return WorkflowPermissions.denied();
+        }
 
         // Verify request is still pending
         if (!"PENDING".equalsIgnoreCase(latest.getStatus())) {
@@ -564,13 +619,22 @@ public class WorkflowController {
         }
 
         String action = body.getOrDefault("action", "APPROVED").toUpperCase(); // APPROVED, REJECTED, CHANGES_REQUESTED
+        if (!List.of("APPROVED", "REJECTED", "CHANGES_REQUESTED").contains(action)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid approval action."));
+        }
         String comment = body.getOrDefault("comment", "Review completed by MIS Team.");
         String lossReasonMis = body.getOrDefault("lossReasonMis", "");
 
         if ("APPROVED".equals(action)) {
             switch (expectedStage) {
-                case "PAYMENT_APPROVAL" -> tender.setCurrentStage("DOC_VERIFICATION");
-                case "DOC_VERIFICATION" -> tender.setCurrentStage("SUBMISSION_PENDING");
+                case "PAYMENT_APPROVAL" -> {
+                    tender.setPaymentStatus("Approved");
+                    tender.setCurrentStage("SUBMISSION_PENDING");
+                }
+                case "DOC_VERIFICATION" -> {
+                    tender.setVerificationStatus("Approved");
+                    tender.setCurrentStage("PAYMENT_APPROVAL");
+                }
                 case "SUBMISSION_PENDING" -> {
                     tender.setSubmissionStatus("Approved");
                     tender.setOutcomeStatus("Pending");
@@ -607,7 +671,10 @@ public class WorkflowController {
                         tender.setStatus("Awarded");
                     }
                 }
-                case "SPEC_CLEARANCE" -> tender.setCurrentStage("TPC_PRICING");
+                case "SPEC_CLEARANCE" -> {
+                    tender.setSpecVerificationStatus("Approved");
+                    tender.setCurrentStage("TPC_PRICING");
+                }
                 case "TPC_PRICING"    -> {
                     if (latest.getTpcPurchasePrice() != null) {
                         tender.setTpcPurchasePrice(latest.getTpcPurchasePrice());
@@ -618,13 +685,23 @@ public class WorkflowController {
                     if (latest.getMisFinalPrice() != null) {
                         tender.setMisFinalPrice(latest.getMisFinalPrice());
                     }
-                    tender.setCurrentStage("BID_DOC_GENERATED");
+                    tender.setCurrentStage("BID_DOC_PENDING");
                 }
                 default -> {}
             }
             tenderRepository.save(tender);
         }
 
+        if (!"APPROVED".equals(action)) {
+            switch (expectedStage) {
+                case "SPEC_CLEARANCE" -> tender.setSpecVerificationStatus("Rejected");
+                case "DOC_VERIFICATION" -> tender.setVerificationStatus("Rejected");
+                case "PAYMENT_APPROVAL" -> tender.setPaymentStatus("Rejected");
+                case "SUBMISSION_PENDING" -> tender.setSubmissionStatus("Rejected");
+                default -> { }
+            }
+            tenderRepository.save(tender);
+        }
         latest.setStatus(action);
         if (!lossReasonMis.isEmpty()) latest.setLossReasonMis(lossReasonMis);
         latest.setUpdatedAt(java.time.LocalDateTime.now());
@@ -643,6 +720,8 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(RECORD_OUTCOME)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
         Optional<Tender> tOpt = tenderRepository.findById(id);
         if (tOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
 
@@ -665,6 +744,7 @@ public class WorkflowController {
     // GET /api/tenders/{id}/workflow-comments
     @GetMapping("/{id}/workflow-comments")
     public ResponseEntity<?> getComments(@PathVariable("id") String id) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<TenderComment> comments = commentRepository.findByTenderIdOrderByCreatedAtAsc(id);
         return ResponseEntity.ok(Map.of("success", true, "comments", comments));
     }
@@ -677,6 +757,7 @@ public class WorkflowController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         String authRole = getAuthenticatedRole();
         if (authRole != null && !authRole.isBlank()) userRole = authRole;
         String authUser = getAuthenticatedUsername();
@@ -694,5 +775,13 @@ public class WorkflowController {
         commentRepository.save(comment);
 
         return ResponseEntity.ok(Map.of("success", true, "comment", comment));
+    }
+
+    private Double positivePrice(Object value) {
+        if (!(value instanceof Number) && !(value instanceof String)) return null;
+        try {
+            double parsed = Double.parseDouble(value.toString());
+            return Double.isFinite(parsed) && parsed > 0 ? parsed : null;
+        } catch (NumberFormatException ignored) { return null; }
     }
 }

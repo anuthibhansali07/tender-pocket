@@ -1,13 +1,22 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'uploadSpecs');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
+    const tender = db.prepare('SELECT spec_verification_status, downloaded_docs FROM tenders WHERE id = ?').get(id) as
+      { spec_verification_status: string; downloaded_docs: string | null } | undefined;
+    if (!tender) return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (!['Generated', 'Rejected', 'Pending', 'Approved'].includes(tender.spec_verification_status)
+        || !tender.downloaded_docs || tender.downloaded_docs === '[]') {
+      return NextResponse.json({ success: false, error: 'Technical specifications must be generated before clearance submission.' }, { status: 409 });
+    }
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
 
     let body: any = {};
@@ -15,8 +24,7 @@ export async function POST(
       body = await request.json();
     } catch (e) {}
 
-    const auth = getAuthFromRequest(request);
-    const requestedBy = auth?.username || request.headers.get('x-user-username') || 'executive';
+    const requestedBy = auth.username;
     const authHeader = request.headers.get('authorization');
 
     const assignedTo = body.assignedClearanceRep || body.assignedTo || 'clearance';

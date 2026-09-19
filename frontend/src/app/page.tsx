@@ -84,6 +84,9 @@ export default function Dashboard() {
 
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
+  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin';
+  const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
+  const techSpecUploadInFlight = useRef(false);
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -1115,29 +1118,52 @@ export default function Dashboard() {
   };
 
   const handleTechSpecUpload = async (fileToUpload: File) => {
-    if (!selectedTender || !fileToUpload) return;
+    if (!selectedTender || !fileToUpload || techSpecUploadInFlight.current) return;
+    const tenderId = selectedTender.id;
+    techSpecUploadInFlight.current = true;
+    setUploadingTechSpec(true);
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
 
-      const response = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-tech-spec`, {
+      const response = await fetchWithAuth(`/api/tenders/${tenderId}/upload-tech-spec`, {
         method: 'POST',
         body: formData
       });
       const data = await response.json();
-      if (data.success) {
-        showToast('Technical Specification document uploaded successfully!', 'success');
-        updateTenderField({
-          has_tech_spec: true,
-          tech_spec_file: data.filename || fileToUpload.name,
-          spec_verification_status: 'Pending'
-        });
-      } else {
+      if (!response.ok || data.success !== true) {
         showToast(data.error || 'Failed to upload technical specification.', 'error');
+        return;
+      }
+      if (data.generated === false) {
+        showToast(data.message || 'No technical specifications were found.', 'success');
+        return;
+      }
+      if (data.generated !== true) {
+        showToast('The server did not confirm specification generation.', 'error');
+        return;
+      }
+      showToast(data.message || 'Technical specification sheets generated successfully.', 'success');
+      // The upload route already persisted Generated. Refresh rather than issuing a second
+      // workflow PATCH or submitting a clearance request merely because upload succeeded.
+      try {
+        const refreshed = await fetchWithAuth(`/api/tenders/${tenderId}`);
+        if (refreshed.ok) {
+          const result = await refreshed.json();
+          if (result.success && result.tender) {
+            setSelectedTender(prev => prev?.id === tenderId ? { ...prev, ...result.tender } : prev);
+          }
+        }
+        await fetchTenders();
+      } catch (refreshError) {
+        console.error('Sheets were generated, but refreshing tender details failed:', refreshError);
       }
     } catch (e) {
       console.error(e);
       showToast('Error uploading technical specification.', 'error');
+    } finally {
+      techSpecUploadInFlight.current = false;
+      setUploadingTechSpec(false);
     }
   };
 
@@ -5304,6 +5330,7 @@ export default function Dashboard() {
                             <input 
                               type="file" 
                               id="tech-spec-file-input-main"
+                              disabled={uploadingTechSpec}
                               accept=".pdf,.docx,.doc,.txt"
                               style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
                             />
@@ -5311,6 +5338,7 @@ export default function Dashboard() {
 
                           <button 
                             className="btn btn-primary" 
+                            disabled={uploadingTechSpec}
                             style={{ width: '100%', justifyContent: 'center', fontSize: '12.5px', marginTop: '4px' }}
                             onClick={async () => {
                               const inputEl = document.getElementById('tech-spec-file-input-main') as HTMLInputElement;
@@ -5319,31 +5347,10 @@ export default function Dashboard() {
                                 showToast('Please select a specification document to upload first.', 'error');
                                 return;
                               }
-                              try {
-                                showToast('Uploading document and attaching technical specification...', 'success');
-                                const formData = new FormData();
-                                formData.append('file', fileToUpload);
-                                const uploadRes = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-tech-spec`, {
-                                  method: 'POST',
-                                  body: formData
-                                });
-                                const uploadData = await uploadRes.json();
-                                if (uploadData.success) {
-                                  showToast('Technical Specification document uploaded successfully!', 'success');
-                                  updateTenderField({
-                                    has_tech_spec: true,
-                                    tech_spec_file: uploadData.filename || fileToUpload.name,
-                                    spec_verification_status: 'Generated'
-                                  });
-                                } else {
-                                  showToast(uploadData.error || 'Failed to upload document.', 'error');
-                                }
-                              } catch (e) {
-                                showToast('Error uploading technical specification.', 'error');
-                              }
+                              await handleTechSpecUpload(fileToUpload);
                             }}
                           >
-                            ⚙️ Upload & Attach Technical Specification
+                            {uploadingTechSpec ? 'Generating...' : 'Upload & Generate Technical Specification'}
                           </button>
                         </div>
                       ) : (
@@ -5974,7 +5981,7 @@ export default function Dashboard() {
                             <select 
                               value={emdPaymentMode}
                               onChange={(e) => setEmdPaymentMode(e.target.value)}
-                              disabled={selectedTender.payment_status === 'Approved'}
+                              disabled={!canRecordOperationalStages || selectedTender.payment_status === 'Approved'}
                               style={{ padding: '6px 8px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
                             >
                               <option value="">-- Choose Mode --</option>
@@ -5991,7 +5998,7 @@ export default function Dashboard() {
                               placeholder="e.g. 5000"
                               value={emdAmountActual}
                               onChange={(e) => setEmdAmountActual(e.target.value === '' ? '' : Number(e.target.value))}
-                              disabled={selectedTender.payment_status === 'Approved'}
+                              disabled={!canRecordOperationalStages || selectedTender.payment_status === 'Approved'}
                               style={{ padding: '6px 8px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
                             />
                           </div>
@@ -6002,7 +6009,7 @@ export default function Dashboard() {
                               placeholder="Ref / Txn No"
                               value={emdPaymentRef}
                               onChange={(e) => setEmdPaymentRef(e.target.value)}
-                              disabled={selectedTender.payment_status === 'Approved'}
+                              disabled={!canRecordOperationalStages || selectedTender.payment_status === 'Approved'}
                               style={{ padding: '6px 8px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
                             />
                           </div>
@@ -6012,7 +6019,7 @@ export default function Dashboard() {
                               type="date"
                               value={emdPaymentDate}
                               onChange={(e) => setEmdPaymentDate(e.target.value)}
-                              disabled={selectedTender.payment_status === 'Approved'}
+                              disabled={!canRecordOperationalStages || selectedTender.payment_status === 'Approved'}
                               style={{ padding: '6px 8px', borderRadius: '4px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
                             />
                           </div>
@@ -6039,7 +6046,7 @@ export default function Dashboard() {
                         </div>
 
                         {/* Action buttons */}
-                        {selectedTender.payment_status !== 'Approved' && (
+                        {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                             <button 
                               className="btn btn-secondary" 
@@ -6054,7 +6061,7 @@ export default function Dashboard() {
                             >
                               💾 Save Details
                             </button>
-                            {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && (
+                            {canRecordOperationalStages && (
                               <button 
                                 className="btn btn-primary" 
                                 style={{ flex: 1, padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
@@ -6180,7 +6187,7 @@ export default function Dashboard() {
                       </select>
                     </div>
 
-                    {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && selectedTender.status !== 'Submitted' && selectedTender.status !== 'Filed' && selectedTender.submission_status !== 'Pending' && (
+                    {canRecordOperationalStages && selectedTender.status !== 'Submitted' && selectedTender.status !== 'Filed' && selectedTender.submission_status !== 'Pending' && (
                       <button 
                         className="btn btn-primary" 
                         style={{ width: '100%', padding: '6px 12px', fontSize: '12px', justifyContent: 'center', marginBottom: '12px' }}
@@ -6321,7 +6328,7 @@ export default function Dashboard() {
                       )}
 
                       {/* Pending Outcome Controls (only if neither won nor lost) */}
-                      {!isWon && !isLost && (
+                      {canRecordOperationalStages && !isWon && !isLost && (
                         <>
                           {/* Loss Reason Input Box */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>

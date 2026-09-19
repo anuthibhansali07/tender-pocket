@@ -1,15 +1,10 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
-    const role = request.headers.get('x-user-role');
-    if (role !== 'Admin') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized: Admin access required' },
-        { status: 403 }
-      );
-    }
+    if (!workflowActor(request, 'viewAudit')) return workflowForbidden();
 
     const stmt = db.prepare(`
       SELECT a.*, t.title as tender_title

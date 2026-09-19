@@ -1,4 +1,6 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.config.WorkflowPermissions;
+import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.tenderpocket.models.*;
 import com.tenderpocket.repositories.*;
@@ -70,13 +72,8 @@ public class ApprovalController {
 
     /** Returns true if the current user is allowed to access the approvals center. */
     private boolean isAuthorized(String role) {
-        if (role == null) return false;
-        return "Admin".equalsIgnoreCase(role) || 
-               "MIS Team".equalsIgnoreCase(role) || 
-               "Clearance Team".equalsIgnoreCase(role) || 
-               "Specification Team".equalsIgnoreCase(role) || 
-               "TPC Pricing Team".equalsIgnoreCase(role) || 
-               "TPC Team".equalsIgnoreCase(role);
+        return WorkflowPermissions.allowed(role, REVIEW_BIDS) || WorkflowPermissions.allowed(role, APPROVE_SPEC)
+                || WorkflowPermissions.allowed(role, SET_TPC_PRICE);
     }
 
     /**
@@ -382,6 +379,9 @@ public class ApprovalController {
         }
 
         TenderApprovalRequest approvalReq = reqOpt.get();
+        if (!WorkflowPermissions.allowed(role, WorkflowPermissions.reviewAction(approvalReq.getStage().name()))) {
+            return WorkflowPermissions.denied();
+        }
 
         // Verify the request is still PENDING
         if (!"PENDING".equalsIgnoreCase(approvalReq.getStatus())) {
@@ -532,6 +532,16 @@ public class ApprovalController {
         }
 
         // Update the approval request record
+        if (!"APPROVED".equals(action)) {
+            switch (stage) {
+                case "SPEC_CLEARANCE" -> tender.setSpecVerificationStatus("Rejected");
+                case "DOC_VERIFICATION" -> tender.setVerificationStatus("Rejected");
+                case "PAYMENT_APPROVAL" -> tender.setPaymentStatus("Rejected");
+                case "SUBMISSION_PENDING" -> tender.setSubmissionStatus("Rejected");
+                default -> { }
+            }
+            tenderRepository.save(tender);
+        }
         approvalReq.setStatus(action);
         if (!lossReasonMis.isEmpty()) approvalReq.setLossReasonMis(lossReasonMis);
         approvalReq.setUpdatedAt(java.time.LocalDateTime.now());

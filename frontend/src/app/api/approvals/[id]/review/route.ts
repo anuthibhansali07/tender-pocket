@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
 import { reconcileApprovalRequests } from '@/lib/approvalsSync';
+import { workflowActor, workflowForbidden, canPerform, reviewAction, canReviewAssignment } from '@/lib/workflowAuthorization';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = getAuthFromRequest(request);
+    const auth = workflowActor(request, 'viewTenders');
     const allowedRoles = [
-      'Admin', 'MIS Team', 'MIS Executive',
+      'Admin', 'MIS Team',
       'Clearance Team', 'Specification Team',
       'TPC Pricing Team', 'TPC Team'
     ];
@@ -31,6 +31,10 @@ export async function POST(
     }
 
     const body = await request.json();
+    if (body.stage) {
+      const permission = reviewAction(String(body.stage));
+      if (!permission || !canPerform(auth.role, permission)) return workflowForbidden();
+    }
     const action = (body.action || '').toUpperCase();
     const outcome = body.outcome;
     const comment = (body.comment || '').trim();
@@ -81,11 +85,21 @@ export async function POST(
     }
 
     if (!approvalReq && tender && body.stage) {
+      if (body.stage !== tender.current_stage) {
+        return NextResponse.json({ success: false, error: 'Approval stage does not match the current tender stage.' }, { status: 409 });
+      }
+      const assigned = body.stage === 'SPEC_CLEARANCE' ? (tender.assigned_mis_member_spec || 'clearance')
+        : body.stage === 'TPC_PRICING' ? 'tpc'
+        : body.stage === 'DOC_VERIFICATION' ? (tender.assigned_mis_member_docs || tender.assigned_mis_member || 'misteam')
+        : body.stage === 'PAYMENT_APPROVAL' ? (tender.assigned_mis_member_emd || tender.assigned_mis_member || 'misteam')
+        : body.stage === 'SUBMISSION_PENDING' ? (tender.assigned_mis_member_submission || tender.assigned_mis_member || 'misteam')
+        : 'misteam';
+      if (!canReviewAssignment(auth.role, auth.username, assigned)) return workflowForbidden();
       const nowIso = new Date().toISOString();
       const insertResult = db.prepare(`
         INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'PENDING', ?, ?)
-      `).run(tender.id, body.stage, auth.username, 'misteam', nowIso, nowIso);
+      `).run(tender.id, body.stage, auth.username, assigned, nowIso, nowIso);
       approvalReq = db.prepare('SELECT * FROM tender_approval_requests WHERE id = ?').get(insertResult.lastInsertRowid) as any;
     }
 
@@ -95,6 +109,9 @@ export async function POST(
         { status: 404 }
       );
     }
+    const permission = reviewAction(String(approvalReq.stage));
+    if (!permission || !canPerform(auth.role, permission)) return workflowForbidden();
+    if (!canReviewAssignment(auth.role, auth.username, approvalReq.assigned_to)) return workflowForbidden();
 
     // ── Role Authorization Check ─────────────────────────────────────────────
     if (auth.role !== 'Admin') {
@@ -130,6 +147,11 @@ export async function POST(
     // ── Ensure Fresh Tender Reference ────────────────────────────────────────
     if (!tender) {
       tender = db.prepare('SELECT * FROM tenders WHERE id = ?').get(approvalReq.tender_id) as any;
+    }
+    if (!tender) return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (approvalReq.status === 'PENDING' && tender.current_stage !== approvalReq.stage
+        && !(approvalReq.stage === 'DOC_VERIFICATION' && tender.current_stage === 'BID_DOC_PENDING')) {
+      return NextResponse.json({ success: false, error: 'Approval stage does not match the current tender stage.' }, { status: 409 });
     }
 
     // If request was already approved, check if tender is truly approved or still needs advancing

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
     const stmt = db.prepare("SELECT username FROM users WHERE role = 'MIS Executive' OR role = 'Tender Executive' OR role = 'Executive' ORDER BY username ASC");
     const executives = (stmt.all() as { username: string }[]).map(r => r.username);
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import db, { Tender, addActivityLog } from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
+import db, { type Tender, addActivityLog } from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
+import { localDocumentUrl } from '@/lib/technicalSpecificationBackend';
 import fs from 'fs';
 import path from 'path';
 import { generateHtmlTemplates, generateTechnicalSpecificationHtml } from '@/lib/documentTemplates';
@@ -237,17 +238,10 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = getAuthFromRequest(request);
-  const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
-  const username = auth?.username || request.headers.get('x-user-username') || 'system';
-
-  const allowedRoles = ['Admin', 'MIS Team', 'MIS Executive', 'Tender Executive', 'Executive'];
-  if (!allowedRoles.includes(userRole) && userRole !== 'system') {
-    return NextResponse.json(
-      { success: false, error: 'Access denied: Executive, MIS Team, or Admin required to generate bid documents' },
-      { status: 403 }
-    );
-  }
+  const auth = workflowActor(request, 'generateBids');
+  if (!auth) return workflowForbidden();
+  const userRole = auth.role;
+  const username = auth.username;
 
   try {
     const { id } = await params;
@@ -273,6 +267,11 @@ export async function POST(
     }
 
     // Merge body with tender metadata fallbacks
+    if (tender.spec_verification_status !== 'Approved' || !Number.isFinite(tender.mis_final_price)
+        || Number(tender.mis_final_price) <= 0) {
+      return NextResponse.json({ success: false,
+        error: 'Specification clearance and finalized MIS pricing are required before generating bid documents.' }, { status: 409 });
+    }
     const templateData = {
       bidNumber: body.bidNumber || tender.ref_no || id,
       productDescription: body.productDescription || tender.product_name_as_per_tender || tender.title || 'Equipment / Goods',
@@ -305,13 +304,13 @@ export async function POST(
     // 1. Generate and save PDF using Puppeteer
     const pdfFileName = `Bid_Documents_${id}.pdf`;
     const pdfFilePath = path.join(docDir, pdfFileName);
-    const pdfDownloadPath = `/documents/${id}/${pdfFileName}`;
+    const pdfDownloadPath = localDocumentUrl(id, pdfFileName);
     await generatePdfFile(htmlContent, pdfFilePath);
 
     // 2. Generate and save Word document using html-to-docx
     const docFileName = `Bid_Documents_${id}.docx`;
     const docFilePath = path.join(docDir, docFileName);
-    const docDownloadPath = `/documents/${id}/${docFileName}`;
+    const docDownloadPath = localDocumentUrl(id, docFileName);
 
     const docxBuffer = await HTMLtoDOCX(htmlContent, null, {
       table: { row: { cantSplit: true } },
@@ -332,12 +331,12 @@ export async function POST(
 
     const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
     const specPdfFilePath = path.join(docDir, specPdfFileName);
-    const specPdfDownloadPath = `/documents/${id}/${specPdfFileName}`;
+    const specPdfDownloadPath = localDocumentUrl(id, specPdfFileName);
     await generatePdfFile(specHtml, specPdfFilePath);
 
     const specDocFileName = `Technical_Specification_Sheet_${id}.docx`;
     const specDocFilePath = path.join(docDir, specDocFileName);
-    const specDocDownloadPath = `/documents/${id}/${specDocFileName}`;
+    const specDocDownloadPath = localDocumentUrl(id, specDocFileName);
 
     const specDocxBuffer = await HTMLtoDOCX(specHtml, null, {
       table: { row: { cantSplit: true } },

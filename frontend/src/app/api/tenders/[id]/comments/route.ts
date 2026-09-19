@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server';
 import db, { addActivityLog } from '@/lib/db';
+import { workflowActor, workflowForbidden, redactManufacturerPricing } from '@/lib/workflowAuthorization';
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
     const stmt = db.prepare('SELECT * FROM tender_workflow_comments WHERE tender_id = ? ORDER BY created_at ASC');
     const comments = stmt.all(id);
 
-    return NextResponse.json({ success: true, comments });
+    return NextResponse.json({ success: true, comments: redactManufacturerPricing(comments, auth.role) });
   } catch (error: any) {
     console.error('Error fetching comments:', error);
     return NextResponse.json(
@@ -25,9 +28,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
-    const userRole = request.headers.get('x-user-role') || 'Unknown';
-    const username = request.headers.get('x-user-username') || 'system';
+    const userRole = auth.role;
+    const username = auth.username;
 
     const body = await request.json();
     const { comment, phase } = body;
