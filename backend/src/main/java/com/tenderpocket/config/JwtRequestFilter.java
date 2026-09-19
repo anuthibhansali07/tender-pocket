@@ -42,12 +42,14 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 chain.doFilter(request, response);
                 return;
             }
+        } else {
+            // Read x-user-username and x-user-role headers for proxy requests from Next.js
+            username = request.getHeader("x-user-username");
+            role = request.getHeader("x-user-role");
         }
 
-        // No Authorization header present — no authentication context is set.
-        // SecurityConfig will permit public routes and block /api/** endpoints.
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String grantedRole = (role != null) ? role : "UNKNOWN";
+        if (username != null && !username.isEmpty() && SecurityContextHolder.getContext().getAuthentication() == null) {
+            String grantedRole = (role != null && !role.isEmpty()) ? role : "User";
             SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + grantedRole.toUpperCase().replace(" ", "_"));
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     username, null, Collections.singletonList(authority));
