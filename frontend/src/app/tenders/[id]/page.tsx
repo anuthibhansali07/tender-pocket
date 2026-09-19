@@ -42,6 +42,8 @@ export default function TenderDetailPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
+  const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
+  const techSpecUploadInFlight = useRef(false);
 
   // Data States
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
@@ -444,6 +446,50 @@ export default function TenderDetailPage() {
     } catch (e) {
       showToast('Error communicating with server.', 'error');
       alert('Error communicating with server.');
+    }
+  };
+
+  const handleTechSpecUpload = async (fileToUpload: File) => {
+    if (!selectedTender || techSpecUploadInFlight.current) return;
+    const tenderId = selectedTender.id;
+    techSpecUploadInFlight.current = true;
+    setUploadingTechSpec(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      const response = await fetchWithAuth(`/api/tenders/${tenderId}/upload-tech-spec`, {
+        method: 'POST', body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok || data.success !== true) {
+        showToast(data.error || 'Failed to upload technical specification.', 'error');
+        return;
+      }
+      if (data.generated === false) {
+        showToast(data.message || 'No technical specifications were found.', 'success');
+        return;
+      }
+      if (data.generated !== true) {
+        showToast('The server did not confirm specification generation.', 'error');
+        return;
+      }
+      showToast(data.message || 'Technical specification sheets generated successfully.', 'success');
+      try {
+        const refreshed = await fetchWithAuth(`/api/tenders/${tenderId}`);
+        if (refreshed.ok) {
+          const result = await refreshed.json();
+          if (result.success && result.tender) {
+            setSelectedTender(prev => prev?.id === tenderId ? { ...prev, ...result.tender } : prev);
+          }
+        }
+      } catch (refreshError) {
+        console.error('Sheets were generated, but refreshing tender details failed:', refreshError);
+      }
+    } catch {
+      showToast('Error uploading technical specification.', 'error');
+    } finally {
+      techSpecUploadInFlight.current = false;
+      setUploadingTechSpec(false);
     }
   };
 
@@ -1137,6 +1183,7 @@ export default function TenderDetailPage() {
                               <input 
                                 type="file" 
                                 id="tech-spec-file-input-detail"
+                                disabled={uploadingTechSpec}
                                 accept=".pdf,.docx,.doc,.txt"
                                 style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
                               />
@@ -1144,6 +1191,7 @@ export default function TenderDetailPage() {
 
                             <button 
                               className="btn btn-primary"
+                              disabled={uploadingTechSpec}
                               style={{ width: '100%', justifyContent: 'center', fontSize: '12.5px', marginTop: '4px' }}
                               onClick={async () => {
                                 const inputEl = document.getElementById('tech-spec-file-input-detail') as HTMLInputElement;
@@ -1152,31 +1200,10 @@ export default function TenderDetailPage() {
                                   showToast('Please select a specification document to upload first.', 'error');
                                   return;
                                 }
-                                try {
-                                  showToast('Uploading document and attaching technical specification...', 'success');
-                                  const formData = new FormData();
-                                  formData.append('file', fileToUpload);
-                                  const uploadRes = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-tech-spec`, {
-                                    method: 'POST',
-                                    body: formData
-                                  });
-                                  const uploadData = await uploadRes.json();
-                                  if (uploadData.success) {
-                                    showToast('Technical Specification document uploaded successfully!', 'success');
-                                    updateTenderField({
-                                      has_tech_spec: true,
-                                      tech_spec_file: uploadData.filename || fileToUpload.name,
-                                      spec_verification_status: 'Generated'
-                                    });
-                                  } else {
-                                    showToast(uploadData.error || 'Failed to upload document.', 'error');
-                                  }
-                                } catch (e) {
-                                  showToast('Error uploading technical specification.', 'error');
-                                }
+                                await handleTechSpecUpload(fileToUpload);
                               }}
                             >
-                              ⚙️ Upload & Attach Technical Specification
+                              {uploadingTechSpec ? 'Generating...' : 'Upload & Generate Technical Specification'}
                             </button>
                           </div>
                         ) : (

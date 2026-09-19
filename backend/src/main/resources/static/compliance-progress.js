@@ -558,7 +558,7 @@
       const result = await response.clone().json().catch(() => ({}));
       if (!response.ok || result.success === false) {
         clearInterval(timer); timer = null;
-        render({status: "FAILED", message: result.error || `Conversion failed (HTTP ${response.status}).`,
+        render({...result, status: "FAILED", message: result.error || `Conversion failed (HTTP ${response.status}).`,
           percent: latestData?.percent || 0, events: latestData?.events || []});
       } else if (result.success) {
         clearInterval(timer); timer = null;
