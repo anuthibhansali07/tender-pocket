@@ -10,6 +10,10 @@ services:
       - SPRING_PORT=${SPRING_PORT:-8090}
       - PORT=${SPRING_PORT:-8090}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - TECHSPEC_USD_TO_INR_RATE=${TECHSPEC_USD_TO_INR_RATE}
+      - TECHSPEC_USD_TO_INR_RATE_DATE=${TECHSPEC_USD_TO_INR_RATE_DATE}
     volumes:
       - ./tenders.db:/app/tenders.db
       - ./public/documents:/app/public/documents
