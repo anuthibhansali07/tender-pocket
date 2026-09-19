@@ -41,7 +41,6 @@ final class SpecificationSheetRenderer {
             .reference { text-align:center; font-weight:bold; }
             .product { text-align:center; font-weight:bold; border:0.5pt solid #666; padding:4pt; page-break-after:avoid; }
             .next { page-break-before:always; }
-            .clarifications { font-size:10pt; }
             </style></head><body>
             """);
         out.append("<div class=\"letterhead\"><table><tr><td style=\"width:12%\">")
@@ -72,11 +71,6 @@ final class SpecificationSheetRenderer {
                         .append("</td><td></td><td></td><td></td></tr>");
             }
             out.append("</tbody></table>");
-            if (!product.clarifications().isEmpty()) {
-                out.append("<div class=\"clarifications\"><h2>Source Clarifications</h2><ol>");
-                for (String note : product.clarifications()) out.append("<li>").append(escape(note)).append("</li>");
-                out.append("</ol></div>");
-            }
             out.append("</div>");
         }
         return out.append("</body></html>").toString();

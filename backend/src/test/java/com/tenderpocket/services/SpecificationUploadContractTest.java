@@ -66,8 +66,9 @@ class SpecificationUploadContractTest {
         }
     }
 
-    @Test
-    void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"Admin", "Tender Executive", "MIS Executive"})
+    void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered(String role) throws Exception {
         String id = "compliance-contract-test-" + UUID.randomUUID();
         Path output = Path.of("public", "documents", id);
         Tender tender = new Tender();
@@ -102,7 +103,7 @@ class SpecificationUploadContractTest {
         String originalHome = System.getProperty("user.home");
         try {
             System.setProperty("user.home", testHome.toString());
-            var response = controller.uploadTechSpec("Admin", "test", id,
+            var response = controller.uploadTechSpec(role, "test", id,
                     new MockMultipartFile("file", "spec.pdf", "application/pdf", new byte[]{1}),
                     null, null, null, null, null);
             assertEquals(200, response.getStatusCode().value(), String.valueOf(response.getBody()));
@@ -133,5 +134,11 @@ class SpecificationUploadContractTest {
                 Files.delete(output);
             }
         }
+    }
+
+    @Test
+    void standaloneConversionDoesNotGrantAdminBidPackPermission() {
+        var response = new TenderController().generateBidDocs("Admin", "test", "test-tender", Map.of());
+        assertEquals(403, response.getStatusCode().value());
     }
 }

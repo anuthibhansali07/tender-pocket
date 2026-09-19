@@ -9,6 +9,9 @@ import com.tenderpocket.models.TenderWorkflowStage;
 import com.tenderpocket.repositories.ActivityLogRepository;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.services.DocumentGeneratorService;
+import com.tenderpocket.services.ComplianceProgressService;
+import com.tenderpocket.services.ComplianceConversionMetrics;
+import com.tenderpocket.services.AISpecificationIntelligenceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -49,6 +52,9 @@ public class TenderController {
 
     @Autowired
     private DocumentGeneratorService documentGeneratorService;
+
+    @Autowired
+    private ComplianceProgressService complianceProgressService;
 
     @Autowired
     private com.tenderpocket.services.GeMScraperService geMScraperService;
@@ -679,6 +685,11 @@ public class TenderController {
         return docs.contains("technical specification") || docs.contains("tech_spec") || docs.contains("uploaded pdf");
     }
 
+    @GetMapping("/{id}/tech-spec-progress")
+    public ResponseEntity<?> getTechSpecProgress(@PathVariable("id") String id) {
+        return ResponseEntity.ok(complianceProgressService.snapshot(id));
+    }
+
     @PostMapping("/{id}/upload-tech-spec")
     public ResponseEntity<?> uploadTechSpec(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
@@ -695,13 +706,6 @@ public class TenderController {
             offeredModel = offeredModelLegacy;
         }
 
-        if ("Admin".equalsIgnoreCase(userRole)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                    "success", false,
-                    "error", "Access denied: Only Tender Executives have permission to upload technical specifications. Admin role is for system administration only."
-            ));
-        }
-
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
@@ -710,6 +714,10 @@ public class TenderController {
         if (file.isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
         }
+
+        complianceProgressService.start(id,
+                file.getOriginalFilename() != null ? file.getOriginalFilename() : "document");
+        ComplianceConversionMetrics conversionMetrics = complianceProgressService.metricsFor(id);
 
         Tender tender = opt.get();
 
@@ -726,6 +734,8 @@ public class TenderController {
             try (FileOutputStream fos = new FileOutputStream(inputFilePath)) {
                 fos.write(uploadedBytes);
             }
+            complianceProgressService.update(id, "UPLOADED",
+                    "Upload saved. Inspecting " + originalFilename + ".", 3, 0, 0, 0);
 
             // Save offeredModel on Tender entity if passed
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
@@ -765,59 +775,102 @@ public class TenderController {
             data.put("signatoryDesignation", "Partner");
 
             // 3. Parse technical clauses from input specification.pdf (with OCR fallback & tender title context)
-            List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(uploadedBytes, originalFilename, data);
+            List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(
+                    uploadedBytes, originalFilename, data,
+                    (stage, message, percent, completed, total, clauses) ->
+                            complianceProgressService.update(id, stage, message, percent,
+                                    completed, total, clauses), conversionMetrics);
+
+            if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
+                String message = "No products found with technical specifications.";
+                tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(),
+                        List.of(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+                                "local_path", inputDownloadUrl, "created_date", LocalDate.now().toString()))));
+                tenderRepository.save(tender);
+                complianceProgressService.completeNoProducts(id, message);
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("success", true);
+                response.put("generated", false);
+                response.put("message", message);
+                response.put("products", List.of());
+                response.put("pdfDownloadUrl", null);
+                response.put("docxDownloadUrl", null);
+                response.put("clauseCount", 0);
+                response.put("status", resolveStatus(tender, LocalDate.now().toString()));
+                response.put("metrics", conversionMetrics.snapshot());
+                return ResponseEntity.ok(response);
+            }
 
             if (extractedClauses == null || extractedClauses.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                        "success", false,
-                        "error", "Document is not readable, please provide a different input."
-                ));
+                complianceProgressService.fail(id,
+                        "Conversion stopped because a required page batch could not be validated.");
+                Map<String, Object> failure = new LinkedHashMap<>();
+                failure.put("success", false);
+                failure.put("error", "Could not validate every specification page. Please retry; no partial sheets were generated.");
+                failure.put("metrics", conversionMetrics.snapshot());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(failure);
             }
 
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
                 data.put("offeredModel", offeredModel.trim());
             }
 
-            // 4. Generate formatted output PDF
-            byte[] pdfBytes = documentGeneratorService.generateTechSpecPdf(data, extractedClauses);
-            String pdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String pdfFilePath = docDir + "/" + pdfFileName;
-            String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
-            try (FileOutputStream fos = new FileOutputStream(pdfFilePath)) {
-                fos.write(pdfBytes);
-            }
-
-            // 5. Generate formatted output Word DOCX
-            byte[] docxBytes = documentGeneratorService.generateTechSpecDocx(data, extractedClauses);
-            String docxFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String docxFilePath = docDir + "/" + docxFileName;
-            String docxDownloadUrl = "/documents/" + id + "/" + docxFileName;
-            try (FileOutputStream fos = new FileOutputStream(docxFilePath)) {
-                fos.write(docxBytes);
-            }
-
-            // 6. Copy generated Technical Specification PDF and Word DOCX directly to Downloads folder
-            String downloadsDirStr = System.getProperty("user.home") + "/Downloads";
-            File downloadsDir = new File(downloadsDirStr);
-            if (downloadsDir.exists() && downloadsDir.isDirectory()) {
-                try (FileOutputStream fosPdf = new FileOutputStream(new File(downloadsDir, pdfFileName));
-                     FileOutputStream fosDocx = new FileOutputStream(new File(downloadsDir, docxFileName))) {
-                    fosPdf.write(pdfBytes);
-                    fosDocx.write(docxBytes);
-                } catch (Exception dlEx) {
-                    System.err.println("[TenderController] Warning: Could not copy files to Downloads folder: " + dlEx.getMessage());
-                }
-            }
-
-            // 7. Update downloaded_docs metadata without overwriting existing documents
             String createdDate = LocalDate.now().toString();
-            List<Map<String, String>> newDocs = new ArrayList<>(List.of(
-                    Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf", "local_path", inputDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", docxFileName, "local_path", docxDownloadUrl, "created_date", createdDate)
-            ));
+            List<Map<String, String>> newDocs = new ArrayList<>();
+            newDocs.add(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+                    "local_path", inputDownloadUrl, "created_date", createdDate));
+            List<com.tenderpocket.services.SpecificationSheetContent.Product> sheets =
+                    com.tenderpocket.services.SpecificationSheetContent.from(extractedClauses);
+            if (sheets.isEmpty()) throw new IllegalStateException("No product specifications found");
+            List<Map<String, Object>> products = new ArrayList<>();
+            int totalClauses = sheets.stream().mapToInt(
+                    com.tenderpocket.services.SpecificationSheetContent.Product::clauseCount).sum();
+            conversionMetrics.setResultCounts(sheets.size(), totalClauses);
+            conversionMetrics.beginRendering();
+            int ordinal = 0;
+            Set<String> usedFileStems = new HashSet<>();
+            for (var sheet : sheets) {
+                String stem = sheet.fileStem(++ordinal);
+                if (!usedFileStems.add(stem.toLowerCase(Locale.ROOT))) {
+                    stem += "_Product_" + ordinal;
+                    usedFileStems.add(stem.toLowerCase(Locale.ROOT));
+                }
+                String pdfFileName = stem + ".pdf", docxFileName = stem + ".docx";
+                String productPdfUrl = "/documents/" + id + "/" + pdfFileName;
+                String productDocxUrl = "/documents/" + id + "/" + docxFileName;
+                int percent = 80 + (ordinal - 1) * 16 / sheets.size();
+                complianceProgressService.update(id, "RENDERING_PDF", "Generating PDF for " + sheet.name(),
+                        percent, 0, 0, totalClauses);
+                byte[] pdfBytes = documentGeneratorService.generateProductSheetPdf(data, sheet);
+                complianceProgressService.update(id, "RENDERING_DOCX", "Generating Word document for " + sheet.name(),
+                        percent, 0, 0, totalClauses);
+                byte[] docxBytes = documentGeneratorService.generateProductSheetDocx(data, sheet);
+                Files.write(Paths.get(docDir, pdfFileName), pdfBytes);
+                Files.write(Paths.get(docDir, docxFileName), docxBytes);
+                File downloadsDir = new File(System.getProperty("user.home"), "Downloads");
+                if (downloadsDir.isDirectory()) {
+                    try {
+                        Files.write(downloadsDir.toPath().resolve(pdfFileName), pdfBytes);
+                        Files.write(downloadsDir.toPath().resolve(docxFileName), docxBytes);
+                    } catch (java.io.IOException copyFailure) {
+                        System.err.println("[TenderController] Optional Downloads copy failed.");
+                    }
+                }
+                newDocs.add(Map.of("name", "Technical Specification - " + sheet.name() + " (PDF)",
+                        "filename", pdfFileName, "local_path", productPdfUrl, "created_date", createdDate));
+                newDocs.add(Map.of("name", "Technical Specification - " + sheet.name() + " (DOCX)",
+                        "filename", docxFileName, "local_path", productDocxUrl, "created_date", createdDate));
+                products.add(Map.of("productName", sheet.name(), "scheduleNumber", sheet.schedule(),
+                        "clauseCount", sheet.clauseCount(), "pdfDownloadUrl", productPdfUrl,
+                        "docxDownloadUrl", productDocxUrl));
+            }
+            conversionMetrics.endRendering();
+            String pdfDownloadUrl = (String) products.get(0).get("pdfDownloadUrl");
+            String docxDownloadUrl = (String) products.get(0).get("docxDownloadUrl");
 
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
+            complianceProgressService.update(id, "SAVING",
+                    "Saving output files and document links.", 97, 0, 0, extractedClauses.size());
             tenderRepository.save(tender);
 
             // Audit Log
@@ -830,18 +883,27 @@ public class TenderController {
 
             Map<String, Object> response = new java.util.HashMap<>();
             response.put("success", true);
+            response.put("generated", true);
             response.put("pdfDownloadUrl", pdfDownloadUrl);
             response.put("docxDownloadUrl", docxDownloadUrl);
-            response.put("message", "Technical Specification Sheet generated successfully in PDF and Word DOCX format!");
+            response.put("products", products);
+            response.put("message", "Separate technical data sheets generated for " + products.size() + " products.");
             response.put("status", resolveStatus(tender, LocalDate.now().toString()));
-            response.put("clauseCount", extractedClauses.size());
+            response.put("clauseCount", totalClauses);
+
+            complianceProgressService.completeProducts(id, totalClauses, products);
+            response.put("metrics", conversionMetrics.snapshot());
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("success", false, "error", "Failed to upload technical specification: " + e.getMessage()));
+            complianceProgressService.fail(id, "Compliance creation failed: " + e.getMessage());
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("success", false);
+            failure.put("error", "Failed to upload technical specification: " + e.getMessage());
+            failure.put("metrics", conversionMetrics.snapshot());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(failure);
         }
     }
 

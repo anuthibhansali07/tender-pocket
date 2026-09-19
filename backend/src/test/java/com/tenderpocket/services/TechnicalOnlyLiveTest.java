@@ -39,7 +39,7 @@ class TechnicalOnlyLiveTest {
                     stages.add(stage); System.out.println("[LiveLowReasoning] " + stage + ": " + message);
                 }, metrics);
         assertTrue(AISpecificationIntelligenceService.isCompletedEmpty(empty));
-        assertFalse(stages.contains("EXTRACTING"), "Confirmed empty discovery must stop before sheet extraction");
+        assertTrue(stages.contains("NO_PRODUCTS"), "Combined discovery/extraction should report the empty result");
 
         String[] lines = {"Technical Specifications for Pump Alpha",
                 "1.1 Capacity shall be 100 litres.",

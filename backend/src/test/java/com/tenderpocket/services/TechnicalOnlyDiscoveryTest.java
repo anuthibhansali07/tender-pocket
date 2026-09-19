@@ -26,28 +26,32 @@ class TechnicalOnlyDiscoveryTest {
         }
     }
 
-    @Test void confirmedZeroProductsSkipsAllExtractionCalls() throws Exception {
+    @Test void emptyDocumentNeedsOneCombinedCallAndNoSeparateDiscovery() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         var ai = new AISpecificationIntelligenceService() {
-            @Override List<String> identifyProductsForConversion(String text) { return confirmedEmptyProducts(); }
+            @Override List<String> identifyProductsForConversion(String text) {
+                fail("Discovery must be combined with extraction"); return List.of();
+            }
             @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
                     Map<String, String> data, List<String> products) {
-                calls.incrementAndGet(); return List.of();
+                calls.incrementAndGet(); return completedEmptyRows();
             }
         };
         var generator = new DocumentGeneratorService();
         ReflectionTestUtils.setField(generator, "aiSpecificationIntelligenceService", ai);
         var result = generator.parseSpecificationClauses(pdf(true), "admin.pdf", Map.of());
         assertTrue(AISpecificationIntelligenceService.isCompletedEmpty(result));
-        assertEquals(0, calls.get());
+        assertEquals(1, calls.get());
     }
 
-    @Test void failedDiscoveryIsNotNoProductsAndDoesNotLaunchExtraction() throws Exception {
+    @Test void failedCombinedBatchIsNotNoProducts() throws Exception {
         var ai = new AISpecificationIntelligenceService() {
-            @Override List<String> identifyProductsForConversion(String text) { return List.of(); }
+            @Override List<String> identifyProductsForConversion(String text) {
+                fail("Discovery must be combined with extraction"); return List.of();
+            }
             @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
                     Map<String, String> data, List<String> products) {
-                fail("Failed discovery must not start extraction"); return List.of();
+                return List.of();
             }
         };
         var generator = new DocumentGeneratorService();
@@ -57,16 +61,16 @@ class TechnicalOnlyDiscoveryTest {
         assertFalse(AISpecificationIntelligenceService.isCompletedEmpty(result));
     }
 
-    @Test void scansRequireNativeProductVerificationBeforeAnEmptyResult() throws Exception {
+    @Test void scansAreReadNativelyOnceBeforeAnEmptyResult() throws Exception {
         var nativeCalls = new AtomicInteger();
         var ai = new AISpecificationIntelligenceService() {
             @Override List<String> identifyProductsForConversion(String text) { return confirmedEmptyProducts(); }
             @Override List<String> identifyProductsInPdfBatch(String text, byte[] bytes) {
-                assertNotNull(bytes); nativeCalls.incrementAndGet(); return confirmedEmptyProducts();
+                fail("A separate native discovery request is unnecessary"); return List.of();
             }
             @Override List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
                     Map<String, String> data, List<String> products) {
-                fail("No sheet extraction for verified empty scans"); return List.of();
+                assertNotNull(bytes); nativeCalls.incrementAndGet(); return completedEmptyRows();
             }
         };
         var generator = new DocumentGeneratorService();

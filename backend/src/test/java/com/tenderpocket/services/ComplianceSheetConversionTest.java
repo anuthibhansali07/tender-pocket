@@ -323,7 +323,7 @@ class ComplianceSheetConversionTest {
         assertTrue(html.contains("Compliance (Yes/No)"));
         assertFalse(html.contains("To Be Assessed During Bid Evaluation"));
         assertFalse(html.contains("Not provided"));
-        assertTrue(html.contains("Source Clarifications"));
+        assertFalse(html.contains("Source Clarifications"));
         assertTrue(html.contains("Capacity shall be <strong>100 litres</strong>."));
         assertTrue(html.contains("Capacity shall be <strong>120 litres</strong>."));
         assertTrue(html.contains("Pump Alpha"));
@@ -616,7 +616,7 @@ class ComplianceSheetConversionTest {
     }
 
     @Test
-    void failedPdfBatchKeepsSplittingUntilSinglePages() throws Exception {
+    void failedPdfBatchDoesNotFanOutIntoSinglePageCalls() throws Exception {
         byte[] pdf;
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             for (int i = 1; i <= 8; i++) {
@@ -671,8 +671,9 @@ class ComplianceSheetConversionTest {
 
         List<String[]> rows = generator.parseSpecificationClauses(pdf, "split-retry.pdf", baseData());
 
-        assertEquals(8, rows.size());
-        assertEquals(8, singlePageCalls.get());
+        assertTrue(rows.isEmpty());
+        assertFalse(AISpecificationIntelligenceService.isCompletedEmpty(rows));
+        assertEquals(0, singlePageCalls.get());
     }
 
     @Test

@@ -20,6 +20,28 @@ class SpecificationSheetOutputTest {
     }
 
     @Test
+    void pdfOmitsReviewAppendixWithoutDiscardingNotesOrChangingDocx() throws Exception {
+        String note = "REVIEW_ONLY_SENTINEL: verify this reading against the source.";
+        String[] source = row("3.10", "Capacity shall be 100 litres.", "requirement", "PDF p. 1");
+        source[6] = note;
+        var product = SpecificationSheetContent.from(Collections.singletonList(source)).get(0);
+        assertTrue(product.clarifications().stream().anyMatch(text -> text.contains(note)));
+        var generator = new DocumentGeneratorService();
+        try (PDDocument pdf = PDDocument.load(generator.generateProductSheetPdf(Map.of(), product))) {
+            String text = new PDFTextStripper().getText(pdf);
+            assertTrue(text.contains("Capacity"));
+            assertFalse(text.contains("Source Clarifications"));
+            assertFalse(text.contains("REVIEW_ONLY_SENTINEL"));
+        }
+        try (XWPFDocument docx = new XWPFDocument(new ByteArrayInputStream(
+                generator.generateProductSheetDocx(Map.of(), product)))) {
+            String text = String.join("\n", docx.getParagraphs().stream().map(XWPFParagraph::getText).toList());
+            assertTrue(text.contains("Source Clarifications"), "Only PDF output was requested to change");
+            assertTrue(text.contains(note));
+        }
+    }
+
+    @Test
     void contentPreservesSectionsContinuationsAndConflicts() {
         List<String[]> input = List.of(
                 row("3.10", "Power input: 220-240V", "requirement", "PDF p. 1"),

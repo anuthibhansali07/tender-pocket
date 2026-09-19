@@ -158,6 +158,10 @@ public final class ComplianceConversionMetrics {
     public void incrementSplitRetries() { splitRetries.increment(); }
     public void incrementRateLimitRetries() { rateLimitRetries.increment(); }
 
+    public synchronized void addWarning(String warning) {
+        if (warning != null && !warning.isBlank() && !warnings.contains(warning)) warnings.add(warning);
+    }
+
     public Map<String, Object> snapshot() {
         long input = inputTokens.sum();
         long cached = Math.min(input, cachedInputTokens.sum());
