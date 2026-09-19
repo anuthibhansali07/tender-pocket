@@ -100,7 +100,14 @@ public class DatabaseConfig {
             System.err.println("[DatabaseConfig] PostgreSQL connection failed (" + e.getMessage() + "). Falling back to SQLite database tenders.db");
             HikariConfig sqliteConfig = new HikariConfig();
             sqliteConfig.setDriverClassName("org.sqlite.JDBC");
-            sqliteConfig.setJdbcUrl("jdbc:sqlite:tenders.db");
+            
+            String envDbPath = System.getenv("DATABASE_PATH");
+            String sqlitePath = (envDbPath != null && !envDbPath.isEmpty()) ? envDbPath : "tenders.db";
+            if ("tenders.db".equals(sqlitePath) && new java.io.File("../frontend/tenders.db").exists()) {
+                sqlitePath = "../frontend/tenders.db";
+            }
+            System.out.println("[DatabaseConfig] Using SQLite Database Path: " + sqlitePath);
+            sqliteConfig.setJdbcUrl("jdbc:sqlite:" + sqlitePath);
             sqliteConfig.setMaximumPoolSize(10);
             return new HikariDataSource(sqliteConfig);
         }
