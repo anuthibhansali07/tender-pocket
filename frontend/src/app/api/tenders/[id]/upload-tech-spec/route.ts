@@ -69,7 +69,8 @@ export async function POST(
     }
 
     const backendFormData = new FormData();
-    backendFormData.append('file', file, originalFilename);
+    const fileBlob = new Blob([buffer], { type: file.type || 'application/pdf' });
+    backendFormData.append('file', fileBlob, originalFilename);
     for (const key of ['offeredModel', 'offered_model', 'offeredMake', 'scheduleNo', 'productDescription']) {
       const value = formData.get(key);
       if (typeof value === 'string') backendFormData.append(key, value);
