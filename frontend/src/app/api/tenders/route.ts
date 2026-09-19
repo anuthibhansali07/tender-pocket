@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import db, { Tender } from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
+import { workflowActor, workflowForbidden, redactManufacturerPricing, forbiddenPatchFields } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
@@ -25,9 +27,8 @@ export async function GET(request: Request) {
     const todayISTString = `${year}-${month}-${day}`;
 
     // Get user role from auth helper or headers
-    const auth = getAuthFromRequest(request);
-    const userRole = auth?.role || request.headers.get('x-user-role') || '';
-    const username = auth?.username || request.headers.get('x-user-username') || '';
+    const userRole = auth.role;
+    const username = auth.username;
 
     // Build SQL query
     let query = 'SELECT * FROM tenders WHERE 1=1';
@@ -222,7 +223,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      tenders,
+      tenders: redactManufacturerPricing(tenders, userRole),
       filters: {
         locations,
         sectors
@@ -239,6 +240,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
     const body = await request.json();
     const {
       id, ref_no, title, authority, estimated_cost, estimated_cost_raw,
@@ -253,8 +256,12 @@ export async function POST(request: Request) {
       );
     }
 
+    if (forbiddenPatchFields(auth.role, body, {}).length) return workflowForbidden();
+    if (db.prepare('SELECT id FROM tenders WHERE id = ?').get(id)) {
+      return NextResponse.json({ success: false, error: 'Tender already exists. Use its update endpoint.' }, { status: 409 });
+    }
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO tenders (
+      INSERT INTO tenders (
         id, ref_no, title, authority, estimated_cost, estimated_cost_raw,
         emd, emd_raw, document_fee, document_fee_raw, location, sector,
         due_date, opening_date, document_url, original_url, status, scraped_at

@@ -4,9 +4,11 @@ import {
 } from '@/lib/technicalSpecificationBackend';
 
 export const runtime = 'nodejs';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
     const { id } = await params;
     requirePathSegment(id);
     const response = await fetchSpecificationBackend(request, `/api/tenders/${encodeURIComponent(id)}/tech-spec-progress`);

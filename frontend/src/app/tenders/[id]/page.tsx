@@ -42,6 +42,7 @@ export default function TenderDetailPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
+  const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const techSpecUploadInFlight = useRef(false);
 
@@ -1929,7 +1930,7 @@ export default function TenderDetailPage() {
                                 value={emdPaymentMode}
                                 onChange={(e) => setEmdPaymentMode(e.target.value)}
                                 placeholder="e.g. Online / DD / BG"
-                                disabled={selectedTender.payment_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin')}
+                                disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
@@ -1941,7 +1942,7 @@ export default function TenderDetailPage() {
                                 value={emdAmountActual}
                                 onChange={(e) => setEmdAmountActual(e.target.value === '' ? '' : Number(e.target.value))}
                                 placeholder="e.g. 50000"
-                                disabled={selectedTender.payment_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin')}
+                                disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
@@ -1953,7 +1954,7 @@ export default function TenderDetailPage() {
                                 value={emdPaymentRef}
                                 onChange={(e) => setEmdPaymentRef(e.target.value)}
                                 placeholder="e.g. TXN-9402850"
-                                disabled={selectedTender.payment_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin')}
+                                disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
@@ -1964,14 +1965,14 @@ export default function TenderDetailPage() {
                                 type="date" 
                                 value={emdPaymentDate}
                                 onChange={(e) => setEmdPaymentDate(e.target.value)}
-                                disabled={selectedTender.payment_status === 'Approved' || (currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'Admin')}
+                                disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
                           </div>
 
                           {/* Action buttons */}
-                          {selectedTender.payment_status !== 'Approved' && (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && (
+                          {selectedTender.payment_status !== 'Approved' && canRecordOperationalStages && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
@@ -2132,7 +2133,7 @@ export default function TenderDetailPage() {
                         Upload bid pack to the official portal (GeM / Tender247). Once submission screenshot is verified, mark the submission as complete.
                       </p>
 
-                      {(currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Admin') && selectedTender.submission_status !== 'Approved' && (
+                      {canRecordOperationalStages && selectedTender.submission_status !== 'Approved' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
@@ -2304,7 +2305,7 @@ export default function TenderDetailPage() {
                       </div>
                     )}
 
-                    {!isWon && !isLost && (
+                    {canRecordOperationalStages && !isWon && !isLost && (
                       <>
                         {/* Loss Reason Input */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>

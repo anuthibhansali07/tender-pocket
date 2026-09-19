@@ -1,4 +1,6 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.config.WorkflowPermissions;
+import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -171,6 +173,9 @@ public class TenderController {
             @RequestParam(value = "sector", required = false) String sector,
             @RequestParam(value = "mis_executive", required = false) String misExecutive) {
 
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        userRole = WorkflowPermissions.role();
+        username = WorkflowPermissions.username();
         List<Tender> list = tenderRepository.findAll();
         List<Tender> filtered = new ArrayList<>();
 
@@ -286,6 +291,7 @@ public class TenderController {
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getTenderById(@PathVariable("id") String id) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
@@ -311,16 +317,28 @@ public class TenderController {
     public ResponseEntity<?> createTender(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestBody Tender tender) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
-        if ("Admin".equalsIgnoreCase(userRole)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Admins cannot create tender records"));
+        if (!WorkflowPermissions.role().equals("Admin") && (tender.getTpcPurchasePrice() != null
+                || tender.getMisFinalPrice() != null
+                || (tender.getCurrentStage() != null && !List.of("SPEC_CLEARANCE", "TECH_SPEC_PENDING").contains(tender.getCurrentStage()))
+                || java.util.stream.Stream.of(tender.getSpecVerificationStatus(), tender.getVerificationStatus(),
+                        tender.getPaymentStatus(), tender.getSubmissionStatus(), tender.getOutcomeStatus())
+                    .anyMatch(value -> value != null && !value.isBlank() && !"None".equals(value)))) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "Use the workflow endpoints to set approval state or pricing."));
         }
+        if (!WorkflowPermissions.allowedPatch(Map.of("status", String.valueOf(tender.getStatus())), null))
+            return WorkflowPermissions.denied();
 
         if (tender.getId() == null || tender.getTitle() == null || tender.getOriginalUrl() == null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "id, title, and originalUrl are required"));
         }
 
+        if (tenderRepository.existsById(tender.getId())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Tender already exists. Use its update endpoint."));
+        }
         tender.setScrapedAt(new Date().toString());
         tenderRepository.save(tender);
 
@@ -334,6 +352,7 @@ public class TenderController {
             @PathVariable("id") String id,
             @RequestBody Map<String, Object> body) {
 
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
         username = resolveUsername(username);
 
@@ -344,6 +363,12 @@ public class TenderController {
         }
 
         Tender tender = opt.get();
+        if (!WorkflowPermissions.allowedPatch(body, tender.getCurrentStage())) return WorkflowPermissions.denied();
+        if (List.of("Generated", "Pending").contains(String.valueOf(body.get("spec_verification_status")))
+                && !Objects.equals(body.get("spec_verification_status"), tender.getSpecVerificationStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "error", "Use the specification upload or clearance-request endpoint."));
+        }
         List<String> logDetails = new ArrayList<>();
 
         if (body.containsKey("status")) {
@@ -512,6 +537,8 @@ public class TenderController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id) {
 
+        if (!WorkflowPermissions.role().equals("Admin") && !WorkflowPermissions.role().equals("MIS Team"))
+            return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
         username = resolveUsername(username);
 
@@ -545,10 +572,10 @@ public class TenderController {
         username = resolveUsername(username);
 
 
-        if ("Admin".equalsIgnoreCase(userRole)) {
+        if (!WorkflowPermissions.allowed(GENERATE_BIDS)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
                     "success", false,
-                    "error", "Access denied: Only Tender Executives have permission to generate technical specifications. Admin role is for system administration only."
+                    "error", "Access denied: Tender Executive or Admin required to generate bid documents."
             ));
         }
 
@@ -564,6 +591,11 @@ public class TenderController {
                     "success", false,
                     "error", "Technical Specification PDF must be provided/uploaded by the Tender Executive first before generating Bid Documents."
             ));
+        }
+        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getMisFinalPrice() == null
+                || !Double.isFinite(tender.getMisFinalPrice()) || tender.getMisFinalPrice() <= 0) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "Specification clearance and finalized MIS pricing are required before generating bid documents."));
         }
 
         try {
@@ -687,6 +719,7 @@ public class TenderController {
 
     @GetMapping("/{id}/tech-spec-progress")
     public ResponseEntity<?> getTechSpecProgress(@PathVariable("id") String id) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         return ResponseEntity.ok(complianceProgressService.snapshot(id));
     }
 
@@ -702,6 +735,9 @@ public class TenderController {
             @RequestParam(value = "scheduleNo", required = false) String scheduleNo,
             @RequestParam(value = "productDescription", required = false) String productDescription) {
 
+        if (!WorkflowPermissions.allowed(UPLOAD_SPEC)) return WorkflowPermissions.denied();
+        userRole = WorkflowPermissions.role();
+        username = WorkflowPermissions.username();
         if (offeredModel == null || offeredModel.trim().isEmpty()) {
             offeredModel = offeredModelLegacy;
         }
@@ -869,6 +905,7 @@ public class TenderController {
             String docxDownloadUrl = (String) products.get(0).get("docxDownloadUrl");
 
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
+            tender.setSpecVerificationStatus("Generated");
             complianceProgressService.update(id, "SAVING",
                     "Saving output files and document links.", 97, 0, 0, extractedClauses.size());
             tenderRepository.save(tender);
@@ -914,6 +951,9 @@ public class TenderController {
             @PathVariable("id") String id,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(UPLOAD_SPEC)) return WorkflowPermissions.denied();
+        userRole = WorkflowPermissions.role();
+        username = WorkflowPermissions.username();
         Optional<Tender> opt = tenderRepository.findById(id);
         if (opt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
@@ -1017,6 +1057,7 @@ public class TenderController {
 
     @GetMapping("/{id}/comments")
     public ResponseEntity<?> getComments(@PathVariable("id") String id) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<com.tenderpocket.models.TenderWorkflowComment> comments = commentRepository.findByTenderIdOrderByCreatedAtAsc(id);
         return ResponseEntity.ok(Map.of("success", true, "comments", comments));
     }
@@ -1027,6 +1068,9 @@ public class TenderController {
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String role,
             @PathVariable("id") String id,
             @RequestBody Map<String, String> body) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        username = WorkflowPermissions.username();
+        role = WorkflowPermissions.role();
         String commentText = body.get("comment");
         String phase = body.get("phase");
         if (commentText == null || commentText.isEmpty() || phase == null || phase.isEmpty()) {
@@ -1042,6 +1086,7 @@ public class TenderController {
 
     @GetMapping("/stats")
     public ResponseEntity<?> getStats() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<Object[]> rows;
         try {
             rows = tenderRepository.findStatusHistoryStats();
@@ -1117,6 +1162,7 @@ public class TenderController {
     public ResponseEntity<org.springframework.core.io.Resource> downloadDocumentFile(
             @PathVariable("id") String id,
             @PathVariable("fileName") String fileName) {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
             java.nio.file.Path filePath = java.nio.file.Paths.get("public/documents", id, fileName).toAbsolutePath().normalize();
             java.io.File file = filePath.toFile();

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
+    if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
     // 1. Get IST date variables
     const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
     const formatter = new Intl.DateTimeFormat('en-IN', options as any);

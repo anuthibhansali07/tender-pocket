@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function POST(request: Request) {
   try {
+    if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
     try {
       const controller = new AbortController();

@@ -21,35 +21,39 @@ export interface AuthInfo {
 export function getAuthFromRequest(request: Request): AuthInfo | null {
   // 1. Try JWT Bearer token first
   const authHeader = request.headers.get('authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+  if (authHeader) {
+    if (!authHeader.startsWith('Bearer ')) return null;
     const token = authHeader.substring(7);
     const parts = token.split('.');
     if (parts.length === 3) {
       try {
-        // Detect algorithm from JWT header (supports HS256 and HS512)
-        let alg = 'sha256';
-        try {
-          const headerObj = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-          if (headerObj.alg === 'HS512') alg = 'sha512';
-        } catch (_) {
-          // Malformed JWT header — default to sha256
-        }
+        // JJWT selects HS256/384/512 according to the configured signing-key length.
+        const headerObj = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+        if (!['HS256', 'HS384', 'HS512'].includes(headerObj.alg)) return null;
+        const alg = headerObj.alg === 'HS512' ? 'sha512' : headerObj.alg === 'HS384' ? 'sha384' : 'sha256';
 
         const expectedSig = crypto
           .createHmac(alg, JWT_SECRET)
           .update(`${parts[0]}.${parts[1]}`)
           .digest('base64url');
 
-        if (expectedSig === parts[2]) {
+        const supplied = Buffer.from(parts[2]);
+        const expected = Buffer.from(expectedSig);
+        if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
           const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          if (payload.exp && payload.exp > Math.floor(Date.now() / 1000)) {
+          const now = Math.floor(Date.now() / 1000);
+          if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null;
+          if (Number.isFinite(payload.exp) && payload.exp > now
+              && typeof payload.sub === 'string' && payload.sub.trim()
+              && typeof payload.role === 'string' && payload.role.trim()) {
             return { username: payload.sub, role: payload.role };
           }
         }
-      } catch (_) {
-        // Invalid token — fall through to header fallback
+      } catch {
+        // An invalid supplied token must not downgrade to unverified role headers.
       }
     }
+    return null;
   }
 
   // 2. Fallback: x-user-* headers (used for local testing and same-origin fetchWithAuth calls)

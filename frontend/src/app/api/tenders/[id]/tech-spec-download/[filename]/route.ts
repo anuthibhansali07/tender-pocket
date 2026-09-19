@@ -2,11 +2,13 @@ import {
   fetchSpecificationBackend, readSpecificationResponse, requirePathSegment, specificationFailure,
   SpecificationProxyError,
 } from '@/lib/technicalSpecificationBackend';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; filename: string }> }) {
   try {
+    if (!workflowActor(request, 'viewTenders')) return workflowForbidden();
     const { id, filename } = await params;
     requirePathSegment(id);
     requirePathSegment(filename);

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import db, { Tender, addActivityLog } from '@/lib/db';
+import db, { type Tender, addActivityLog } from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 import JSZip from 'jszip';
 import fs from 'fs';
 import path from 'path';
@@ -8,8 +9,10 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userRole = request.headers.get('x-user-role') || 'Unknown';
-  const username = request.headers.get('x-user-username') || 'system';
+  const auth = workflowActor(request, 'generateBids');
+  if (!auth) return workflowForbidden();
+  const userRole = auth.role;
+  const username = auth.username;
   try {
     const { id } = await params;
 

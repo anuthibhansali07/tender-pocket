@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
-    const userRole = request.headers.get('x-user-role');
-    const username = request.headers.get('x-user-username');
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
+    const userRole = auth.role;
+    const username = auth.username;
 
     // 1. Get IST date variables
     const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };

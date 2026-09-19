@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import db, { addActivityLog } from '@/lib/db';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getAuthFromRequest } from '@/lib/auth';
 import { reconcileApprovalRequests } from '@/lib/approvalsSync';
+import { workflowActor, workflowForbidden, canPerform, forbiddenPatchFields, redactManufacturerPricing } from '@/lib/workflowAuthorization';
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
 
     // Fetch tender
@@ -22,13 +24,14 @@ export async function GET(
       );
     }
 
-    const auth = getAuthFromRequest(request);
-    const userRole = auth?.role || request.headers.get('x-user-role') || '';
-    const username = auth?.username || request.headers.get('x-user-username') || '';
+    const userRole = auth.role;
+    const username = auth.username;
 
     // Confidentiality Rule: strictly hide TPC Purchase Price from Tender Executives
-    if (userRole.toLowerCase().includes('executive')) {
+    if (!canPerform(userRole, 'viewTpcPrice')) {
       tender.tpc_purchase_price = null;
+      tender.ai_details_summary = null;
+      tender.ai_history_summary = null;
     }
 
     // Note: The tenders list (/api/tenders) already scopes results for Specification Team
@@ -120,7 +123,7 @@ export async function GET(
 
     // Fetch cached summaries if they exist
     if (tender.ai_details_summary && tender.ai_history_summary) {
-      return NextResponse.json({
+      return NextResponse.json(redactManufacturerPricing({
         success: true,
         tender,
         history,
@@ -128,7 +131,7 @@ export async function GET(
           detailsSummary: tender.ai_details_summary,
           statusHistorySummary: tender.ai_history_summary
         }
-      });
+      }, userRole));
     }
 
     // Generate local template-based summaries instantly for immediate response
@@ -137,7 +140,7 @@ export async function GET(
 
     // Generate and cache the AI summaries asynchronously in the background
     const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    if (apiKey && canPerform(userRole, 'viewTpcPrice')) {
       generateAiSummary(tender, history).then(({ detailsSummary, statusHistorySummary }) => {
         try {
           db.prepare('UPDATE tenders SET ai_details_summary = ?, ai_history_summary = ? WHERE id = ?')
@@ -151,7 +154,7 @@ export async function GET(
       });
     }
 
-    return NextResponse.json({
+    return NextResponse.json(redactManufacturerPricing({
       success: true,
       tender,
       history,
@@ -159,7 +162,7 @@ export async function GET(
         detailsSummary: fallbackDetails,
         statusHistorySummary: fallbackHistory
       }
-    });
+    }, userRole));
   } catch (error) {
     console.error('Error fetching tender details:', error);
     return NextResponse.json(
@@ -176,9 +179,10 @@ export async function PATCH(
   try {
     const { id } = await params;
     
-    const auth = getAuthFromRequest(request);
-    const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
-    const username = auth?.username || request.headers.get('x-user-username') || 'system';
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
+    const userRole = auth.role;
+    const username = auth.username;
 
 
 
@@ -219,6 +223,21 @@ export async function PATCH(
         { success: false, error: 'Tender not found' },
         { status: 404 }
       );
+    }
+    if (forbiddenPatchFields(userRole, body, oldTender).length) return workflowForbidden();
+    if (['Generated', 'Pending'].includes(body.spec_verification_status)
+        && oldTender.spec_verification_status !== body.spec_verification_status) {
+      return NextResponse.json({ success: false, error: 'Use the specification upload or clearance-request endpoint.' }, { status: 400 });
+    }
+    if (['tpc_purchase_price', 'mis_final_price'].some(field => field in body
+        && Number(body[field]) !== oldTender[field])) {
+      return NextResponse.json({ success: false, error: 'Use the dedicated pricing endpoints.' }, { status: 400 });
+    }
+    if ('payment_status' in body && oldTender.verification_status !== 'Approved') {
+      return NextResponse.json({ success: false, error: 'Bid document approval is required before payment.' }, { status: 409 });
+    }
+    if ('submission_status' in body && oldTender.payment_status !== 'Approved') {
+      return NextResponse.json({ success: false, error: 'Payment approval is required before submission.' }, { status: 409 });
     }
 
     if ((userRole === 'Clearance Team' || userRole === 'Specification Team') && oldTender.assigned_mis_member_spec !== username) {
@@ -492,9 +511,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const auth = getAuthFromRequest(request);
-    const userRole = auth?.role || request.headers.get('x-user-role') || 'Unknown';
-    const username = auth?.username || request.headers.get('x-user-username') || 'system';
+    const auth = workflowActor(request, 'viewTenders');
+    if (!auth) return workflowForbidden();
+    const userRole = auth.role;
+    const username = auth.username;
 
     const allowedRoles = ['Admin', 'MIS Team', 'system'];
     if (!allowedRoles.includes(userRole)) {

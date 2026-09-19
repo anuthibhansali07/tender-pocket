@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
 import { reconcileApprovalRequests } from '@/lib/approvalsSync';
+import { workflowActor, redactManufacturerPricing } from '@/lib/workflowAuthorization';
 
 export async function GET(request: Request) {
   try {
-    const auth = getAuthFromRequest(request);
+    const auth = workflowActor(request, 'viewTenders');
     const allowedRoles = [
       'Admin', 'MIS Team', 'MIS Executive',
       'Clearance Team', 'Specification Team',
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
                 tenderCurrentStage: a.tenderCurrentStage || a.tender_current_stage || '',
                 misExecutive: a.misExecutive || a.mis_executive || ''
               }));
-              return NextResponse.json(data);
+              return NextResponse.json(redactManufacturerPricing(data, auth.role));
             }
             // If backend returned empty list [], do NOT return empty if SQLite has pending items
           }
@@ -190,7 +190,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      approvals,
+      approvals: redactManufacturerPricing(approvals, auth.role),
       total: approvals.length
     });
 

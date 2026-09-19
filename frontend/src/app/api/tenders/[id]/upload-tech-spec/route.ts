@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import db, { addActivityLog } from '@/lib/db';
-import { getAuthFromRequest } from '@/lib/auth';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 import {
   fetchSpecificationBackend, isObject, mapSpecificationDownloads, readSpecificationResponse,
   requirePathSegment, specificationBackendUrl, specificationFailure, SpecificationProxyError,
-  validateConversionResult,
+  validateConversionResult, localDocumentUrl,
 } from '@/lib/technicalSpecificationBackend';
 import type { SpecificationPayload } from '@/lib/technicalSpecificationBackend';
 
@@ -17,6 +17,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'uploadSpecs');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
     if (!id) {
       return NextResponse.json({ success: false, error: 'Tender ID is required' }, { status: 400 });
@@ -24,9 +26,8 @@ export async function POST(
     requirePathSegment(id);
     specificationBackendUrl(request);
 
-    const auth = getAuthFromRequest(request);
-    const username = auth?.username || request.headers.get('x-user-username') || 'system';
-    const userRole = auth?.role || request.headers.get('x-user-role') || 'User';
+    const username = auth.username;
+    const userRole = auth.role;
 
     let formData: FormData;
     try {
@@ -90,7 +91,7 @@ export async function POST(
       return specificationFailure(error, request);
     }
 
-    const docUrl = `/documents/${encodeURIComponent(id)}/${encodeURIComponent(originalFilename)}`;
+    const docUrl = localDocumentUrl(id, originalFilename);
     const createdDate = new Date().toLocaleDateString('en-IN');
     const newDocs = [{
       name: `Uploaded Input (${originalFilename})`, filename: originalFilename,

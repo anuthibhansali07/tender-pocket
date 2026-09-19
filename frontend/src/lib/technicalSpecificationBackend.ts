@@ -22,6 +22,12 @@ export function requirePathSegment(value: string): string {
   return value;
 }
 
+export function localDocumentUrl(id: string, filename: string): string {
+  requirePathSegment(id);
+  requirePathSegment(filename);
+  return `/api/tenders/${encodeURIComponent(id)}/documents/${encodeURIComponent(filename)}`;
+}
+
 export function specificationBackendUrl(request: Request): string {
   const configured = process.env.BACKEND_URL || 'http://localhost:8090';
   let url: URL;

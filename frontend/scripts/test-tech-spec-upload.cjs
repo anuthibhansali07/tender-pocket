@@ -1,14 +1,15 @@
 // Dependency-free route tests: node --experimental-vm-modules scripts/test-tech-spec-upload.cjs
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const { stripTypeScriptTypes } = require('node:module');
+async function main() {
+const { test } = await import('node:test');
+const { default: assert } = await import('node:assert/strict');
+const fs = await import('node:fs');
+const path = await import('node:path');
+const vm = await import('node:vm');
+const { stripTypeScriptTypes } = await import('node:module');
+const crypto = await import('node:crypto');
 
 const root = path.resolve(__dirname, '..');
 const uploadFile = 'src/app/api/tenders/[id]/upload-tech-spec/route.ts';
-const helperFile = 'src/lib/technicalSpecificationBackend.ts';
 const progressFile = 'src/app/api/tenders/[id]/tech-spec-progress/route.ts';
 const downloadFile = 'src/app/api/tenders/[id]/tech-spec-download/[filename]/route.ts';
 const clientFile = 'src/app/api/compliance-progress-client/route.ts';
@@ -37,8 +38,10 @@ async function fixture(options = {}) {
       return {
         get() {
           if (options.missingLocal) return undefined;
+          if (sql.includes('SELECT * FROM tenders')) return options.tender || { id: 'T-1', status: 'Issued', title: 'Test tender' };
           return sql.includes('downloaded_docs') ? { downloaded_docs: state.docs } : { id: 'T-1' };
         },
+        all() { return options.allRows || []; },
         run(docs) {
           if (options.dbFailure) throw Error('Simulated local persistence failure');
           assert(sql.startsWith('UPDATE tenders SET '));
@@ -70,35 +73,45 @@ async function fixture(options = {}) {
     fs: { default: { existsSync: () => true, mkdirSync() {},
       writeFileSync: (filename, bytes) => state.writes.push({ filename, bytes: Buffer.from(bytes) }) } },
     path: { default: path },
-    '@/lib/db': { default: db, addActivityLog: (...args) => state.logs.push(args) },
-    '@/lib/auth': { getAuthFromRequest: () => options.legacyAuth ? null
-      : { username: 'verified-user', role: 'Tender Executive' } },
+    '@/lib/db': { default: db, addActivityLog: (...args) => state.logs.push(args),
+      hashPassword: () => { throw Error('Unexpected password hashing'); } },
+    '@/lib/auth': { getAuthFromRequest: () => options.legacyAuth || options.anonymous ? null
+      : { username: 'verified-user', role: options.role || 'Tender Executive' } },
+    '@/lib/approvalsSync': { reconcileApprovalRequests() {} },
+    '@/lib/documentTemplates': { generateHtmlTemplates() { throw Error('Unexpected rendering'); },
+      generateTechnicalSpecificationHtml() { throw Error('Unexpected rendering'); } },
+    '@google/generative-ai': { GoogleGenerativeAI: class {} },
+    'html-to-docx': { default: () => { throw Error('Unexpected rendering'); } },
+    puppeteer: { default: { launch() { throw Error('Unexpected browser launch'); } } },
+    child_process: { execSync() { throw Error('Unexpected child process'); } },
+    crypto: { default: crypto },
   };
+  if (options.realAuth) delete mockModules['@/lib/auth'];
   const cache = new Map();
   const load = async name => {
     if (cache.has(name)) return cache.get(name);
     if (mockModules[name]) {
       const values = mockModules[name];
-      const module = new vm.SyntheticModule(Object.keys(values), function () {
+      const scriptModule = new vm.SyntheticModule(Object.keys(values), function () {
         Object.entries(values).forEach(([key, value]) => this.setExport(key, value));
       }, { context });
-      cache.set(name, module);
-      return module;
+      cache.set(name, scriptModule);
+      return scriptModule;
     }
-    const filename = name === '@/lib/technicalSpecificationBackend' ? helperFile : name;
+    const filename = name.startsWith('@/') ? `src/${name.slice(2)}.ts` : name;
     const source = fs.readFileSync(path.join(root, filename), 'utf8');
-    const module = new vm.SourceTextModule(stripTypeScriptTypes(source, { mode: 'strip' }),
+    const scriptModule = new vm.SourceTextModule(stripTypeScriptTypes(source, { mode: 'strip' }),
       { context, identifier: filename });
-    cache.set(name, module);
-    await module.link(load);
-    return module;
+    cache.set(name, scriptModule);
+    await scriptModule.link(load);
+    return scriptModule;
   };
   return {
     state,
     async route(filename = uploadFile) {
-      const module = await load(filename);
-      if (module.status !== 'evaluated') await module.evaluate();
-      return module.namespace;
+      const scriptModule = await load(filename);
+      if (scriptModule.status !== 'evaluated') await scriptModule.evaluate();
+      return scriptModule.namespace;
     },
   };
 }
@@ -134,7 +147,7 @@ test('waits beyond three seconds, retains the full result, and registers all pro
   assert.equal(data.docxDownloadUrl, data.products[0].docxDownloadUrl);
   assert.equal(data.pdfDownloadUrl, '/api/tenders/T-1/tech-spec-download/1_Alpha.pdf');
   assert.equal(data.filename, 'sample.pdf');
-  assert.equal(data.url, '/documents/T-1/sample.pdf');
+  assert.equal(data.url, '/api/tenders/T-1/documents/sample.pdf');
   assert.equal(state.status, 'Generated');
   assert.equal(state.stage, 'SPEC_PREPARATION');
   assert.equal(state.requests.length, 1, 'Never retry the conversion POST automatically');
@@ -405,3 +418,110 @@ for (const filename of ['src/app/page.tsx', 'src/app/tenders/[id]/page.tsx']) {
     assert.deepEqual(toasts, [['Sheets ready', 'success']]);
   });
 }
+
+const matrix = JSON.parse(fs.readFileSync(path.resolve(root, '../backend/src/test/resources/workflow-permissions.json'), 'utf8'));
+const actions = matrix.Admin;
+for (const [role, granted] of Object.entries(matrix)) {
+  test(`README permission matrix: ${role}`, async () => {
+    const { route } = await fixture({ role });
+    const policy = await route('@/lib/workflowAuthorization');
+    for (const action of actions) assert.equal(policy.canPerform(role, action), granted.includes(action), action);
+  });
+}
+
+for (const [file, action, method] of [
+  [uploadFile, 'uploadSpecs', 'POST'],
+  ['src/app/api/tenders/[id]/clearance-request/route.ts', 'uploadSpecs', 'POST'],
+  ['src/app/api/tenders/[id]/approve-clearance/route.ts', 'approveSpecs', 'POST'],
+  ['src/app/api/tenders/[id]/tpc-price/route.ts', 'setTpcPrice', 'POST'],
+  ['src/app/api/tenders/[id]/mis-price/route.ts', 'setMisPrice', 'POST'],
+  ['src/app/api/tenders/[id]/generate-bid-docs/route.ts', 'generateBids', 'POST'],
+  ['src/app/api/auth/users/route.ts', 'manageUsers', 'POST'],
+  ['src/app/api/auth/users/route.ts', 'manageUsers', 'DELETE'],
+  ['src/app/api/activity-logs/route.ts', 'viewAudit', 'GET'],
+]) {
+  test(`${file} ${method}: denied roles cannot forward or mutate data`, async () => {
+    for (const role of [...Object.keys(matrix).filter(role => !matrix[role].includes(action)), 'User']) {
+      const { route, state } = await fixture({ role });
+      const response = await (await route(file))[method](new Request('http://frontend.test:8085/test', {
+        method, headers: { 'x-user-role': 'Admin', 'x-user-username': 'admin' },
+        ...(method === 'POST' ? { body: '{}' } : {}),
+      }), params);
+      assert.equal(response.status, 403, role);
+      assert.equal(state.mutations, 0);
+      assert.equal(state.requests.length, 0);
+      assert.equal(state.writes.length, 0);
+    }
+  });
+}
+
+test('legacy Executive aliases cannot approve MIS actions', async () => {
+  const { route } = await fixture();
+  const policy = await route('@/lib/workflowAuthorization');
+  assert(policy.canPerform('MIS Executive', 'generateBids'));
+  assert(!policy.canPerform('MIS Executive', 'reviewBids'));
+  assert(policy.canPerform('Specification Team', 'approveSpecs'));
+  assert(policy.canPerform('TPC Team', 'setTpcPrice'));
+  assert(!policy.canPerform(null, 'viewTenders'));
+  assert(policy.canReviewAssignment('MIS Team', 'reviewer', 'misteam'));
+  assert(policy.canReviewAssignment('MIS Team', 'reviewer', 'reviewer'));
+  assert(!policy.canReviewAssignment('MIS Team', 'reviewer', 'someone-else'));
+  assert(policy.canReviewAssignment('Admin', 'admin', 'someone-else'));
+});
+
+test('PATCH does not provide an alternative path to privileged workflow mutations', async () => {
+  const { route, state } = await fixture({ role: 'Tender Executive' });
+  const api = await route('src/app/api/tenders/[id]/route.ts');
+  for (const body of [{ tpc_purchase_price: 123 }, { spec_verification_status: 'Approved' },
+    { payment_status: 'Approved' }, { current_stage: 'WON' }, { status: 'Won' }]) {
+    const response = await api.PATCH(new Request('http://frontend.test:8085/api/tenders/T-1', {
+      method: 'PATCH', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', 'x-user-role': 'Admin' },
+    }), params);
+    assert.equal(response.status, 403);
+  }
+  assert.equal(state.mutations, 0);
+});
+
+test('manufacturer quotes and cached pricing summaries are hidden from Executive and Clearance roles', async () => {
+  const source = { tpc_purchase_price: 12345, ai_details_summary: 'Cost 12345',
+    requests: [{ tpcPurchasePrice: 12345, stage: 'TPC_PRICING', comment: 'Price 12345' }] };
+  const { route } = await fixture();
+  const policy = await route('@/lib/workflowAuthorization');
+  for (const role of ['Tender Executive', 'Clearance Team']) {
+    assert(!JSON.stringify(policy.redactManufacturerPricing(source, role)).includes('12345'));
+  }
+  assert.equal(source.tpc_purchase_price, 12345);
+  for (const role of ['Admin', 'MIS Team', 'TPC Pricing Team']) {
+    assert.equal(policy.redactManufacturerPricing(source, role), source);
+  }
+});
+
+test('non-admin user directory omits management details while preserving assignment names', async () => {
+  const { route } = await fixture({ role: 'Tender Executive',
+    allRows: [{ username: 'clearance-user', role: 'Clearance Team', email: 'private@example.test' }] });
+  const response = await (await route('src/app/api/auth/users/route.ts')).GET(new Request('http://frontend.test:8085/api/auth/users'));
+  assert.deepEqual((await response.json()).users, [{ username: 'clearance-user', role: 'Clearance Team' }]);
+});
+
+test('invalid JWTs cannot downgrade to spoofed role headers', async () => {
+  const { route } = await fixture({ realAuth: true, env: { JWT_SECRET: 'test-signing-key' } });
+  const auth = await route('@/lib/auth');
+  for (const token of ['Bearer not-a-jwt', 'Basic invalid']) {
+    assert.equal(auth.getAuthFromRequest(new Request('http://frontend.test/test', {
+      headers: { authorization: token, 'x-user-role': 'Admin', 'x-user-username': 'admin' },
+    })), null);
+  }
+  for (const algorithm of ['HS256', 'HS384', 'HS512']) {
+    const header = Buffer.from(JSON.stringify({ alg: algorithm, typ: 'JWT' })).toString('base64url');
+    const body = Buffer.from(JSON.stringify({ sub: 'verified-user', role: 'MIS Team', exp: Math.floor(Date.now() / 1000) + 60 })).toString('base64url');
+    const signature = crypto.createHmac(algorithm.toLowerCase().replace('hs', 'sha'), 'test-signing-key')
+      .update(`${header}.${body}`).digest('base64url');
+    const actor = auth.getAuthFromRequest(new Request('http://frontend.test/test', {
+      headers: { authorization: `Bearer ${header}.${body}.${signature}`, 'x-user-role': 'Admin' },
+    }));
+    assert.equal(actor.role, 'MIS Team');
+  }
+});
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });

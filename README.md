@@ -176,6 +176,15 @@ TenderPocket enforces role-based access control (RBAC) at both the Next.js API l
 
 ### Commercial Confidentiality Guarantee
 
+The matrix also applies to direct API calls and generic tender updates, not only
+visible buttons. Legacy `MIS Executive` / `Executive` accounts are treated as
+Tender Executives, `Specification Team` as Clearance Team, and `TPC Team` as TPC
+Pricing Team. An invalid supplied JWT never falls back to role headers.
+Authenticated teams may read a minimal username/role directory for assignments;
+user-management operations, detailed account statistics, and audit logs are
+Admin-only. Manufacturer pricing and cached pricing summaries are hidden from
+both Executive and Clearance roles, including nested API responses.
+
 To protect sensitive vendor pricing, `tpc_purchase_price` is **strictly stripped and redacted** whenever an authenticated user with role `Tender Executive` requests tender data. Even if inspected via browser developer tools or network logs, the JSON response never contains the purchase price field for the Executive role.
 
 ---
@@ -200,7 +209,7 @@ The Approvals Center is a centralized workflow hub accessible via the **Approval
 
 | Requirement            | Recommended Version           | Minimum Version | Purpose                                        |
 | :--------------------- | :---------------------------- | :-------------- | :--------------------------------------------- |
-| **Node.js**      | `v20.x` LTS or `v22.x`    | `v18.17.0`    | Next.js frontend, document engine, test suites |
+| **Node.js**      | `v24.x`                  | `v22.12.0`   | Next.js frontend, document engine, test suites; Puppeteer requires Node 22.12+ |
 | **npm**          | `v10.x`                     | `v9.x`        | Node package manager                           |
 | **Java JDK**     | `Java 21` (Eclipse Temurin) | `Java 17`     | Optional: Spring Boot enterprise backend       |
 | **Apache Maven** | `v3.9.x`                    | `v3.8.x`      | Optional: Building Java backend                |

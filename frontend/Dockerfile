@@ -1,5 +1,5 @@
 # Stage 1: Build & Dependencies
-FROM node:20-slim AS base
+FROM node:24-slim AS base
 
 # Install system dependencies required for pdf processing, tesseract OCR, python parsing, and node native compiling
 RUN apt-get update && apt-get install -y \
@@ -21,16 +21,17 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies including development dependencies (needed for next build)
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN npm ci
 
 # Copy application files
 COPY . .
 
 # Run next build to compile the production application
-RUN npm run build
+RUN DATABASE_PATH=:memory: npm run build
 
 # Stage 2: Production Runner
-FROM node:20-slim AS runner
+FROM node:24-slim AS runner
 
 # Install runtime system dependencies (python, tesseract, poppler-utils)
 RUN apt-get update && apt-get install -y \
@@ -38,6 +39,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     tesseract-ocr \
     poppler-utils \
+    chromium \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
@@ -46,6 +49,7 @@ RUN pip3 install --no-cache-dir pypdf || pip3 install --no-cache-dir --break-sys
 # Set environment to production
 ENV NODE_ENV=production
 ENV PORT=8085
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 

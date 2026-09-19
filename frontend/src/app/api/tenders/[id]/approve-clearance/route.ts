@@ -1,12 +1,21 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { workflowActor, workflowForbidden } from '@/lib/workflowAuthorization';
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = workflowActor(request, 'approveSpecs');
+    if (!auth) return workflowForbidden();
     const { id } = await params;
+    const tender = db.prepare('SELECT spec_verification_status FROM tenders WHERE id = ?').get(id) as
+      { spec_verification_status: string } | undefined;
+    if (!tender) return NextResponse.json({ success: false, error: 'Tender not found' }, { status: 404 });
+    if (tender.spec_verification_status !== 'Pending') {
+      return NextResponse.json({ success: false, error: 'Specification clearance is not pending.' }, { status: 409 });
+    }
     const body = await request.json().catch(() => ({}));
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
 

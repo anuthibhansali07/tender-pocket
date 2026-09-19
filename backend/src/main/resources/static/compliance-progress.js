@@ -67,6 +67,33 @@
     @media(max-width:480px){.cp-review-heading{padding:16px 14px 12px}.cp-review-toolbar{padding:0 14px 12px}.cp-review-list{padding:0 14px 16px}}
   `;
   document.head.appendChild(style);
+  document.addEventListener("click", async event => {
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!link) return;
+    const url = new URL(link.href, location.href);
+    if (url.origin !== location.origin || !/^\/api\/tenders\/[^/]+\/(?:tech-spec-download|documents)\/[^/]+$/.test(url.pathname)) return;
+    event.preventDefault();
+    try {
+      const headers = new Headers();
+      const token = localStorage.getItem("token");
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const user = JSON.parse(localStorage.getItem("currentUser") || "null");
+      if (user) {
+        headers.set("x-user-role", user.role);
+        headers.set("x-user-username", user.username);
+      }
+      const response = await originalFetch(url.href, {headers, cache: "no-store"});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const download = document.createElement("a");
+      download.href = objectUrl;
+      download.download = decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf("/") + 1));
+      download.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      panel().querySelector(".cp-warning").textContent = `Download failed (${error.message}).`;
+    }
+  }, true);
   // The bundled review UI hides its executive-only controls from Admin. Restore the
   // standalone conversion action without granting clearance or bid-pack controls.
   function restoreAdminUpload() {

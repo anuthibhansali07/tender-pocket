@@ -1,4 +1,6 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.config.WorkflowPermissions;
+import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -105,6 +107,13 @@ public class AuthController {
             @RequestHeader(value = "x-user-role", required = false) String userRole,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
+        if (!WorkflowPermissions.allowed(MANAGE_USERS)) {
+            List<Map<String, String>> directory = userRepository.findAll().stream()
+                    .map(user -> Map.of("username", user.getUsername(), "role", user.getRole())).toList();
+            return ResponseEntity.ok(Map.of("success", true, "users", directory));
+        }
+        userRole = WorkflowPermissions.role();
         if ((userRole == null || userRole.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
             try {
                 userRole = jwtUtil.extractRole(authHeader.substring(7));
@@ -187,6 +196,9 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestBody Map<String, String> body) {
 
+        if (!WorkflowPermissions.allowed(MANAGE_USERS)) return WorkflowPermissions.denied();
+        adminRole = WorkflowPermissions.role();
+        adminUser = WorkflowPermissions.username();
         if ((adminRole == null || adminRole.isEmpty() || adminUser == null || adminUser.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
             try {
                 String token = authHeader.substring(7);
@@ -262,6 +274,9 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @RequestParam("username") String username) {
 
+        if (!WorkflowPermissions.allowed(MANAGE_USERS)) return WorkflowPermissions.denied();
+        adminRole = WorkflowPermissions.role();
+        adminUser = WorkflowPermissions.username();
         if ((adminRole == null || adminRole.isEmpty() || adminUser == null || adminUser.isEmpty()) && authHeader != null && authHeader.startsWith("Bearer ")) {
             try {
                 String token = authHeader.substring(7);
@@ -308,6 +323,7 @@ public class AuthController {
 
     @GetMapping("/executives")
     public ResponseEntity<?> getExecutives() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<User> execs = new ArrayList<>(userRepository.findByRole("MIS Executive"));
         execs.addAll(userRepository.findByRole("Tender Executive"));
         List<String> result = new ArrayList<>();
@@ -321,6 +337,7 @@ public class AuthController {
 
     @GetMapping("/roles")
     public ResponseEntity<?> getAvailableRoles() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<String> roles = List.of(
             "Tender Executive",
             "Clearance Team",
@@ -334,6 +351,7 @@ public class AuthController {
 
     @GetMapping("/clearance-team")
     public ResponseEntity<?> getClearanceTeam() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<User> team = userRepository.findByRole("Clearance Team");
         List<String> result = new ArrayList<>();
         for (User u : team) {
@@ -344,6 +362,7 @@ public class AuthController {
 
     @GetMapping("/tpc-team")
     public ResponseEntity<?> getTpcTeam() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<User> team = userRepository.findByRole("TPC Team");
         List<String> result = new ArrayList<>();
         for (User u : team) {
@@ -354,6 +373,7 @@ public class AuthController {
 
     @GetMapping("/mis-team")
     public ResponseEntity<?> getMisTeam() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<User> team = userRepository.findByRole("MIS Team");
         List<String> result = new ArrayList<>();
         for (User u : team) {
@@ -364,6 +384,7 @@ public class AuthController {
 
     @GetMapping("/spec-team")
     public ResponseEntity<?> getSpecTeam() {
+        if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         List<User> team = userRepository.findByRole("Specification Team");
         List<String> result = new ArrayList<>();
         for (User u : team) {

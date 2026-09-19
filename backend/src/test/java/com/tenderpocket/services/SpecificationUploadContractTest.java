@@ -12,6 +12,20 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class SpecificationUploadContractTest {
+    @org.junit.jupiter.api.BeforeEach
+    void authenticate() { authenticateAs("Admin"); }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    private void authenticateAs(String role) {
+        var auth = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "test", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                        "ROLE_" + role.toUpperCase(Locale.ROOT).replace(' ', '_'))));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+    }
     @org.junit.jupiter.api.io.TempDir
     Path testHome;
 
@@ -69,6 +83,7 @@ class SpecificationUploadContractTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"Admin", "Tender Executive", "MIS Executive"})
     void onlySpecificationFileIsRequiredAndEveryProductGetsRegistered(String role) throws Exception {
+        authenticateAs(role);
         String id = "compliance-contract-test-" + UUID.randomUUID();
         Path output = Path.of("public", "documents", id);
         Tender tender = new Tender();
@@ -137,8 +152,12 @@ class SpecificationUploadContractTest {
     }
 
     @Test
-    void standaloneConversionDoesNotGrantAdminBidPackPermission() {
-        var response = new TenderController().generateBidDocs("Admin", "test", "test-tender", Map.of());
-        assertEquals(403, response.getStatusCode().value());
+    void adminBidPackPermissionStillRequiresARealTender() {
+        var controller = new TenderController();
+        var repository = mock(TenderRepository.class);
+        when(repository.findById("test-tender")).thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(controller, "tenderRepository", repository);
+        var response = controller.generateBidDocs("Admin", "test", "test-tender", Map.of());
+        assertEquals(404, response.getStatusCode().value());
     }
 }

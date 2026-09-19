@@ -1,4 +1,5 @@
 package com.tenderpocket.controllers;
+import com.tenderpocket.config.WorkflowPermissions;
 
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
@@ -32,15 +33,17 @@ public class AnalyticsController {
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username) {
 
-
+        if (!WorkflowPermissions.allowed(WorkflowPermissions.Action.VIEW_TENDERS)) return WorkflowPermissions.denied();
+        userRole = WorkflowPermissions.role();
+        final String actor = WorkflowPermissions.username();
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
 
         List<Tender> tenders;
         if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole) || "Executive".equalsIgnoreCase(userRole)) {
-            tenders = tenderRepository.findByMisExecutive(username);
+            tenders = tenderRepository.findByMisExecutive(actor);
         } else if ("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole)) {
             tenders = tenderRepository.findAll().stream()
-                    .filter(t -> username.equalsIgnoreCase(t.getAssignedMisMemberSpec())
+                    .filter(t -> actor.equalsIgnoreCase(t.getAssignedMisMemberSpec())
                               || "clearance".equalsIgnoreCase(t.getAssignedMisMemberSpec())
                               || "Clearance Team".equalsIgnoreCase(t.getAssignedMisMemberSpec())
                               || "SPEC_CLEARANCE".equalsIgnoreCase(t.getCurrentStage()))
