@@ -48,45 +48,62 @@ public class DatabaseConfig {
             }
         }
 
-        // Auto-create database if it doesn't exist on local PostgreSQL server
-        createDatabaseIfNotExist(finalUrl, username, password);
-
-        config.setDriverClassName("org.postgresql.Driver");
-        config.setJdbcUrl(finalUrl);
-
-        if (username != null && !username.isEmpty()) {
-            config.setUsername(username);
-        }
-        if (password != null && !password.isEmpty()) {
-            config.setPassword(password);
+        if (finalUrl.startsWith("jdbc:sqlite:")) {
+            config.setDriverClassName("org.sqlite.JDBC");
+            config.setJdbcUrl(finalUrl);
+            System.out.println("[DatabaseConfig] Configured SQLite DataSource: " + finalUrl);
+            return new HikariDataSource(config);
         }
 
-        // Parse inline credentials if present (postgres://user:pass@host/db)
-        if (finalUrl.contains("@")) {
-            try {
-                String clean = finalUrl.replace("jdbc:postgresql://", "");
-                String userInfo = clean.split("@")[0];
-                String[] userPass = userInfo.split(":");
-                if (userPass.length >= 1) config.setUsername(userPass[0]);
-                if (userPass.length >= 2) config.setPassword(userPass[1]);
-                
-                String hostAndDb = clean.split("@")[1];
-                config.setJdbcUrl("jdbc:postgresql://" + hostAndDb);
-            } catch (Exception e) {
-                System.err.println("[DatabaseConfig] Error parsing PostgreSQL URL credentials: " + e.getMessage());
+        try {
+            // Auto-create database if it doesn't exist on local PostgreSQL server
+            createDatabaseIfNotExist(finalUrl, username, password);
+
+            config.setDriverClassName("org.postgresql.Driver");
+            config.setJdbcUrl(finalUrl);
+
+            if (username != null && !username.isEmpty()) {
+                config.setUsername(username);
             }
+            if (password != null && !password.isEmpty()) {
+                config.setPassword(password);
+            }
+
+            // Parse inline credentials if present (postgres://user:pass@host/db)
+            if (finalUrl.contains("@")) {
+                try {
+                    String clean = finalUrl.replace("jdbc:postgresql://", "");
+                    String userInfo = clean.split("@")[0];
+                    String[] userPass = userInfo.split(":");
+                    if (userPass.length >= 1) config.setUsername(userPass[0]);
+                    if (userPass.length >= 2) config.setPassword(userPass[1]);
+                    
+                    String hostAndDb = clean.split("@")[1];
+                    config.setJdbcUrl("jdbc:postgresql://" + hostAndDb);
+                } catch (Exception e) {
+                    System.err.println("[DatabaseConfig] Error parsing PostgreSQL URL credentials: " + e.getMessage());
+                }
+            }
+
+            config.setMaximumPoolSize(25);
+            config.setMinimumIdle(5);
+            config.setConnectionTimeout(15000);
+            config.setIdleTimeout(30000);
+            config.setMaxLifetime(60000);
+            config.setKeepaliveTime(30000);
+            config.setLeakDetectionThreshold(60000);
+
+            HikariDataSource ds = new HikariDataSource(config);
+            System.out.println("[DatabaseConfig] Configured PostgreSQL DataSource successfully.");
+            return ds;
+        } catch (Exception e) {
+            System.err.println("[DatabaseConfig] PostgreSQL connection failed (" + e.getMessage() + "). Falling back to SQLite database tenders.db");
+            HikariConfig sqliteConfig = new HikariConfig();
+            sqliteConfig.setDriverClassName("org.sqlite.JDBC");
+            sqliteConfig.setJdbcUrl("jdbc:sqlite:tenders.db");
+            sqliteConfig.setMaximumPoolSize(10);
+            return new HikariDataSource(sqliteConfig);
         }
-        System.out.println("[DatabaseConfig] Configured PostgreSQL DataSource successfully.");
-
-        config.setMaximumPoolSize(25);
-        config.setMinimumIdle(5);
-        config.setConnectionTimeout(15000);
-        config.setIdleTimeout(30000);
-        config.setMaxLifetime(60000);
-        config.setKeepaliveTime(30000);
-        config.setLeakDetectionThreshold(60000);
-
-        return new HikariDataSource(config);
     }
 
     private void createDatabaseIfNotExist(String jdbcUrl, String user, String pass) {
