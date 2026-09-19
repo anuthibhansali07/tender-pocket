@@ -187,22 +187,25 @@ async function main() {
       headless: true, userDataDir: path.join(output, 'browser-profile'), args: ['--no-sandbox'] });
     try {
       for (const [name, role] of [['executive', 'Tender Executive'], ['misteam', 'MIS Team']]) {
-        const page = await browser.newPage();
-        await page.setViewport({ width: 1280, height: 900 });
-        await page.evaluateOnNewDocument((user, token) => {
-          localStorage.setItem('currentUser', JSON.stringify(user));
-          localStorage.setItem('token', token);
-        }, { username: name, role }, tokens[name]);
-        await page.goto(`${base}/tenders/${uiId}`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => [...document.querySelectorAll('label')].some(label =>
-          label.textContent.trim() === 'Payment Mode' && label.parentElement.querySelector('select')), { timeout: 20000 });
-        const disabled = await page.evaluate(() => [...document.querySelectorAll('label')].find(label =>
-          label.textContent.trim() === 'Payment Mode').parentElement.querySelector('select').disabled);
-        assert.equal(disabled, name === 'executive', `${role}: payment controls violate role matrix`);
-        await page.screenshot({ path: path.join(output, `${name}-payment.png`), fullPage: true });
-        await page.close();
+        for (const width of [1280, 390]) {
+          const page = await browser.newPage();
+          const pageErrors = [];
+          page.on('pageerror', error => pageErrors.push(error.message));
+          await page.setViewport({ width, height: 900 });
+          await page.evaluateOnNewDocument((user, token) => {
+            localStorage.setItem('currentUser', JSON.stringify(user));
+            localStorage.setItem('token', token);
+          }, { username: name, role }, tokens[name]);
+          await page.goto(`${base}/tenders/${uiId}`, { waitUntil: 'domcontentloaded' });
+          await page.waitForSelector('#emd-mode-input', { visible: true, timeout: 20000 });
+          const disabled = await page.$eval('#emd-mode-input', input => input.disabled);
+          assert.equal(disabled, name === 'executive', `${role}: payment controls violate role matrix`);
+          assert.deepEqual(pageErrors, [], `${role}: browser runtime errors`);
+          await page.screenshot({ path: path.join(output, `${name}-payment-${width}.png`), fullPage: true });
+          await page.close();
+        }
       }
-      console.log('PASS browser payment controls: MIS may record; Executive is read-only.');
+      console.log('PASS desktop/mobile payment controls: MIS may record; Executive is read-only; no browser runtime errors.');
     } finally { await browser.close(); }
   } finally {
     if (database) database.close();
