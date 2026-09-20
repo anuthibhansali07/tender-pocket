@@ -3,7 +3,13 @@ package com.tenderpocket.models;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "activity_log")
+@Table(name = "activity_log", indexes = {
+    @Index(name = "idx_activity_log_timestamp", columnList = "timestamp"),
+    @Index(name = "idx_activity_log_action", columnList = "action"),
+    @Index(name = "idx_activity_log_role", columnList = "role"),
+    @Index(name = "idx_activity_log_tender_id", columnList = "tender_id"),
+    @Index(name = "idx_activity_log_username", columnList = "username")
+})
 public class ActivityLog {
 
     @Id

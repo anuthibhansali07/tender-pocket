@@ -16,7 +16,10 @@ import jakarta.persistence.Index;
     @Index(name = "idx_tenders_sector", columnList = "sector"),
     @Index(name = "idx_tenders_scraped_at", columnList = "scraped_at"),
     @Index(name = "idx_tenders_source", columnList = "source"),
-    @Index(name = "idx_tenders_ref_no", columnList = "ref_no")
+    @Index(name = "idx_tenders_ref_no", columnList = "ref_no"),
+    @Index(name = "idx_tenders_estimated_cost", columnList = "estimated_cost"),
+    @Index(name = "idx_tenders_spec_verification", columnList = "spec_verification_status"),
+    @Index(name = "idx_tenders_assigned_mis_spec", columnList = "assigned_mis_member_spec")
 })
 public class Tender {
 

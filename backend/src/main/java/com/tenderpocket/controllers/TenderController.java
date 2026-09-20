@@ -9,6 +9,12 @@ import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.services.DocumentGeneratorService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import com.tenderpocket.repositories.specifications.TenderSpecification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -118,101 +124,47 @@ public class TenderController {
     public ResponseEntity<?> getTenders(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
+            @RequestParam(value = "page", required = false, defaultValue = "0") int page,
+            @RequestParam(value = "size", required = false, defaultValue = "20") int size,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "location", required = false) String location,
             @RequestParam(value = "sector", required = false) String sector,
-            @RequestParam(value = "mis_executive", required = false) String misExecutive) {
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "min_cost", required = false) Double minCost1,
+            @RequestParam(value = "minCost", required = false) Double minCost2,
+            @RequestParam(value = "max_cost", required = false) Double maxCost1,
+            @RequestParam(value = "maxCost", required = false) Double maxCost2,
+            @RequestParam(value = "mis_executive", required = false) String misExecutive,
+            @RequestParam(value = "sortBy", required = false) String sortBy1,
+            @RequestParam(value = "sort_by", required = false) String sortBy2,
+            @RequestParam(value = "order", required = false) String order1,
+            @RequestParam(value = "sort_dir", required = false) String order2) {
 
-        List<Tender> list = tenderRepository.findAll();
-        List<Tender> filtered = new ArrayList<>();
+        Double minCost = minCost1 != null ? minCost1 : minCost2;
+        Double maxCost = maxCost1 != null ? maxCost1 : maxCost2;
+        String sortBy = sortBy1 != null ? sortBy1 : sortBy2;
+        String order = order1 != null ? order1 : order2;
+
+        if (page < 0) page = 0;
+        if (size <= 0) size = 20;
+        if (size > 500) size = 500;
 
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
 
-        for (Tender t : list) {
-            // Apply role restriction
-            if (("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) && !username.equalsIgnoreCase(t.getMisExecutive())) {
-                continue;
-            }
-            if ("Specification Team".equalsIgnoreCase(userRole) && !username.equalsIgnoreCase(t.getAssignedMisMemberSpec())) {
-                continue;
-            }
-            if (misExecutive != null && !misExecutive.isEmpty() && !misExecutive.equalsIgnoreCase(t.getMisExecutive())) {
-                continue;
-            }
+        Sort sort = resolveTenderSort(sortBy, order);
+        Pageable pageable = PageRequest.of(page, size, sort);
 
-            // Resolve dynamic status
-            String resolvedStatus = resolveStatus(t, todayIST);
-            t.setStatus(resolvedStatus);
+        Specification<Tender> spec = TenderSpecification.filterTenders(
+                search, status, location, sector, source, minCost, maxCost,
+                misExecutive, userRole, username, todayIST
+        );
 
-            // Filter by search query
-            if (search != null && !search.isEmpty()) {
-                String q = search.toLowerCase();
-                boolean matches = (t.getTitle() != null && t.getTitle().toLowerCase().contains(q))
-                        || (t.getId() != null && t.getId().toLowerCase().contains(q))
-                        || (t.getRefNo() != null && t.getRefNo().toLowerCase().contains(q))
-                        || (t.getAuthority() != null && t.getAuthority().toLowerCase().contains(q))
-                        || (t.getSourceId() != null && t.getSourceId().toLowerCase().contains(q));
-                if (!matches) continue;
-            }
+        Page<Tender> tenderPage = tenderRepository.findAll(spec, pageable);
 
-            // Filter by status or urgency
-            if (status != null && !status.isEmpty()) {
-                if ("Pending".equalsIgnoreCase(status) || "Approved".equalsIgnoreCase(status) || "Rejected".equalsIgnoreCase(status)) {
-                    if (!status.equalsIgnoreCase(t.getSpecVerificationStatus())) {
-                        continue;
-                    }
-                } else if ("Missed".equalsIgnoreCase(status)) {
-                    if (!"Missed Deadline".equalsIgnoreCase(resolvedStatus)
-                            && !"Missed Opportunity".equalsIgnoreCase(resolvedStatus)
-                            && !"Lapsed".equalsIgnoreCase(resolvedStatus)) {
-                        continue;
-                    }
-                } else if ("T2".equalsIgnoreCase(status) || "Due Today".equalsIgnoreCase(status)) {
-                    boolean isDueToday = t.getDueDate() != null && t.getDueDate().startsWith(todayIST);
-                    if (!isDueToday) {
-                        continue;
-                    }
-                } else if ("T2-3 days".equalsIgnoreCase(status) || "Due in 3 Days".equalsIgnoreCase(status)) {
-                    boolean isDueSoon = false;
-                    if (t.getDueDate() != null && !t.getDueDate().isEmpty()) {
-                        try {
-                            String dueStr = t.getDueDate().split(" ")[0];
-                            LocalDate due = LocalDate.parse(dueStr);
-                            LocalDate todayDate = LocalDate.parse(todayIST);
-                            long days = ChronoUnit.DAYS.between(todayDate, due);
-                            if (days >= 1 && days <= 3) {
-                                isDueSoon = true;
-                            }
-                        } catch (Exception e) {}
-                    }
-                    if (!isDueSoon) {
-                        continue;
-                    }
-                } else if (!status.equalsIgnoreCase(resolvedStatus)) {
-                    continue;
-                }
-            }
-
-            // Filter by location
-            if (location != null && !location.isEmpty() && !location.equalsIgnoreCase(t.getLocation())) {
-                continue;
-            }
-
-            // Filter by sector
-            if (sector != null && !sector.isEmpty() && !sector.equalsIgnoreCase(t.getSector())) {
-                continue;
-            }
-
-            filtered.add(t);
+        for (Tender t : tenderPage.getContent()) {
+            t.setStatus(resolveStatus(t, todayIST));
         }
-
-        // Sort by scraped_at DESC by default
-        filtered.sort((a, b) -> {
-            String sa = a.getScrapedAt() != null ? a.getScrapedAt() : "";
-            String sb = b.getScrapedAt() != null ? b.getScrapedAt() : "";
-            return sb.compareTo(sa);
-        });
 
         // Get filter options
         List<String> locations = ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole))
@@ -226,11 +178,69 @@ public class TenderController {
                 ? tenderRepository.findUniqueSectorsBySpecMember(username)
                 : tenderRepository.findUniqueSectors();
 
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "tenders", filtered,
-                "filters", Map.of("locations", locations, "sectors", sectors)
-        ));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("tenders", tenderPage.getContent());
+        response.put("currentPage", tenderPage.getNumber());
+        response.put("pageSize", tenderPage.getSize());
+        response.put("totalElements", tenderPage.getTotalElements());
+        response.put("totalPages", tenderPage.getTotalPages());
+        response.put("first", tenderPage.isFirst());
+        response.put("last", tenderPage.isLast());
+        response.put("hasNext", tenderPage.hasNext());
+        response.put("hasPrevious", tenderPage.hasPrevious());
+        response.put("filters", Map.of("locations", locations, "sectors", sectors));
+
+        return ResponseEntity.ok(response);
+    }
+
+    private Sort resolveTenderSort(String sortBy, String order) {
+        String property = "scrapedAt";
+        if (sortBy != null && !sortBy.trim().isEmpty()) {
+            String lower = sortBy.trim().toLowerCase();
+            switch (lower) {
+                case "scraped_at":
+                case "scrapedat":
+                    property = "scrapedAt";
+                    break;
+                case "due_date":
+                case "duedate":
+                    property = "dueDate";
+                    break;
+                case "estimated_cost":
+                case "estimatedcost":
+                    property = "estimatedCost";
+                    break;
+                case "title":
+                    property = "title";
+                    break;
+                case "id":
+                    property = "id";
+                    break;
+                case "ref_no":
+                case "refno":
+                    property = "refNo";
+                    break;
+                case "source":
+                    property = "source";
+                    break;
+                case "location":
+                    property = "location";
+                    break;
+                case "sector":
+                    property = "sector";
+                    break;
+                case "authority":
+                    property = "authority";
+                    break;
+                default:
+                    property = "scrapedAt";
+                    break;
+            }
+        }
+
+        Sort.Direction direction = "asc".equalsIgnoreCase(order) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        return Sort.by(direction, property).and(Sort.by(Sort.Direction.DESC, "id"));
     }
 
     @GetMapping("/{id}")

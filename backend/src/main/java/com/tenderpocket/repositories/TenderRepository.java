@@ -2,6 +2,7 @@ package com.tenderpocket.repositories;
 
 import com.tenderpocket.models.Tender;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
@@ -11,7 +12,7 @@ import org.springframework.data.domain.Pageable;
 import java.util.List;
 
 @Repository
-public interface TenderRepository extends JpaRepository<Tender, String> {
+public interface TenderRepository extends JpaRepository<Tender, String>, JpaSpecificationExecutor<Tender> {
     
     List<Tender> findByMisExecutive(String misExecutive);
     Page<Tender> findByMisExecutive(String misExecutive, Pageable pageable);

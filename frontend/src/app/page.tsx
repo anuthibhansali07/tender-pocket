@@ -141,6 +141,15 @@ export default function Dashboard() {
   const [allAssignedTenders, setAllAssignedTenders] = useState<Tender[]>([]);
   const [filters, setFilters] = useState({ locations: [] as string[], sectors: [] as string[] });
   const [analytics, setAnalytics] = useState<any>(null);
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const isInitialMount = useRef(true);
   
   // Loading States
   const [loading, setLoading] = useState(true);
@@ -543,7 +552,7 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      await Promise.all([fetchTenders(), fetchAnalytics(), fetchAssignedTenders(), fetchExecStats(), fetchMisTeam()]);
+      await Promise.all([fetchTenders(0), fetchAnalytics(), fetchExecStats(), fetchMisTeam()]);
     } catch (e) {
       showToast('Failed to retrieve dashboard data', 'error');
     } finally {
@@ -551,9 +560,11 @@ export default function Dashboard() {
     }
   };
 
-  const fetchTenders = async () => {
+  const fetchTenders = async (pageToFetch = currentPage) => {
     try {
       const params = new URLSearchParams({
+        page: pageToFetch.toString(),
+        size: pageSize.toString(),
         search: searchQuery,
         status: statusFilter,
         location: locationFilter,
@@ -566,17 +577,30 @@ export default function Dashboard() {
       if (!response.ok) throw new Error('API Error');
       const data = await response.json();
       if (data.success) {
-        setTenders(data.tenders);
-        setFilters(data.filters);
+        setTenders(data.tenders || []);
+        if (data.filters) {
+          setFilters(data.filters);
+        }
+        if (typeof data.currentPage === 'number') setCurrentPage(data.currentPage);
+        if (typeof data.pageSize === 'number') setPageSize(data.pageSize);
+        if (typeof data.totalElements === 'number') setTotalElements(data.totalElements);
+        if (typeof data.totalPages === 'number') setTotalPages(data.totalPages);
+        setHasNext(Boolean(data.hasNext));
+        setHasPrevious(Boolean(data.hasPrevious));
       }
     } catch (e) {
       console.error(e);
     }
   };
 
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    fetchTenders(newPage);
+  };
+
   const fetchAssignedTenders = async () => {
     try {
-      const response = await fetchWithAuth('/api/tenders');
+      const response = await fetchWithAuth('/api/tenders?size=500');
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -777,87 +801,32 @@ export default function Dashboard() {
     setActiveTab('dashboard');
   };
 
-  // Trigger search and filters fetch
+  // Trigger search and filters fetch with debounce
   useEffect(() => {
-    if (mounted && currentUser) {
-      const timer = setTimeout(() => {
-        fetchTenders();
-      }, 300);
-      return () => clearTimeout(timer);
+    if (!mounted || !currentUser) return;
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
     }
-  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter]);
+    const timer = setTimeout(() => {
+      fetchTenders(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, misExecutiveFilter]);
 
-  // Background Auto-Sync Poll for Dashboard
+  // Drawer real-time sync poll (active only when a specific tender drawer is open)
   useEffect(() => {
     if (!mounted || !currentUser) return;
 
     const interval = setInterval(async () => {
       try {
-        const fetchUrlParams = new URLSearchParams({
-          search: searchQuery,
-          status: statusFilter,
-          location: locationFilter,
-          sector: sectorFilter,
-          sortBy,
-          order: sortOrder,
-          mis_executive: misExecutiveFilter,
-          t: Date.now().toString()
-        });
-
-        // 1. Silent fetch tenders
-        const tResp = await fetchWithAuth(`/api/tenders?${fetchUrlParams.toString()}`);
-        if (tResp.ok) {
-          const tData = await tResp.json();
-          if (tData.success && tData.tenders) {
-            setTenders(tData.tenders);
-            if (selectedTenderRef.current) {
-              const freshSel = tData.tenders.find((t: any) => t.id === selectedTenderRef.current?.id);
-              if (freshSel) {
-                setSelectedTender(prev => prev ? { ...prev, ...freshSel } : null);
-              }
-            }
-          }
-        }
-
-        // 2. Silent fetch analytics
-        const aResp = await fetchWithAuth(`/api/analytics?t=${Date.now()}`);
-        if (aResp.ok) {
-          const aData = await aResp.json();
-          if (aData.success) {
-            setAnalytics(aData);
-          }
-        }
-
-        // 3. Silent fetch assigned mapping list (if Admin)
-        if (currentUser.role === 'Admin') {
-          const mResp = await fetchWithAuth(`/api/tenders?status=Participating&t=${Date.now()}`);
-          if (mResp.ok) {
-            const mData = await mResp.json();
-            if (mData.success && mData.tenders) {
-              setAllAssignedTenders(mData.tenders.filter((t: any) => t.mis_executive));
-            }
-          }
-        }
-
-        // 4. Silent fetch exec stats (if Admin or MIS Team)
-        if (currentUser.role === 'Admin' || currentUser.role === 'MIS Team') {
-          const sResp = await fetchWithAuth(`/api/tenders/stats?t=${Date.now()}`);
-          if (sResp.ok) {
-            const sData = await sResp.json();
-            if (sData.success && sData.stats) {
-              setExecStats(sData.stats);
-            }
-          }
-        }
-
-        // 5. Silent fetch full tender object & comments for currently open tender drawer
         if (selectedTenderRef.current) {
           const activeId = selectedTenderRef.current.id;
           const tDetailResp = await fetchWithAuth(`/api/tenders/${activeId}?t=${Date.now()}`);
           if (tDetailResp.ok) {
             const tDetailData = await tDetailResp.json();
             if (tDetailData.success && tDetailData.tender) {
-              setSelectedTender(tDetailData.tender);
+              setSelectedTender(prev => prev ? { ...prev, ...tDetailData.tender } : null);
             }
           }
 
@@ -870,12 +839,12 @@ export default function Dashboard() {
           }
         }
       } catch (err) {
-        console.error('Dashboard silent background poll failed:', err);
+        console.error('Drawer silent background poll failed:', err);
       }
-    }, 1500); // Poll every 1.5 seconds for instant real-time sync across sessions
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, [mounted, currentUser, searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, activeTab, misExecutiveFilter]);
+  }, [mounted, currentUser]);
 
 
   const toggleTheme = () => {
@@ -1139,6 +1108,7 @@ export default function Dashboard() {
     setLocationFilter('');
     setSectorFilter('');
     setStatusFilter(status);
+    setCurrentPage(0);
     setActiveTab('tenders');
   };
 
@@ -1224,71 +1194,114 @@ export default function Dashboard() {
   };
 
   // Export filtered tenders list to CSV
-  const exportToCSV = () => {
-    if (tenders.length === 0) {
-      showToast('No tenders available to export', 'error');
-      return;
-    }
+  const exportToCSV = async () => {
+    try {
+      showToast('Fetching full filtered dataset for export...', 'success');
 
-    const headers = [
-      'Entry date',
-      'Source',
-      'Source id',
-      'Vertical Name',
-      'Organisation Name',
-      'Place',
-      'State',
-      '"Tender Type\n(GeM  / Non GeM)\n"',
-      'TENDER ID',
-      'LINK',
-      'PUBLISH DATE',
-      '   Start Date',
-      'End Date',
-      'Time',
-      'Pre Bid Date',
-      'Corrigendum Remark',
-      'Product Name As per Tender',
-      'Product Name As per MarkEn',
-      'Bid Qty',
-      'Quoted Qty'
-    ];
+      let allTendersToExport: Tender[] = [];
+      const fetchBatchSize = 500;
+      let pageIndex = 0;
+      let totalPagesToFetch = 1;
 
-    const escapeCsvValue = (val: any) => {
-      if (val === null || val === undefined) return '';
-      const str = String(val);
-      return `"${str.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
-    };
+      do {
+        const params = new URLSearchParams({
+          page: pageIndex.toString(),
+          size: fetchBatchSize.toString(),
+          search: searchQuery,
+          status: statusFilter,
+          location: locationFilter,
+          sector: sectorFilter,
+          sortBy,
+          order: sortOrder,
+          mis_executive: misExecutiveFilter
+        });
 
-    let csvContent = headers.join(',') + '\n';
+        const res = await fetchWithAuth(`/api/tenders?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch tenders for CSV export');
+        const data = await res.json();
+        if (!data.success || !data.tenders) break;
 
-    tenders.forEach((t) => {
-      const row = [
-        t.entry_date || '',
-        t.source || 'Tender247',
-        t.id, // Source id is basically the tender id in tender 247
-        t.vertical_name || 'Others',
-        t.authority || 'N/A',
-        t.place || 'N/A',
-        t.state || 'N/A',
-        t.tender_type || 'Non GeM',
-        t.ref_no || '', // TENDER ID is the ref_no (procurement reference number)
-        t.original_url,
-        t.publish_date || 'N/A',
-        t.start_date || 'N/A',
-        t.due_date || 'N/A',
-        t.time || 'N/A',
-        t.pre_bid_date || 'No',
-        t.corrigendum_remark || 'No',
-        t.product_name_as_per_tender || t.title,
-        t.product_name_as_per_marken || t.vertical_name || 'Others',
-        t.bid_qty !== undefined && t.bid_qty !== null ? t.bid_qty : 1,
-        t.quoted_qty !== undefined && t.quoted_qty !== null ? t.quoted_qty : 1
+        allTendersToExport = allTendersToExport.concat(data.tenders);
+        if (typeof data.totalPages === 'number') {
+          totalPagesToFetch = data.totalPages;
+        } else {
+          break;
+        }
+        pageIndex++;
+      } while (pageIndex < totalPagesToFetch);
+
+      if (allTendersToExport.length === 0) {
+        showToast('No tenders available to export', 'error');
+        return;
+      }
+
+      const exportList = corrigendumFilter
+        ? allTendersToExport.filter(t => t.corrigendum_remark === 'Yes' || (t.notes && t.notes.toLowerCase().includes('corrigendum')))
+        : allTendersToExport;
+
+      if (exportList.length === 0) {
+        showToast('No tenders matching corrigendum filter to export', 'error');
+        return;
+      }
+
+      const headers = [
+        'Entry date',
+        'Source',
+        'Source id',
+        'Vertical Name',
+        'Organisation Name',
+        'Place',
+        'State',
+        '"Tender Type\n(GeM  / Non GeM)\n"',
+        'TENDER ID',
+        'LINK',
+        'PUBLISH DATE',
+        '   Start Date',
+        'End Date',
+        'Time',
+        'Pre Bid Date',
+        'Corrigendum Remark',
+        'Product Name As per Tender',
+        'Product Name As per MarkEn',
+        'Bid Qty',
+        'Quoted Qty'
       ];
 
-      csvContent += row.map(escapeCsvValue).join(',') + '\n';
-    });
+      const escapeCsvValue = (val: any) => {
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        return `"${str.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+      };
 
-    try {
+      let csvContent = headers.join(',') + '\n';
+
+      exportList.forEach((t) => {
+        const row = [
+          t.entry_date || '',
+          t.source || 'Tender247',
+          t.id, // Source id is basically the tender id in tender 247
+          t.vertical_name || 'Others',
+          t.authority || 'N/A',
+          t.place || 'N/A',
+          t.state || 'N/A',
+          t.tender_type || 'Non GeM',
+          t.ref_no || '', // TENDER ID is the ref_no (procurement reference number)
+          t.original_url,
+          t.publish_date || 'N/A',
+          t.start_date || 'N/A',
+          t.due_date || 'N/A',
+          t.time || 'N/A',
+          t.pre_bid_date || 'No',
+          t.corrigendum_remark || 'No',
+          t.product_name_as_per_tender || t.title,
+          t.product_name_as_per_marken || t.vertical_name || 'Others',
+          t.bid_qty !== undefined && t.bid_qty !== null ? t.bid_qty : 1,
+          t.quoted_qty !== undefined && t.quoted_qty !== null ? t.quoted_qty : 1
+        ];
+
+        csvContent += row.map(escapeCsvValue).join(',') + '\n';
+      });
+
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1298,7 +1311,7 @@ export default function Dashboard() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast(`Exported ${tenders.length} tenders to CSV successfully`, 'success');
+      showToast(`Exported ${exportList.length} tenders to CSV successfully`, 'success');
     } catch (err) {
       console.error(err);
       showToast('Failed to export CSV file', 'error');
@@ -1721,6 +1734,7 @@ export default function Dashboard() {
               setLocationFilter('');
               setSectorFilter('');
               setMisExecutiveFilter('');
+              setCurrentPage(0);
               setActiveTab('tenders');
             }}
           >
@@ -2219,14 +2233,20 @@ export default function Dashboard() {
                       className="search-input"
                       placeholder="Search by Title, ID, Authority, Ref No..."
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setCurrentPage(0);
+                      }}
                     />
                   </div>
 
                   <select 
                     className="filter-select"
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
                   >
                     {currentUser?.role === 'Specification Team' ? (
                       <>
@@ -2258,7 +2278,10 @@ export default function Dashboard() {
                     <select
                       className="filter-select"
                       value={misExecutiveFilter}
-                      onChange={(e) => setMisExecutiveFilter(e.target.value)}
+                      onChange={(e) => {
+                        setMisExecutiveFilter(e.target.value);
+                        setCurrentPage(0);
+                      }}
                     >
                       <option value="">All Executives</option>
                       {executives.map((exec) => (
@@ -2270,7 +2293,10 @@ export default function Dashboard() {
                   <select
                     className="filter-select"
                     value={locationFilter}
-                    onChange={(e) => setLocationFilter(e.target.value)}
+                    onChange={(e) => {
+                      setLocationFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
                   >
                     <option value="">All Locations</option>
                     {filters.locations.map((loc) => (
@@ -2281,7 +2307,10 @@ export default function Dashboard() {
                   <select
                     className="filter-select"
                     value={sectorFilter}
-                    onChange={(e) => setSectorFilter(e.target.value)}
+                    onChange={(e) => {
+                      setSectorFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
                   >
                     <option value="">All Sectors</option>
                     {filters.sectors.map((sec) => (
@@ -2292,7 +2321,10 @@ export default function Dashboard() {
                   <select
                     className="filter-select"
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
+                    onChange={(e) => {
+                      setSortBy(e.target.value);
+                      setCurrentPage(0);
+                    }}
                   >
                     <option value="scraped_at">Scraped Date</option>
                     <option value="due_date">Due Date</option>
@@ -2302,7 +2334,10 @@ export default function Dashboard() {
                   <button 
                     className="btn btn-secondary" 
                     style={{ padding: '10px' }}
-                    onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    onClick={() => {
+                      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                      setCurrentPage(0);
+                    }}
                   >
                     {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
                   </button>
@@ -2310,7 +2345,10 @@ export default function Dashboard() {
                   <button 
                     className={`btn ${corrigendumFilter ? 'btn-primary' : 'btn-secondary'}`}
                     style={{ padding: '10px 14px', background: corrigendumFilter ? 'var(--accent-red)' : 'transparent', color: corrigendumFilter ? '#fff' : 'var(--text-primary)', border: corrigendumFilter ? '1px solid var(--accent-red)' : '1px solid var(--border-color)' }}
-                    onClick={() => setCorrigendumFilter(prev => !prev)}
+                    onClick={() => {
+                      setCorrigendumFilter(prev => !prev);
+                      setCurrentPage(0);
+                    }}
                   >
                     <span>Corrigendum Alerts Only</span>
                   </button>
@@ -2341,66 +2379,127 @@ export default function Dashboard() {
                   }
 
                   return (
-                    <div className="tender-list-container" style={{ maxHeight: '600px' }}>
-                      {displayedTenders.map(tender => (
-                        <div key={tender.id} onClick={() => openTenderDetails(tender)} className="tender-item" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', cursor: 'pointer' }}>
-                        <div className="tender-item-left">
-                          <div className="tender-meta-row">
-                            <span className="tender-id-badge">{tender.id}</span>
-                            {currentUser?.role === 'Specification Team' ? (
+                    <>
+                      <div className="tender-list-container" style={{ maxHeight: '600px' }}>
+                        {displayedTenders.map(tender => (
+                          <div key={tender.id} onClick={() => openTenderDetails(tender)} className="tender-item" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', cursor: 'pointer' }}>
+                          <div className="tender-item-left">
+                            <div className="tender-meta-row">
+                              <span className="tender-id-badge">{tender.id}</span>
+                              {currentUser?.role === 'Specification Team' ? (
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '700',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  backgroundColor: tender.spec_verification_status === 'Approved' ? 'rgba(16, 185, 129, 0.15)' : tender.spec_verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.15)' : tender.spec_verification_status === 'Rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                  color: tender.spec_verification_status === 'Approved' ? '#10b981' : tender.spec_verification_status === 'Pending' ? '#f59e0b' : tender.spec_verification_status === 'Rejected' ? '#ef4444' : 'var(--text-muted)',
+                                  border: '1px solid ' + (tender.spec_verification_status === 'Approved' ? 'rgba(16, 185, 129, 0.3)' : tender.spec_verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.3)' : tender.spec_verification_status === 'Rejected' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)')
+                                }}>
+                                  {tender.spec_verification_status === 'Pending' ? 'Pending' : (tender.spec_verification_status || 'Not Started')}
+                                </span>
+                              ) : (
+                                <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
+                              )}
                               <span style={{
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                padding: '3px 8px',
+                                fontSize: '10px',
+                                fontWeight: '600',
+                                padding: '2px 6px',
                                 borderRadius: '6px',
-                                backgroundColor: tender.spec_verification_status === 'Approved' ? 'rgba(16, 185, 129, 0.15)' : tender.spec_verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.15)' : tender.spec_verification_status === 'Rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                color: tender.spec_verification_status === 'Approved' ? '#10b981' : tender.spec_verification_status === 'Pending' ? '#f59e0b' : tender.spec_verification_status === 'Rejected' ? '#ef4444' : 'var(--text-muted)',
-                                border: '1px solid ' + (tender.spec_verification_status === 'Approved' ? 'rgba(16, 185, 129, 0.3)' : tender.spec_verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.3)' : tender.spec_verification_status === 'Rejected' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)')
+                                backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                                color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
+                                border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
                               }}>
-                                {tender.spec_verification_status === 'Pending' ? 'Pending' : (tender.spec_verification_status || 'Not Started')}
+                                {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
                               </span>
-                            ) : (
-                              <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
-                            )}
-                            <span style={{
-                              fontSize: '10px',
-                              fontWeight: '600',
-                              padding: '2px 6px',
-                              borderRadius: '6px',
-                              backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                              color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                              border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
-                            }}>
-                              {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
-                            </span>
-                            {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
-                            {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ref: {tender.ref_no}</span>}
+                              {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
+                              {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ref: {tender.ref_no}</span>}
+                            </div>
+                            <h4 className="tender-title" title={tender.title}>{tender.product_name_as_per_tender || tender.title}</h4>
+                            <div className="tender-details-row">
+                              {tender.authority && (
+                                <div className="tender-detail-item">
+                                  <Building size={14} />
+                                  <span>{tender.authority}</span>
+                                </div>
+                              )}
+                              {tender.sector && (
+                                <div className="tender-detail-item">
+                                  <Layers size={14} />
+                                  <span>{tender.sector}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <h4 className="tender-title" title={tender.title}>{tender.product_name_as_per_tender || tender.title}</h4>
-                          <div className="tender-details-row">
-                            {tender.authority && (
-                              <div className="tender-detail-item">
-                                <Building size={14} />
-                                <span>{tender.authority}</span>
-                              </div>
-                            )}
-                            {tender.sector && (
-                              <div className="tender-detail-item">
-                                <Layers size={14} />
-                                <span>{tender.sector}</span>
-                              </div>
-                            )}
+                          <div className="tender-item-right">
+                            <div className="tender-cost">{formatCost(tender.estimated_cost, tender.estimated_cost_raw)}</div>
+                            <div className={`tender-deadline ${getDeadlineStatus(tender.due_date).className}`}>
+                              {getDeadlineStatus(tender.due_date).label}: {formatDate(tender.due_date)}
+                            </div>
                           </div>
                         </div>
-                        <div className="tender-item-right">
-                          <div className="tender-cost">{formatCost(tender.estimated_cost, tender.estimated_cost_raw)}</div>
-                          <div className={`tender-deadline ${getDeadlineStatus(tender.due_date).className}`}>
-                            {getDeadlineStatus(tender.due_date).label}: {formatDate(tender.due_date)}
-                          </div>
-                        </div>
+                      ))}
+                    </div>
+
+                    {/* Minimal Pagination Controls */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid var(--border-color)',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}>
+                      <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                        {totalElements > 0 ? (
+                          <>
+                            Showing <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{currentPage * pageSize + 1}</span> to <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{Math.min((currentPage + 1) * pageSize, totalElements)}</span> of <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{totalElements}</span> tenders &bull; Page <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{currentPage + 1}</span> of <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{totalPages || 1}</span>
+                          </>
+                        ) : (
+                          'No tenders to display'
+                        )}
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          className="btn btn-secondary"
+                          disabled={currentPage === 0 || !hasPrevious}
+                          onClick={() => handlePageChange(Math.max(0, currentPage - 1))}
+                          style={{
+                            padding: '6px 14px',
+                            opacity: (currentPage === 0 || !hasPrevious) ? 0.5 : 1,
+                            cursor: (currentPage === 0 || !hasPrevious) ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <ChevronLeft size={16} />
+                          <span>Previous</span>
+                        </button>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', padding: '0 8px' }}>
+                          Page {currentPage + 1} of {totalPages || 1}
+                        </span>
+                        <button
+                          className="btn btn-secondary"
+                          disabled={currentPage >= totalPages - 1 || !hasNext}
+                          onClick={() => handlePageChange(currentPage + 1)}
+                          style={{
+                            padding: '6px 14px',
+                            opacity: (currentPage >= totalPages - 1 || !hasNext) ? 0.5 : 1,
+                            cursor: (currentPage >= totalPages - 1 || !hasNext) ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <span>Next</span>
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 );
               })()}
             </div>
