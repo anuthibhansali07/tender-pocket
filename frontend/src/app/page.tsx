@@ -5489,12 +5489,12 @@ export default function Dashboard() {
                         color: selectedTender.mis_final_price ? '#10b981' : selectedTender.tpc_purchase_price ? '#3b82f6' : '#f59e0b',
                         fontWeight: '600'
                       }}>
-                        {selectedTender.mis_final_price ? 'Final Price Set' : selectedTender.tpc_purchase_price ? 'Awaiting MIS Final Price' : 'Pending TPC Review'}
+                        {selectedTender.mis_final_price ? 'Provided Price Set' : selectedTender.tpc_purchase_price ? 'Awaiting Provided Price' : 'Pending TPC Review'}
                       </span>
                     </div>
 
                     <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
-                      The TPC Team verifies and records the confidential manufacturer purchase price before MIS team finalizes the quoting rate for the Executive.
+                      The TPC Team submits the Transfer Price (total production cost) to Admin & MIS Team. Admin or MIS Team then sets the Provided Price for the Tender Executive.
                     </p>
 
                     {/* Executive: strictly hide TPC price per role security */}
@@ -5502,16 +5502,16 @@ export default function Dashboard() {
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.03)', padding: '10px', borderRadius: '6px' }}>
                         {selectedTender.mis_final_price ? (
                           <div style={{ color: '#10b981', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span>✅ MIS Final Purchase Price:</span>
+                            <span>✅ Provided Price:</span>
                             <span style={{ fontSize: '14px', color: '#10b981', fontWeight: '800' }}>₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}</span>
                           </div>
                         ) : selectedTender.current_stage === 'MIS_PRICING' ? (
                           <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
-                            ⏳ TPC Team verified manufacturer purchase price. Awaiting MIS Team to configure final purchase price.
+                            ⏳ TPC Team submitted Transfer Price. Awaiting Admin / MIS Team to configure Provided Price.
                           </span>
                         ) : selectedTender.spec_verification_status === 'Approved' ? (
                           <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
-                            ⏳ Specification cleared. Awaiting TPC Team to verify manufacturer purchase price.
+                            ⏳ Specification cleared. Awaiting TPC Team to submit Transfer Price.
                           </span>
                         ) : (
                           <span>⏳ Waiting for Technical Specification Clearance before pricing review.</span>
@@ -5520,16 +5520,16 @@ export default function Dashboard() {
                     ) : (
                       /* TPC Team, MIS Team, Admin */
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {/* Section A: TPC Quoted Price */}
+                        {/* Section A: TPC Transfer Price */}
                         {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || (currentUser?.role === 'MIS Team' && selectedTender.tpc_purchase_price)) && (
                           <div style={{ background: selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.06)' : 'rgba(147, 51, 234, 0.05)', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.2)' : 'rgba(147, 51, 234, 0.2)'}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: selectedTender.tpc_purchase_price ? '0' : '8px' }}>
                               <div>
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: selectedTender.tpc_purchase_price ? '#10b981' : '#a855f7', display: 'block', textTransform: 'uppercase' }}>
-                                  1. TPC Quoted Price (Manufacturer Purchase Price)
+                                  1. TPC Transfer Price (Total Production Cost)
                                 </span>
                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                  {selectedTender.tpc_purchase_price ? 'Verified by TPC Team & forwarded to MIS' : 'Confidential: Input manufacturer price for MIS Team'}
+                                  {selectedTender.tpc_purchase_price ? 'Submitted by TPC Team & forwarded securely to Admin & MIS' : 'Confidential: Input total production cost for Admin & MIS Team'}
                                 </span>
                               </div>
                               {selectedTender.tpc_purchase_price && (
@@ -5544,7 +5544,7 @@ export default function Dashboard() {
                                 <div style={{ display: 'flex', gap: '6px' }}>
                                   <input
                                     type="number"
-                                    placeholder={selectedTender.tpc_purchase_price ? `Update price (Current: ₹${Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')})` : "Enter verified purchase price (₹)..."}
+                                    placeholder={selectedTender.tpc_purchase_price ? `Update price (Current: ₹${Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')})` : "Enter Transfer Price (₹)..."}
                                     value={tpcPurchasePriceInput}
                                     onChange={(e) => setTpcPurchasePriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
                                     style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
@@ -5563,10 +5563,10 @@ export default function Dashboard() {
                                         });
                                         const data = await res.json();
                                         if (data.success) {
-                                          showToast(data.message || 'Manufacturer price submitted!', 'success');
+                                          showToast(data.message || 'Transfer price submitted!', 'success');
                                           setSelectedTender(prev => prev ? { ...prev, tpc_purchase_price: Number(tpcPurchasePriceInput), current_stage: 'MIS_PRICING' } : null);
                                           setTpcPurchasePriceInput('');
-                                          alert(data.message || 'Manufacturer purchase price forwarded securely to MIS Team.');
+                                          alert(data.message || 'Transfer price forwarded securely to Admin & MIS Team.');
                                         } else {
                                           showToast(data.error || 'Failed to submit price', 'error');
                                         }
@@ -5578,31 +5578,31 @@ export default function Dashboard() {
                                     }}
                                     style={{ fontSize: '11px', padding: '6px 12px', background: '#9333ea', borderColor: '#9333ea' }}
                                   >
-                                    {submittingTpcPrice ? 'Submitting...' : '🚀 Submit Quoted Price to MIS'}
+                                    {submittingTpcPrice ? 'Submitting...' : '🚀 Submit Transfer Price to Admin & MIS'}
                                   </button>
                                 </div>
                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                                  🔒 Confidential: TPC Team, MIS Team, and Admin only. Hidden from Executive.
+                                  🔒 Confidential: Sent to Admin and MIS Team. Hidden from Tender Executive.
                                 </span>
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* If MIS Team and TPC price not yet entered */}
-                        {currentUser?.role === 'MIS Team' && !selectedTender.tpc_purchase_price && (
+                        {/* If MIS Team / Admin and TPC price not yet entered */}
+                        {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
                           <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '11.5px', color: '#d97706' }}>
-                            ⏳ <strong>Awaiting TPC Quoted Price:</strong> TPC Team has not yet submitted manufacturer price. Once submitted, configure the final price here.
+                            ⏳ <strong>Awaiting TPC Transfer Price:</strong> TPC Team has not yet submitted total production cost. Once submitted, Admin or MIS Team can set Provided Price.
                           </div>
                         )}
 
-                        {/* Section B: MIS Final Pricing */}
+                        {/* Section B: Provided Price */}
                         {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
                           <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                               <div>
                                 <span style={{ fontSize: '10.5px', fontWeight: '700', color: '#3b82f6', textTransform: 'uppercase' }}>
-                                  2. MIS Final Purchase Price (Provided to Executive)
+                                  2. Provided Price (For Tender Executive)
                                 </span>
                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>
                                   Visible to Tender Executive to unblock Bid Documents.
@@ -5617,7 +5617,7 @@ export default function Dashboard() {
                             <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
                               <input
                                 type="number"
-                                placeholder={selectedTender.mis_final_price ? `Update price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter MIS final price (₹)"}
+                                placeholder={selectedTender.mis_final_price ? `Update price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
                                 value={misFinalPriceInput}
                                 onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
                                 style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
@@ -5636,10 +5636,10 @@ export default function Dashboard() {
                                     });
                                     const data = await res.json();
                                     if (data.success) {
-                                      showToast(data.message || 'MIS final price configured!', 'success');
+                                      showToast(data.message || 'Provided price configured!', 'success');
                                       setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
                                       setMisFinalPriceInput('');
-                                      alert(data.message || 'Final purchase price provided to Tender Executive.');
+                                      alert(data.message || 'Provided price sent to Tender Executive.');
                                     } else {
                                       showToast(data.error || 'Failed to update MIS price', 'error');
                                     }
@@ -5651,7 +5651,7 @@ export default function Dashboard() {
                                 }}
                                 style={{ fontSize: '11px', padding: '6px 12px' }}
                               >
-                                {submittingMisPrice ? 'Saving...' : 'Send Final Price to Executive'}
+                                {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
                               </button>
                             </div>
                           </div>
@@ -5703,7 +5703,7 @@ export default function Dashboard() {
                             gap: '6px'
                           }}>
                             <span>🔒</span>
-                            <span><strong>Locked:</strong> MIS Final Purchase Price must be configured before generating bid documents. (Specification Cleared ✅, Awaiting MIS Final Price ⏳).</span>
+                            <span><strong>Locked:</strong> Provided Price from Admin / MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
                           </div>
                         ) : (
                           (currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (

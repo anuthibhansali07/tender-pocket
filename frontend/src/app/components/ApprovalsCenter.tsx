@@ -1209,13 +1209,13 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     )}
                     {approval.tpcPurchasePrice != null && (
                       <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>TPC Purchase Price</span>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Transfer Price</span>
                         <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tpcPurchasePrice)}</strong>
                       </div>
                     )}
                     {approval.misFinalPrice != null && (
                       <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>MIS Final Price</span>
+                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Provided Price</span>
                         <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.misFinalPrice)}</strong>
                       </div>
                     )}
@@ -1562,13 +1562,13 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                 )}
                 {modal.approval.tpcPurchasePrice != null && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Executive' && (
                   <div>
-                    <span style={{ color: 'var(--text-muted)' }}>TPC Purchase Price</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Transfer Price (Production Cost)</span>
                     <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.tpcPurchasePrice)}</div>
                   </div>
                 )}
                 {modal.approval.misFinalPrice != null && (
                   <div>
-                    <span style={{ color: 'var(--text-muted)' }}>MIS Final Price</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Provided Price</span>
                     <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.misFinalPrice)}</div>
                   </div>
                 )}
@@ -1634,13 +1634,13 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             {modal.approval.stage === 'TPC_PRICING' && modal.action === 'APPROVED' && (
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
-                  Manufacturer Purchase Price (₹) <span style={{ color: '#ef4444' }}>*</span>
+                  Transfer Price (Total Production Cost) (₹) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
                   value={modal.tpcPurchasePrice}
                   onChange={e => setModal(prev => ({ ...prev, tpcPurchasePrice: e.target.value }))}
-                  placeholder="Enter verified manufacturer purchase price..."
+                  placeholder="Enter total production cost / transfer price..."
                   style={{
                     width: '100%', boxSizing: 'border-box', borderRadius: '6px',
                     border: '1px solid var(--border-color)', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))',
@@ -1648,7 +1648,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   }}
                 />
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                  🔒 Confidential: Sent to MIS Team. Not visible to Tender Executive.
+                  🔒 Confidential: Sent to Admin &amp; MIS Team. Not visible to Tender Executive.
                 </span>
               </div>
             )}
@@ -1657,13 +1657,13 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             {modal.approval.stage === 'MIS_PRICING' && modal.action === 'APPROVED' && (
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
-                  MIS Final Purchase Price (₹) <span style={{ color: '#ef4444' }}>*</span>
+                  Provided Price (₹) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
                   value={modal.misFinalPrice}
                   onChange={e => setModal(prev => ({ ...prev, misFinalPrice: e.target.value }))}
-                  placeholder="Enter final purchase price for Tender Executive..."
+                  placeholder="Enter final provided price for Tender Executive..."
                   style={{
                     width: '100%', boxSizing: 'border-box', borderRadius: '6px',
                     border: '1px solid var(--border-color)', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))',
@@ -1671,7 +1671,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   }}
                 />
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                  This final price will be sent to the Tender Executive to unblock bid document generation.
+                  This final provided price will be sent to the Tender Executive to unblock bid document generation.
                 </span>
               </div>
             )}
