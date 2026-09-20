@@ -106,15 +106,17 @@ class TechnicalOnlyDiscoveryTest {
         }
     }
 
-    @Test void excludedWarrantyDoesNotTriggerMissingClauseRetry() {
+    @Test void warrantyAndGeneralRequirementsAreRetainedWithoutRetry() {
         var calls = new AtomicInteger();
         var ai = new AISpecificationIntelligenceService() {
             @Override String postAzureResponse(String prompt, byte[] bytes, AzureOutput output, List<String> names) {
                 calls.incrementAndGet();
-                assertTrue(prompt.contains("Exclude warranty"));
+                assertTrue(prompt.contains("warranty, AMC/CMC"));
                 return """
-                        {"noApplicableRequirements":false,"excludedClauseReferences":["3.11"],"rows":[
-                        {"clauseReference":"3.10","requirement":"Capacity shall be 100 litres. Warranty shall be five years.",
+                        {"readable":true,"clauseDecisions":{"p1:3.10":"included","p1:3.11":"included"},"rows":[
+                        {"clauseReference":"3.10","requirement":"Capacity shall be 100 litres.",
+                         "productCategory":"Pump","sourceReference":"PDF p. 1","rowType":"requirement"},
+                        {"clauseReference":"3.11","requirement":"Warranty shall be five years.",
                          "productCategory":"Pump","sourceReference":"PDF p. 1","rowType":"requirement"}]}
                         """;
             }
@@ -122,9 +124,10 @@ class TechnicalOnlyDiscoveryTest {
         var rows = ai.processOcrAndSynthesizeClauses(
                 "[SOURCE_PAGE pdf=\"1\"]\n3.10 Capacity shall be 100 litres.\n3.11 Warranty shall be five years.\n[/SOURCE_PAGE]",
                 new byte[]{1}, Map.of(), List.of("Pump"));
-        assertEquals(1, rows.size());
+        assertEquals(2, rows.size());
         assertEquals("3.10", rows.get(0)[0]);
         assertEquals("Capacity shall be 100 litres.", rows.get(0)[1]);
+        assertEquals("3.11", rows.get(1)[0]);
         assertEquals(1, calls.get());
     }
 
@@ -137,7 +140,7 @@ class TechnicalOnlyDiscoveryTest {
             }
         };
         assertTrue(AISpecificationIntelligenceService.isCompletedEmpty(ai.processOcrAndSynthesizeClauses(
-                "[SOURCE_PAGE pdf=\"1\"]\n1.1 Warranty shall be five years.\n[/SOURCE_PAGE]",
+                "[SOURCE_PAGE pdf=\"1\"]\n1.1 Enter the bidder registration number in the portal.\n[/SOURCE_PAGE]",
                 new byte[]{1}, Map.of(), List.of("Pump"))));
         assertEquals(1, calls.get());
     }
@@ -147,12 +150,12 @@ class TechnicalOnlyDiscoveryTest {
                 + "Training mode shall support offline operation. Warranty shall be five years.",
                 "", "", "", "Pump", "-", "PDF p. 1", "requirement"};
         List<String[]> result = ReflectionTestUtils.invokeMethod(new AISpecificationIntelligenceService(),
-                "technicalRequirementsOnly", Collections.singletonList(row));
+                "complianceRequirementsOnly", Collections.singletonList(row));
         assertNotNull(result);
         assertEquals(1, result.size());
         assertTrue(result.get(0)[1].contains("Delivery pressure"));
         assertTrue(result.get(0)[1].contains("Transport weight"));
         assertTrue(result.get(0)[1].contains("Training mode"));
-        assertFalse(result.get(0)[1].contains("Warranty"));
+        assertTrue(result.get(0)[1].contains("Warranty"));
     }
 }

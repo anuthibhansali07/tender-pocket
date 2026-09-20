@@ -43,7 +43,7 @@ const assert = require("node:assert/strict");
           posting = false;
           return route.fulfill({json: uploaded !== 2
             ? {success: true, generated: false, products: [],
-                message: "No products found with technical specifications."}
+                message: "No products found with applicable compliance requirements."}
             : {success: true, generated: true, message: "Sheets ready", metrics,
                 products: [{productName: "Battery", scheduleNumber: "1", clauseCount: 1,
                   pdfDownloadUrl: "/documents/test/battery.pdf", docxDownloadUrl: "/documents/test/battery.docx"}]}});
@@ -69,7 +69,7 @@ const assert = require("node:assert/strict");
         await form.getByRole("button", {name: "Generate compliance sheets"}).click();
         await page.waitForFunction(expected =>
           document.querySelector(".cp-message")?.textContent === expected,
-        run === 0 ? "No products found with technical specifications." : "Sheets ready");
+        run === 0 ? "No products found with applicable compliance requirements." : "Sheets ready");
         assert.equal(await page.locator(".cp-links a").count(), run === 0 ? 0 : 2);
         await form.getByRole("button", {name: "Generate compliance sheets"}).waitFor();
       }
@@ -110,7 +110,7 @@ const assert = require("node:assert/strict");
         name: "another.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-test")});
       await form.getByRole("button", {name: "Generate compliance sheets"}).click();
       await page.waitForFunction(() => document.querySelector(".cp-message")?.textContent ===
-        "No products found with technical specifications.");
+        "No products found with applicable compliance requirements.");
       assert.equal(await page.locator(".cp-review-actions").isVisible(), false);
       assert(mutations.every(url => url.endsWith("/upload-tech-spec")),
         `Unexpected unrelated workflow mutation: ${mutations}`);

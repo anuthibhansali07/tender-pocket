@@ -25,7 +25,7 @@ const success = {
   extraFutureField: { retained: true },
 };
 const empty = { success: true, generated: false, products: [], pdfDownloadUrl: null,
-  docxDownloadUrl: null, clauseCount: 0, message: 'No products found with technical specifications.', metrics };
+  docxDownloadUrl: null, clauseCount: 0, message: 'No products found with applicable compliance requirements.', metrics };
 const originalDocs = [{ name: 'Unrelated document', filename: 'existing.pdf', local_path: '/existing.pdf' }];
 
 async function fixture(options = {}) {

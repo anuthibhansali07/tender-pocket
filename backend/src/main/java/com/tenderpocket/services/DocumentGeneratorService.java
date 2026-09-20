@@ -1818,7 +1818,7 @@ public class DocumentGeneratorService {
                 78, batches.size(), batches.size(), merged.size());
         if (metrics != null) metrics.setResultCounts(productCount, merged.size());
         if (merged.isEmpty()) progress.onProgress("NO_PRODUCTS",
-                "No products found with technical specifications.", 100, batches.size(), batches.size(), 0);
+                "No products found with applicable compliance requirements.", 100, batches.size(), batches.size(), 0);
         return merged.isEmpty() ? AISpecificationIntelligenceService.completedEmptyRows()
                 : new ArrayList<>(merged.values());
     }

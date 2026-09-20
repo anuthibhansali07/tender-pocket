@@ -56,10 +56,10 @@ class TechnicalOnlyLiveTest {
             String words = String.join(" ", technical.stream().map(row -> row[1]).toList());
             assertTrue(words.contains("100"));
             assertTrue(words.contains("IEC 61010-1"));
-            assertFalse(words.toLowerCase(Locale.ROOT).contains("warranty"));
-            assertFalse(words.toLowerCase(Locale.ROOT).contains("training"));
+            assertTrue(words.toLowerCase(Locale.ROOT).contains("warranty"));
+            assertTrue(words.toLowerCase(Locale.ROOT).contains("training"));
             assertTrue(technical.stream().allMatch(row -> row[2].isBlank() && row[3].isBlank() && row[4].isBlank()));
-            System.out.println("[LiveLowReasoning] PASS empty discovery + technical-only mixed PDF; "
+            System.out.println("[LiveLowReasoning] PASS empty discovery + complete compliance mixed PDF; "
                     + "API attempts=" + metrics.snapshot().get("apiAttempts"));
         } finally {
             ai.clearConversionMetrics();

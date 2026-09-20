@@ -49,7 +49,7 @@ const assert = require("node:assert/strict");
             active = false;
             return route.fulfill({ json: emptyResult
               ? { success: true, generated: false, products: [], metrics,
-                  message: "No products found with technical specifications." }
+                  message: "No products found with applicable compliance requirements." }
               : { success: true, generated: true, products, metrics, message: "Sheets ready" } });
           }
           return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head></head>
@@ -81,7 +81,7 @@ const assert = require("node:assert/strict");
         await page.locator("input").setInputFiles({ name: "administrative.pdf",
           mimeType: "application/pdf", buffer: Buffer.alloc(10000, "x") });
         await page.waitForFunction(() => document.querySelector(".cp-message")?.textContent ===
-          "No products found with technical specifications.");
+          "No products found with applicable compliance requirements.");
         assert.equal(await page.locator(".cp-links a").count(), 0);
         assert.equal(await page.locator(".cp-message.cp-neutral").count(), 1);
         assert.deepEqual(errors, []);
