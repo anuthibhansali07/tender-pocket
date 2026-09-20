@@ -810,7 +810,7 @@ public class TenderController {
             data.put("signatoryName", "Korra Praveen Naik");
             data.put("signatoryDesignation", "Partner");
 
-            // 3. Parse technical clauses from input specification.pdf (with OCR fallback & tender title context)
+            // 3. Parse product compliance clauses from specification.pdf (with OCR fallback & tender context)
             List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(
                     uploadedBytes, originalFilename, data,
                     (stage, message, percent, completed, total, clauses) ->
@@ -818,7 +818,7 @@ public class TenderController {
                                     completed, total, clauses), conversionMetrics);
 
             if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
-                String message = "No products found with technical specifications.";
+                String message = "No products found with applicable compliance requirements.";
                 tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(),
                         List.of(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
                                 "local_path", inputDownloadUrl, "created_date", LocalDate.now().toString()))));

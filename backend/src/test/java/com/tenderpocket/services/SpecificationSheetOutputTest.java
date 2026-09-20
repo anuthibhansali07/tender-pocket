@@ -81,6 +81,21 @@ class SpecificationSheetOutputTest {
     }
 
     @Test
+    void rendererNeverLeavesSerialNumberBlankForLegacyContent() throws Exception {
+        var product = new SpecificationSheetContent.Product("Pump", "1", List.of(
+                new SpecificationSheetContent.Row("", "Warranty shall be five years.", false, "PDF p. 2")),
+                List.of());
+
+        String html = SpecificationSheetRenderer.html(Map.of(), List.of(product), null, null);
+        assertTrue(html.contains("<td class=\"reference\">1</td>"));
+
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(
+                SpecificationSheetRenderer.docx(Map.of(), List.of(product), null, null)))) {
+            assertEquals("1", document.getTables().get(0).getRow(1).getCell(0).getText());
+        }
+    }
+
+    @Test
     void usageMetricsCalculateInrWithoutDoubleBillingReasoningTokens() {
         var metrics = new ComplianceConversionMetrics("0.20", "0.02", "1.25", "80", "2026-09-13");
         metrics.recordApiAttempt(125, true, "{\"usage\":{\"input_tokens\":1000,"

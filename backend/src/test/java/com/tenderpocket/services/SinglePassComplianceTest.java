@@ -37,19 +37,21 @@ class SinglePassComplianceTest {
                 "An independent empty flag can contradict rows; derive emptiness from validated rows");
     }
 
-    @Test void technicalAndAdministrativeClausesAreHandledInOneCall() {
+    @Test void technicalAndWarrantyClausesAreHandledInOneCall() {
         var calls = new AtomicInteger();
         var ai = stub(calls, """
                 {"readable":true,
-                 "clauseDecisions":{"p1:3.10":"included","p1:3.11":"excluded"},
+                 "clauseDecisions":{"p1:3.10":"included","p1:3.11":"included"},
                  "rows":[{"clauseReference":"3.10","requirement":"Capacity shall be 100 litres.",
+                   "productCategory":"Pump","sourceReference":"PDF p. 1","rowType":"requirement"},
+                  {"clauseReference":"3.11","requirement":"Warranty shall be five years.",
                    "productCategory":"Pump","sourceReference":"PDF p. 1","rowType":"requirement"}]}
                 """);
         var rows = ai.processOcrAndSynthesizeClauses(
                 "[SOURCE_PAGE pdf=\"1\"]\n3.10 Capacity shall be 100 litres.\n"
                 + "3.11 Warranty shall be five years.\n[/SOURCE_PAGE]", new byte[]{1}, Map.of(), List.of("Pump"));
         assertEquals(1, calls.get());
-        assertEquals(1, rows.size());
+        assertEquals(2, rows.size());
         assertEquals("3.10", rows.get(0)[0]);
     }
 
@@ -58,7 +60,7 @@ class SinglePassComplianceTest {
         var result = stub(calls, """
                 {"readable":true,"clauseDecisions":{"p1:3.10":"excluded"},"rows":[]}
                 """).processOcrAndSynthesizeClauses(
-                "[SOURCE_PAGE pdf=\"1\"]\n3.10 Warranty five years.\n[/SOURCE_PAGE]",
+                "[SOURCE_PAGE pdf=\"1\"]\n3.10 Enter bidder details in the portal.\n[/SOURCE_PAGE]",
                 new byte[]{1}, Map.of(), List.of("Pump"));
         assertTrue(AISpecificationIntelligenceService.isCompletedEmpty(result));
         assertEquals(1, calls.get());
@@ -74,7 +76,7 @@ class SinglePassComplianceTest {
                 row("Providing and fixing of Charger Battery (12V-2.5 AH)"),
                 row("Maintenance free battery shall have capacity 18 AH."));
         List<String[]> filtered = ReflectionTestUtils.invokeMethod(new AISpecificationIntelligenceService(),
-                "technicalRequirementsOnly", rows);
+                "complianceRequirementsOnly", rows);
         assertNotNull(filtered);
         assertEquals(3, filtered.size());
         assertEquals("ARD Battery (12A-18 AH)", filtered.get(0)[5]);
@@ -129,7 +131,7 @@ class SinglePassComplianceTest {
     @Test void repeatedReferenceOnAnotherPageNeedsItsOwnIncludedRow() {
         var ai = new AISpecificationIntelligenceService();
         String[] row = {"3.10", "Capacity 100 litres.", "", "", "", "Pump", "-", "PDF p. 1"};
-        Boolean valid = ReflectionTestUtils.invokeMethod(ai, "coversTechnicalSourceClauses",
+        Boolean valid = ReflectionTestUtils.invokeMethod(ai, "coversComplianceSourceClauses",
                 Collections.singletonList(row),
                 "[SOURCE_PAGE pdf=\"1\"]\n3.10 Capacity 100 litres.\n[/SOURCE_PAGE]\n"
                 + "[SOURCE_PAGE pdf=\"2\"]\n3.10 Capacity 120 litres.\n[/SOURCE_PAGE]",
@@ -198,17 +200,18 @@ class SinglePassComplianceTest {
         assertTrue(accepted.get(0)[6].contains("Review clause coverage"));
     }
 
-    @Test void excludedAdministrativeRowsDoNotFailEvidenceValidation() {
+    @Test void unnumberedWarrantyRequirementIsRetained() {
         var calls = new AtomicInteger();
         var ai = stub(calls, """
                 {"readable":true,"clauseDecisions":{},
                  "rows":[{"clauseReference":"","requirement":"Warranty shall be five years.",
-                  "sourceReference":"PDF p. 999","productCategory":"Pump","rowType":"requirement"}]}
+                  "sourceReference":"PDF p. 1","productCategory":"Pump","rowType":"requirement"}]}
                 """);
         var accepted = ai.processOcrAndSynthesizeClauses(
                 "[SOURCE_PAGE pdf=\"1\"]\nWarranty shall be five years.\n[/SOURCE_PAGE]",
                 new byte[]{1}, Map.of(), List.of("Pump"));
-        assertTrue(AISpecificationIntelligenceService.isCompletedEmpty(accepted));
+        assertEquals(1, accepted.size());
+        assertEquals("Warranty shall be five years.", accepted.get(0)[1]);
         assertEquals(1, calls.get());
     }
 
@@ -224,7 +227,7 @@ class SinglePassComplianceTest {
             rows.add(row);
         }
         List<String[]> filtered = ReflectionTestUtils.invokeMethod(new AISpecificationIntelligenceService(),
-                "technicalRequirementsOnly", rows);
+                "complianceRequirementsOnly", rows);
         assertNotNull(filtered);
         assertEquals(1, filtered.size());
         assertEquals("Product Safety", filtered.get(0)[10]);
@@ -235,7 +238,7 @@ class SinglePassComplianceTest {
         Assumptions.assumeTrue(input != null && !input.isBlank(), "Opt-in captured-response replay");
         var captured = JSON.readValue(Files.readString(Path.of(input)), String[][].class);
         List<String[]> filtered = ReflectionTestUtils.invokeMethod(new AISpecificationIntelligenceService(),
-                "technicalRequirementsOnly", Arrays.asList(captured));
+                "complianceRequirementsOnly", Arrays.asList(captured));
         var products = SpecificationSheetContent.from(filtered);
         assertEquals(2, products.size());
         assertTrue(products.stream().allMatch(product -> product.name().contains("Battery")));

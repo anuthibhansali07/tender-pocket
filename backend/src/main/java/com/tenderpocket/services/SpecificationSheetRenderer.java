@@ -63,10 +63,12 @@ final class SpecificationSheetRenderer {
             out.append("</colgroup><thead><tr>");
             for (String label : HEADERS) out.append("<th>").append(label).append("</th>");
             out.append("</tr></thead><tbody>");
+            int displayPosition = 0;
             for (var row : product.rows()) {
+                String reference = displayedReference(row, ++displayPosition);
                 out.append("<tr").append(row.heading() ? " class=\"heading\""
                                 : row.wording().length() > 1200 ? " class=\"long\"" : "")
-                        .append("><td class=\"reference\">").append(escape(row.reference()))
+                        .append("><td class=\"reference\">").append(escape(reference))
                         .append("</td><td>").append(emphasize(row.wording()))
                         .append("</td><td></td><td></td><td></td></tr>");
             }
@@ -127,10 +129,12 @@ final class SpecificationSheetRenderer {
                 table.getCTTbl().getTblPr().addNewTblLayout().setType(STTblLayoutType.FIXED);
                 table.getRow(0).setRepeatHeader(true);
                 for (int i = 0; i < 5; i++) cell(table.getRow(0).getCell(i), HEADERS[i], WIDTHS[i], true);
+                int displayPosition = 0;
                 for (var row : product.rows()) {
+                    String reference = displayedReference(row, ++displayPosition);
                     XWPFTableRow output = table.createRow();
                     for (int i = 0; i < 5; i++) {
-                        String text = i == 0 ? row.reference() : i == 1 ? row.wording() : "";
+                        String text = i == 0 ? reference : i == 1 ? row.wording() : "";
                         cell(output.getCell(i), text, WIDTHS[i], row.heading() || i == 0);
                         if (row.heading()) keepNext(output.getCell(i).getParagraphs().get(0));
                     }
@@ -163,6 +167,12 @@ final class SpecificationSheetRenderer {
     private static void keepNext(XWPFParagraph paragraph) {
         if (!paragraph.getCTP().isSetPPr()) paragraph.getCTP().addNewPPr();
         paragraph.setKeepNext(true);
+    }
+
+    /** Final rendering guard: a malformed or legacy caller can never produce a blank Sr. No. cell. */
+    private static String displayedReference(SpecificationSheetContent.Row row, int displayPosition) {
+        String reference = row.reference() == null ? "" : row.reference().trim();
+        return reference.isBlank() ? String.valueOf(displayPosition) : reference;
     }
 
     private static XWPFRun paragraph(XWPFParagraph p, String text, boolean bold, int size) {
