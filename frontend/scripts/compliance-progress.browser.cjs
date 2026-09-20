@@ -14,9 +14,11 @@ const assert = require("node:assert/strict");
         let job = 0, active = false, failPoll = false, posted = false, emptyResult = false;
         const products = [
           { productName: "Ice-lined Refrigerator Large", scheduleNumber: "1", clauseCount: 10,
-            pdfDownloadUrl: "/documents/123/1.pdf", docxDownloadUrl: "/documents/123/1.docx" },
+            pdfDownloadUrl: "/documents/123/1.pdf", docxDownloadUrl: "/documents/123/1.docx",
+            xlsxDownloadUrl: "/documents/123/1.xlsx" },
           { productName: "Deep Freezer Small", scheduleNumber: "2", clauseCount: 8,
-            pdfDownloadUrl: "/documents/123/2.pdf", docxDownloadUrl: "/documents/123/2.docx" }
+            pdfDownloadUrl: "/documents/123/2.pdf", docxDownloadUrl: "/documents/123/2.docx",
+            xlsxDownloadUrl: "/documents/123/2.xlsx" }
         ];
         const metrics = {model: "gpt-5-nano", apiAttempts: 4, successfulModelResponses: 4,
           tokens: {input: 1000, output: 500, total: 1500},
@@ -70,7 +72,7 @@ const assert = require("node:assert/strict");
           await page.waitForFunction(() => document.querySelector(".cp-warning")?.textContent.includes("503"));
           await page.waitForFunction(() => document.querySelector(".cp-message")?.textContent === "Sheets ready");
           await page.waitForFunction(() => document.querySelector(".cp-upload-value")?.textContent.includes("100%"));
-          assert.equal(await page.locator(".cp-links a").count(), 4);
+          assert.equal(await page.locator(".cp-links a").count(), 6);
           assert.match(await page.locator(".cp-metrics").innerText(), /₹3\.3081/);
           assert.match(await page.locator(".cp-metrics").innerText(), /Total tokens[\s\S]*1,500/);
           assert.equal(await page.locator("#compliance-progress-panel").count(), 1);
@@ -89,7 +91,7 @@ const assert = require("node:assert/strict");
         fs.mkdirSync("target/compliance-browser/screenshots", { recursive: true });
         await page.screenshot({ path: `target/compliance-browser/screenshots/${viewport.width}-${path.replaceAll("/", "_")}.png` });
         await page.close();
-        console.log(`PASS ${viewport.width}px ${path}: repeat upload, stale job, poll error, 4 download links`);
+        console.log(`PASS ${viewport.width}px ${path}: repeat upload, stale job, poll error, 6 download links`);
       }
     }
   } finally { await browser.close(); }

@@ -84,11 +84,14 @@ export function validateConversionResult(result: SpecificationPayload) {
   }
   if (result.generated) {
     if (!result.products.length || !result.products.every(product => isObject(product)
-        && typeof product.pdfDownloadUrl === 'string' && typeof product.docxDownloadUrl === 'string')
-        || typeof result.pdfDownloadUrl !== 'string' || typeof result.docxDownloadUrl !== 'string') {
+        && typeof product.pdfDownloadUrl === 'string' && typeof product.docxDownloadUrl === 'string'
+        && typeof product.xlsxDownloadUrl === 'string')
+        || typeof result.pdfDownloadUrl !== 'string' || typeof result.docxDownloadUrl !== 'string'
+        || typeof result.xlsxDownloadUrl !== 'string') {
       throw new SpecificationProxyError(502, 'The backend reported generated sheets without their download links.');
     }
-  } else if (result.products.length || result.pdfDownloadUrl != null || result.docxDownloadUrl != null) {
+  } else if (result.products.length || result.pdfDownloadUrl != null || result.docxDownloadUrl != null
+      || result.xlsxDownloadUrl != null) {
     throw new SpecificationProxyError(502, 'The backend returned contradictory no-specifications information.');
   }
 }
@@ -123,14 +126,16 @@ export function mapSpecificationDownloads(result: SpecificationPayload, request:
     return `/api/tenders/${encodeURIComponent(id)}/tech-spec-download/${encodeURIComponent(filename)}`;
   };
   const mapped: SpecificationPayload = { ...result };
-  for (const [key, extension] of [['pdfDownloadUrl', '.pdf'], ['docxDownloadUrl', '.docx']]) {
+  for (const [key, extension] of [['pdfDownloadUrl', '.pdf'], ['docxDownloadUrl', '.docx'],
+    ['xlsxDownloadUrl', '.xlsx']]) {
     if (key in mapped) mapped[key] = mapUrl(mapped[key], extension);
   }
   if (Array.isArray(result.products)) {
     mapped.products = result.products.map(product => {
       if (!isObject(product)) throw new SpecificationProxyError(502, 'Invalid product in conversion response.');
       return { ...product, pdfDownloadUrl: mapUrl(product.pdfDownloadUrl, '.pdf'),
-        docxDownloadUrl: mapUrl(product.docxDownloadUrl, '.docx') };
+        docxDownloadUrl: mapUrl(product.docxDownloadUrl, '.docx'),
+        xlsxDownloadUrl: mapUrl(product.xlsxDownloadUrl, '.xlsx') };
     });
   }
   return mapped;

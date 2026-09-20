@@ -18,14 +18,17 @@ const products = ['Alpha', 'Beta'].map((name, i) => ({
   productName: name, scheduleNumber: String(i + 1), clauseCount: 3,
   pdfDownloadUrl: `/documents/T-1/${i + 1}_${name}.pdf`,
   docxDownloadUrl: `/documents/T-1/${i + 1}_${name}.docx`,
+  xlsxDownloadUrl: `/documents/T-1/${i + 1}_${name}.xlsx`,
 }));
 const success = {
   success: true, generated: true, products, metrics, message: 'Sheets ready', clauseCount: 6,
   pdfDownloadUrl: products[0].pdfDownloadUrl, docxDownloadUrl: products[0].docxDownloadUrl,
+  xlsxDownloadUrl: products[0].xlsxDownloadUrl,
   extraFutureField: { retained: true },
 };
 const empty = { success: true, generated: false, products: [], pdfDownloadUrl: null,
-  docxDownloadUrl: null, clauseCount: 0, message: 'No products found with applicable compliance requirements.', metrics };
+  docxDownloadUrl: null, xlsxDownloadUrl: null, clauseCount: 0,
+  message: 'No products found with applicable compliance requirements.', metrics };
 const originalDocs = [{ name: 'Unrelated document', filename: 'existing.pdf', local_path: '/existing.pdf' }];
 
 async function fixture(options = {}) {
@@ -127,7 +130,7 @@ function uploadRequest({ file = true, textFile = false, bytes = '%PDF-test', sig
 }
 const params = { params: Promise.resolve({ id: 'T-1' }) };
 
-test('waits beyond three seconds, retains the full result, and registers all product pairs', async () => {
+test('waits beyond three seconds, retains the full result, and registers every product format', async () => {
   const { state, route } = await fixture({ respond: async (_url, init, state) => {
     assert.equal(state.status, 'None', 'Must not report Generated before Java finishes');
     await new Promise(resolve => setTimeout(resolve, 3150));
@@ -145,6 +148,7 @@ test('waits beyond three seconds, retains the full result, and registers all pro
   assert.equal(data.products.length, 2);
   assert.equal(data.pdfDownloadUrl, data.products[0].pdfDownloadUrl);
   assert.equal(data.docxDownloadUrl, data.products[0].docxDownloadUrl);
+  assert.equal(data.xlsxDownloadUrl, data.products[0].xlsxDownloadUrl);
   assert.equal(data.pdfDownloadUrl, '/api/tenders/T-1/tech-spec-download/1_Alpha.pdf');
   assert.equal(data.filename, 'sample.pdf');
   assert.equal(data.url, '/api/tenders/T-1/documents/sample.pdf');
@@ -158,7 +162,7 @@ test('waits beyond three seconds, retains the full result, and registers all pro
   assert.equal(state.requests[0].init.body.get('scheduleNo'), '7');
   assert.equal(state.requests[0].init.body.get('file').name, 'sample.pdf');
   const documents = JSON.parse(state.docs);
-  assert.equal(documents.length, 7, 'Two unrelated files, input, four generated files');
+  assert.equal(documents.length, 9, 'Two unrelated files, input, six generated files');
   assert(documents.some(doc => doc.local_path === '/existing.pdf'));
   assert(documents.some(doc => doc.local_path === '/later.pdf'));
 });
@@ -174,6 +178,7 @@ test('a successful empty conversion preserves null links and does not advance ap
   assert.deepEqual(data.products, []);
   assert.equal(data.pdfDownloadUrl, null);
   assert.equal(data.docxDownloadUrl, null);
+  assert.equal(data.xlsxDownloadUrl, null);
   assert.deepEqual(data.metrics, metrics);
   assert.equal(state.status, 'Pending');
   assert.equal(JSON.parse(state.docs).length, 2);

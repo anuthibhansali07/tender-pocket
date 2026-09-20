@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { id, filename } = await params;
     requirePathSegment(id);
     requirePathSegment(filename);
-    if (!/\.(pdf|docx)$/i.test(filename)) throw new SpecificationProxyError(400, 'Only PDF/DOCX sheet downloads are supported.');
+    if (!/\.(pdf|docx|xlsx)$/i.test(filename)) throw new SpecificationProxyError(400, 'Only PDF/DOCX/XLSX sheet downloads are supported.');
     const response = await fetchSpecificationBackend(request,
       `/documents/${encodeURIComponent(id)}/${encodeURIComponent(filename)}`, { headers: { Accept: '*/*' } });
     if (!response.ok) return Response.json(await readSpecificationResponse(response),

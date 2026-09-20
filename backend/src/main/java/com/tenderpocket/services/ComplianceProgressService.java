@@ -59,6 +59,7 @@ public class ComplianceProgressService {
             progress.metrics.setResultCounts(products.size(), clauses);
             progress.metrics.finish();
             Map<String, Object> first = products.get(0);
+            progress.xlsxUrl = (String) first.get("xlsxDownloadUrl");
             progress.update("COMPLETED", "Technical data sheets are ready for " + products.size() + " products.",
                     100, 0, 0, clauses, (String) first.get("pdfDownloadUrl"), (String) first.get("docxDownloadUrl"));
         }
@@ -71,6 +72,7 @@ public class ComplianceProgressService {
             progress.products = java.util.List.of();
             progress.pdfUrl = null;
             progress.docxUrl = null;
+            progress.xlsxUrl = null;
             progress.clauses = 0;
             progress.metrics.setResultCounts(0, 0);
             progress.metrics.finish();
@@ -107,6 +109,7 @@ public class ComplianceProgressService {
         private int clauses;
         private String pdfUrl;
         private String docxUrl;
+        private String xlsxUrl;
         private Boolean generated;
         private final String jobId = java.util.UUID.randomUUID().toString();
         private java.util.List<Map<String, Object>> products = java.util.List.of();
@@ -154,6 +157,7 @@ public class ComplianceProgressService {
             result.put("metrics", metrics.snapshot());
             if (pdfUrl != null) result.put("pdfDownloadUrl", pdfUrl);
             if (docxUrl != null) result.put("docxDownloadUrl", docxUrl);
+            if (xlsxUrl != null) result.put("xlsxDownloadUrl", xlsxUrl);
             return result;
         }
     }

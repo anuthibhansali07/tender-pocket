@@ -26,6 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const types: Record<string, string> = {
       '.pdf': 'application/pdf',
       '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       '.zip': 'application/zip',
     };
     return new Response(new Uint8Array(bytes), { headers: {

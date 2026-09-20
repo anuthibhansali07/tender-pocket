@@ -2397,6 +2397,10 @@ public class DocumentGeneratorService {
         return specificationDocx(data, List.of(product));
     }
 
+    public byte[] generateProductSheetXlsx(Map<String, String> data, SpecificationSheetContent.Product product) throws Exception {
+        return SpecificationSheetRenderer.xlsx(data, List.of(product));
+    }
+
     private byte[] renderSpecificationPdf(String html) throws Exception {
         String htmlContent = cleanXmlForOpenHtmlPdf(html);
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
