@@ -207,13 +207,13 @@ The Approvals Center is a centralized workflow hub accessible via the **Approval
 
 ## 💻 System Prerequisites
 
-| Requirement            | Recommended Version           | Minimum Version | Purpose                                        |
-| :--------------------- | :---------------------------- | :-------------- | :--------------------------------------------- |
-| **Node.js**      | `v24.x`                  | `v22.12.0`   | Next.js frontend, document engine, test suites; Puppeteer requires Node 22.12+ |
-| **npm**          | `v10.x`                     | `v9.x`        | Node package manager                           |
-| **Java JDK**     | `Java 21` (Eclipse Temurin) | `Java 17`     | Optional: Spring Boot enterprise backend       |
-| **Apache Maven** | `v3.9.x`                    | `v3.8.x`      | Optional: Building Java backend                |
-| **PostgreSQL**   | `v16.x`                     | `v14.x`       | Optional: Enterprise database clustering       |
+| Requirement            | Recommended Version           | Minimum Version | Purpose                                                                        |
+| :--------------------- | :---------------------------- | :-------------- | :----------------------------------------------------------------------------- |
+| **Node.js**      | `v24.x`                     | `v22.12.0`    | Next.js frontend, document engine, test suites; Puppeteer requires Node 22.12+ |
+| **npm**          | `v10.x`                     | `v9.x`        | Node package manager                                                           |
+| **Java JDK**     | `Java 21` (Eclipse Temurin) | `Java 17`     | Optional: Spring Boot enterprise backend                                       |
+| **Apache Maven** | `v3.9.x`                    | `v3.8.x`      | Optional: Building Java backend                                                |
+| **PostgreSQL**   | `v16.x`                     | `v14.x`       | Optional: Enterprise database clustering                                       |
 
 ---
 
@@ -393,7 +393,8 @@ docker compose up -d --build
 
 ### 3. Missing or corrupted SQLite database
 
-- Simply start the application (`npm run dev`) or seed sample tenders (`node frontend/scripts/seed-workflow-tenders.js`). The schema auto-migrates and seeds users automatically.
+- Simply start the application (`npm rboot`
+- `un dev`) or seed sample tenders (`node frontend/scripts/seed-workflow-tenders.js`). The schema auto-migrates and seeds users automatically.
 
 ---
 

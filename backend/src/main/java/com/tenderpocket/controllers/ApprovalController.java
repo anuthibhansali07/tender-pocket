@@ -183,7 +183,7 @@ public class ApprovalController {
      * Admin users see counts across all users.
      */
     @GetMapping("/counts")
-    public ResponseEntity<?> getPendingCounts() {
+    public ResponseEntity<?> getPendingCounts(@RequestParam(required = false, defaultValue = "PENDING") String status) {
         String username = getAuthenticatedUsername();
         String role = getAuthenticatedRole();
 
@@ -195,20 +195,60 @@ public class ApprovalController {
         // Clean stale/duplicate pending approvals
         reconcileStaleAndDuplicateApprovals();
 
+        String statusParam = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "PENDING";
+
         List<Object[]> rows;
+        List<Object[]> pendingRows;
+        List<Object[]> historyRows;
         if ("Admin".equalsIgnoreCase(role)) {
-            rows = approvalRepository.countPendingByStageForAdmin();
+            rows = approvalRepository.countByStageForAdmin(statusParam);
+            pendingRows = approvalRepository.countByStageForAdmin("PENDING");
+            historyRows = approvalRepository.countByStageForAdmin("HISTORY");
         } else if ("MIS Team".equalsIgnoreCase(role)) {
-            rows = approvalRepository.countPendingByStageForMisTeam(username, MIS_TEAM_STAGES);
+            rows = approvalRepository.countByStageForMisTeam(username, statusParam, MIS_TEAM_STAGES);
+            pendingRows = approvalRepository.countByStageForMisTeam(username, "PENDING", MIS_TEAM_STAGES);
+            historyRows = approvalRepository.countByStageForMisTeam(username, "HISTORY", MIS_TEAM_STAGES);
         } else {
-            rows = approvalRepository.countPendingByStageForUser(username);
+            rows = approvalRepository.countByStageForUser(username, statusParam);
+            pendingRows = approvalRepository.countByStageForUser(username, "PENDING");
+            historyRows = approvalRepository.countByStageForUser(username, "HISTORY");
         }
 
         Map<String, Long> counts = buildCountMap(rows);
+        Map<String, Long> pendingCounts = buildCountMap(pendingRows);
+        Map<String, Long> historyCounts = buildCountMap(historyRows);
+
+        // Status counts for tabs (Pending vs History)
+        List<Object[]> statusRows = approvalRepository.countByStatusForAdmin();
+        Map<String, Long> statusCounts = new HashMap<>(Map.of(
+                "TOTAL", 0L,
+                "PENDING", 0L,
+                "APPROVED", 0L,
+                "REJECTED", 0L,
+                "CHANGES_REQUESTED", 0L,
+                "HISTORY", 0L
+        ));
+        long totalStatus = 0L;
+        for (Object[] row : statusRows) {
+            if (row != null && row.length >= 2 && row[0] != null && row[1] != null) {
+                String s = row[0].toString().toUpperCase();
+                Long c = ((Number) row[1]).longValue();
+                statusCounts.put(s, c);
+                totalStatus += c;
+            }
+        }
+        long historyCount = statusCounts.getOrDefault("APPROVED", 0L)
+                + statusCounts.getOrDefault("REJECTED", 0L)
+                + statusCounts.getOrDefault("CHANGES_REQUESTED", 0L);
+        statusCounts.put("HISTORY", historyCount);
+        statusCounts.put("TOTAL", totalStatus);
 
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "counts", counts,
+                "pendingCounts", pendingCounts,
+                "historyCounts", historyCounts,
+                "statusCounts", statusCounts,
                 "username", username,
                 "role", role
         ));
@@ -221,14 +261,18 @@ public class ApprovalController {
      * Query params:
      *   ?stage=PAYMENT_APPROVAL  (optional, filters by stage)
      *   ?search=term             (optional, filters by tender title / ref no / authority)
+     *   ?status=ALL|PENDING|...  (optional, filters by approval status)
      *
      * MIS Team: sees requests assigned to their team queue or username.
-     * Admin:    sees all pending requests.
+     * Admin:    sees all requests according to status filter.
      */
     @GetMapping("/pending")
     public ResponseEntity<?> getPendingApprovals(
             @RequestParam(required = false) String stage,
-            @RequestParam(required = false) String search) {
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "PENDING") String status,
+            @RequestParam(required = false) String team,
+            @RequestParam(required = false, name = "role") String requesterRole) {
 
         String username = getAuthenticatedUsername();
         String role = getAuthenticatedRole();
@@ -240,6 +284,9 @@ public class ApprovalController {
 
         // Clean stale/duplicate pending approvals
         reconcileStaleAndDuplicateApprovals();
+
+        String statusParam = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "PENDING";
+        boolean isAll = "ALL".equalsIgnoreCase(statusParam);
 
         // Fetch raw approval requests
         List<TenderApprovalRequest> requests;
@@ -253,19 +300,27 @@ public class ApprovalController {
                         .body(Map.of("success", false, "error", "Invalid stage: " + stage));
             }
             if ("Admin".equalsIgnoreCase(role)) {
-                requests = approvalRepository.findByStageAndStatusOrderByCreatedAtDesc(stageEnum, "PENDING");
+                requests = isAll
+                        ? approvalRepository.findByStageOrderByCreatedAtDesc(stageEnum)
+                        : approvalRepository.findByStageAndStatusForAdmin(stageEnum, statusParam);
             } else if ("MIS Team".equalsIgnoreCase(role)) {
-                requests = approvalRepository.findPendingByStageForMisTeam(username, stageEnum, MIS_TEAM_STAGES);
+                requests = approvalRepository.findByStageAndStatusForMisTeam(username, stageEnum, statusParam, MIS_TEAM_STAGES);
             } else {
-                requests = approvalRepository.findByAssignedToAndStageAndStatusOrderByCreatedAtDesc(username, stageEnum, "PENDING");
+                requests = isAll
+                        ? approvalRepository.findByAssignedToAndStageOrderByCreatedAtDesc(username, stageEnum)
+                        : approvalRepository.findByAssignedToAndStageAndStatusOrderByCreatedAtDesc(username, stageEnum, statusParam);
             }
         } else {
             if ("Admin".equalsIgnoreCase(role)) {
-                requests = approvalRepository.findByStatusOrderByCreatedAtDesc("PENDING");
+                requests = isAll
+                        ? approvalRepository.findAllByOrderByCreatedAtDesc()
+                        : approvalRepository.findByStatusForAdmin(statusParam);
             } else if ("MIS Team".equalsIgnoreCase(role)) {
-                requests = approvalRepository.findPendingForMisTeam(username, MIS_TEAM_STAGES);
+                requests = approvalRepository.findByStatusForMisTeam(username, statusParam, MIS_TEAM_STAGES);
             } else {
-                requests = approvalRepository.findByAssignedToAndStatusOrderByCreatedAtDesc(username, "PENDING");
+                requests = isAll
+                        ? approvalRepository.findByAssignedToOrderByCreatedAtDesc(username)
+                        : approvalRepository.findByAssignedToAndStatusOrderByCreatedAtDesc(username, statusParam);
             }
         }
 
@@ -301,6 +356,18 @@ public class ApprovalController {
                 if (!matches) continue;
             }
 
+            // Apply team and role filters
+            if (team != null && !team.isBlank() && !"ALL".equalsIgnoreCase(team)) {
+                if (req.getAssignedTo() == null || !req.getAssignedTo().equalsIgnoreCase(team.trim())) {
+                    continue;
+                }
+            }
+            if (requesterRole != null && !requesterRole.isBlank() && !"ALL".equalsIgnoreCase(requesterRole)) {
+                if (req.getRequestedBy() == null || !req.getRequestedBy().equalsIgnoreCase(requesterRole.trim())) {
+                    continue;
+                }
+            }
+
             result.add(new ApprovalSummaryDto(req, tender));
         }
 
@@ -334,9 +401,14 @@ public class ApprovalController {
         String username = getAuthenticatedUsername();
         String role = getAuthenticatedRole();
 
+        if ("Admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Admin has view-only access to Approvals Center. Approvals must be provided by assigned operational teams."));
+        }
+
         if (!isAuthorized(role)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: MIS Team or Admin required"));
+                    .body(Map.of("success", false, "error", "Access denied: Authorized operational team role required"));
         }
 
         // Validate action
@@ -543,6 +615,8 @@ public class ApprovalController {
             tenderRepository.save(tender);
         }
         approvalReq.setStatus(action);
+        approvalReq.setReviewedBy(username);
+        if (!comment.isEmpty()) approvalReq.setReviewerComment(comment);
         if (!lossReasonMis.isEmpty()) approvalReq.setLossReasonMis(lossReasonMis);
         approvalReq.setUpdatedAt(java.time.LocalDateTime.now());
         approvalRepository.save(approvalReq);

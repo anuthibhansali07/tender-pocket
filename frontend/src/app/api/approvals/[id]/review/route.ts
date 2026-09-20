@@ -10,13 +10,19 @@ export async function POST(
   try {
     const auth = workflowActor(request, 'viewTenders');
     const allowedRoles = [
-      'Admin', 'MIS Team',
+      'MIS Team', 'MIS Executive',
       'Clearance Team', 'Specification Team',
       'TPC Pricing Team', 'TPC Team'
     ];
+    if (auth?.role === 'Admin') {
+      return NextResponse.json(
+        { success: false, error: 'Admin has view-only access to Approvals Center. Approvals must be provided by assigned operational teams (MIS Team, Clearance Team, TPC Pricing Team).' },
+        { status: 403 }
+      );
+    }
     if (!auth || !allowedRoles.includes(auth.role)) {
       return NextResponse.json(
-        { success: false, error: 'Access denied: Authorized team role or Admin required' },
+        { success: false, error: 'Access denied: Authorized team role required to review approvals' },
         { status: 403 }
       );
     }
@@ -184,9 +190,9 @@ export async function POST(
       // 1. Update the approval request row
       db.prepare(`
         UPDATE tender_approval_requests 
-        SET status = ?, loss_reason_mis = ?, updated_at = ?
+        SET status = ?, loss_reason_mis = ?, reviewed_by = ?, reviewer_comment = ?, updated_at = ?
         WHERE id = ?
-      `).run(action, lossReasonMis || null, now, approvalReq.id);
+      `).run(action, lossReasonMis || null, auth.username, comment, now, approvalReq.id);
 
       // 2. Record audit comment
       const commentText = `${action} by ${auth.username} (${auth.role}): ${comment}${lossReasonMis ? ` [MIS Loss Reason: ${lossReasonMis}]` : ''}`;

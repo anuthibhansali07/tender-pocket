@@ -21,6 +21,8 @@ public class ApprovalSummaryDto {
     private String lossReasonMis;
     private Double tpcPurchasePrice;
     private Double misFinalPrice;
+    private String reviewedBy;
+    private String reviewerComment;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -57,6 +59,8 @@ public class ApprovalSummaryDto {
             this.lossReasonMis = request.getLossReasonMis();
             this.tpcPurchasePrice = request.getTpcPurchasePrice();
             this.misFinalPrice = request.getMisFinalPrice();
+            this.reviewedBy = request.getReviewedBy();
+            this.reviewerComment = request.getReviewerComment();
             this.createdAt = request.getCreatedAt();
             this.updatedAt = request.getUpdatedAt();
         }
@@ -162,4 +166,10 @@ public class ApprovalSummaryDto {
 
     public String getMisExecutive() { return misExecutive; }
     public void setMisExecutive(String misExecutive) { this.misExecutive = misExecutive; }
+
+    public String getReviewedBy() { return reviewedBy; }
+    public void setReviewedBy(String reviewedBy) { this.reviewedBy = reviewedBy; }
+
+    public String getReviewerComment() { return reviewerComment; }
+    public void setReviewerComment(String reviewerComment) { this.reviewerComment = reviewerComment; }
 }
