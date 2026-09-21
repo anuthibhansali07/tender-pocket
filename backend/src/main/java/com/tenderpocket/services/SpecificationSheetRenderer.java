@@ -4,6 +4,9 @@ import java.io.*;
 import java.math.BigInteger;
 import java.util.*;
 import java.util.regex.Matcher;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.usermodel.*;
 import org.apache.poi.wp.usermodel.HeaderFooterType;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
@@ -167,6 +170,111 @@ final class SpecificationSheetRenderer {
     private static void keepNext(XWPFParagraph paragraph) {
         if (!paragraph.getCTP().isSetPPr()) paragraph.getCTP().addNewPPr();
         paragraph.setKeepNext(true);
+    }
+
+    static byte[] xlsx(Map<String, String> data, List<SpecificationSheetContent.Product> products) throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            for (var product : products) {
+                Sheet sheet = workbook.createSheet(uniqueSheetName(workbook, product.schedule() + " " + product.name()));
+                sheet.setDisplayGridlines(false);
+                sheet.createFreezePane(0, 6);
+                sheet.setRepeatingRows(CellRangeAddress.valueOf("6:6"));
+                sheet.getPrintSetup().setPaperSize(PrintSetup.A4_PAPERSIZE);
+                sheet.getPrintSetup().setLandscape(false);
+                sheet.setFitToPage(true);
+                sheet.getPrintSetup().setFitWidth((short) 1);
+                sheet.getPrintSetup().setFitHeight((short) 0);
+
+                CellStyle companyStyle = style(workbook, true, 14, HorizontalAlignment.CENTER, false);
+                CellStyle titleStyle = style(workbook, true, 11, HorizontalAlignment.CENTER, false);
+                CellStyle headerStyle = borderedStyle(workbook, true, HorizontalAlignment.CENTER);
+                CellStyle referenceStyle = borderedStyle(workbook, true, HorizontalAlignment.CENTER);
+                CellStyle requirementStyle = borderedStyle(workbook, false, HorizontalAlignment.LEFT);
+                CellStyle headingStyle = borderedStyle(workbook, true, HorizontalAlignment.LEFT);
+                CellStyle blankStyle = borderedStyle(workbook, false, HorizontalAlignment.LEFT);
+
+                mergedRow(sheet, 0, data.getOrDefault("companyName", "").toUpperCase(Locale.ROOT), companyStyle);
+                mergedRow(sheet, 1, TITLE, titleStyle);
+                mergedRow(sheet, 2, "Schedule No. " + product.schedule(), titleStyle);
+                mergedRow(sheet, 3, product.name(), titleStyle);
+                mergedRow(sheet, 4, "Make: __________    Model No.: __________", titleStyle);
+
+                Row header = sheet.createRow(5);
+                header.setHeightInPoints(32);
+                for (int column = 0; column < HEADERS.length; column++) {
+                    org.apache.poi.ss.usermodel.Cell cell = header.createCell(column);
+                    cell.setCellValue(HEADERS[column]);
+                    cell.setCellStyle(headerStyle);
+                }
+
+                int displayPosition = 0;
+                for (var source : product.rows()) {
+                    Row row = sheet.createRow(sheet.getLastRowNum() + 1);
+                    org.apache.poi.ss.usermodel.Cell reference = row.createCell(0);
+                    reference.setCellValue(displayedReference(source, ++displayPosition));
+                    reference.setCellStyle(referenceStyle);
+                    org.apache.poi.ss.usermodel.Cell wording = row.createCell(1);
+                    wording.setCellValue(source.wording());
+                    wording.setCellStyle(source.heading() ? headingStyle : requirementStyle);
+                    for (int column = 2; column < HEADERS.length; column++) {
+                        org.apache.poi.ss.usermodel.Cell blank = row.createCell(column);
+                        blank.setCellValue("");
+                        blank.setCellStyle(blankStyle);
+                    }
+                }
+                for (int column = 0; column < WIDTHS.length; column++) {
+                    sheet.setColumnWidth(column, WIDTHS[column] * 256);
+                }
+                sheet.setAutobreaks(true);
+                workbook.setPrintArea(workbook.getSheetIndex(sheet), 0, HEADERS.length - 1, 0, sheet.getLastRowNum());
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        }
+    }
+
+    private static CellStyle style(Workbook workbook, boolean bold, int size,
+                                   HorizontalAlignment alignment, boolean bordered) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setFontName("Cambria");
+        font.setFontHeightInPoints((short) size);
+        font.setBold(bold);
+        style.setFont(font);
+        style.setAlignment(alignment);
+        style.setVerticalAlignment(VerticalAlignment.TOP);
+        style.setWrapText(true);
+        if (bordered) {
+            style.setBorderTop(BorderStyle.THIN);
+            style.setBorderRight(BorderStyle.THIN);
+            style.setBorderBottom(BorderStyle.THIN);
+            style.setBorderLeft(BorderStyle.THIN);
+        }
+        return style;
+    }
+
+    private static CellStyle borderedStyle(Workbook workbook, boolean bold, HorizontalAlignment alignment) {
+        return style(workbook, bold, 11, alignment, true);
+    }
+
+    private static void mergedRow(Sheet sheet, int rowNumber, String value, CellStyle style) {
+        Row row = sheet.createRow(rowNumber);
+        org.apache.poi.ss.usermodel.Cell cell = row.createCell(0);
+        cell.setCellValue(value);
+        cell.setCellStyle(style);
+        sheet.addMergedRegion(new CellRangeAddress(rowNumber, rowNumber, 0, HEADERS.length - 1));
+    }
+
+    private static String uniqueSheetName(Workbook workbook, String requested) {
+        String base = requested.replaceAll("[\\\\/?*\\[\\]:]", " ").trim().replaceAll("\\s+", " ");
+        if (base.isBlank()) base = "Technical Data Sheet";
+        if (base.length() > 31) base = base.substring(0, 31).trim();
+        String candidate = base;
+        for (int suffix = 2; workbook.getSheet(candidate) != null; suffix++) {
+            String marker = " (" + suffix + ")";
+            candidate = base.substring(0, Math.min(base.length(), 31 - marker.length())).trim() + marker;
+        }
+        return candidate;
     }
 
     /** Final rendering guard: a malformed or legacy caller can never produce a blank Sr. No. cell. */

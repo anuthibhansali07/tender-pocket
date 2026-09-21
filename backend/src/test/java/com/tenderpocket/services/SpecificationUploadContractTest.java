@@ -66,6 +66,7 @@ class SpecificationUploadContractTest {
             assertEquals(0, body.get("clauseCount"));
             assertNull(body.get("pdfDownloadUrl"));
             assertNull(body.get("docxDownloadUrl"));
+            assertNull(body.get("xlsxDownloadUrl"));
             assertNotNull(body.get("metrics"));
             assertTrue(body.get("message").toString().contains("No products found"));
             assertEquals("COMPLETED", progress.snapshot(id).get("status"));
@@ -114,6 +115,10 @@ class SpecificationUploadContractTest {
             public byte[] generateProductSheetDocx(Map<String, String> data, SpecificationSheetContent.Product p) {
                 return "test-docx".getBytes(java.nio.charset.StandardCharsets.UTF_8);
             }
+            @Override
+            public byte[] generateProductSheetXlsx(Map<String, String> data, SpecificationSheetContent.Product p) {
+                return "test-xlsx".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
         });
         String originalHome = System.getProperty("user.home");
         try {
@@ -127,8 +132,9 @@ class SpecificationUploadContractTest {
             assertEquals(2, products.size());
             assertEquals(products.get(0).get("pdfDownloadUrl"), body.get("pdfDownloadUrl"));
             assertEquals(products.get(0).get("docxDownloadUrl"), body.get("docxDownloadUrl"));
+            assertEquals(products.get(0).get("xlsxDownloadUrl"), body.get("xlsxDownloadUrl"));
             for (Map<String, Object> product : products) {
-                for (String type : List.of("pdfDownloadUrl", "docxDownloadUrl")) {
+                for (String type : List.of("pdfDownloadUrl", "docxDownloadUrl", "xlsxDownloadUrl")) {
                     String path = (String) product.get(type);
                     assertTrue(Files.isRegularFile(Path.of("public" + path)));
                     assertTrue(tender.getDownloadedDocs().contains(path));

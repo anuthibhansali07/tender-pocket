@@ -46,7 +46,8 @@ const assert = require("node:assert/strict");
                 message: "No products found with applicable compliance requirements."}
             : {success: true, generated: true, message: "Sheets ready", metrics,
                 products: [{productName: "Battery", scheduleNumber: "1", clauseCount: 1,
-                  pdfDownloadUrl: "/documents/test/battery.pdf", docxDownloadUrl: "/documents/test/battery.docx"}]}});
+                  pdfDownloadUrl: "/documents/test/battery.pdf", docxDownloadUrl: "/documents/test/battery.docx",
+                  xlsxDownloadUrl: "/documents/test/battery.xlsx"}]}});
         }
         if (url.pathname.endsWith("tech-spec-progress")) return route.fulfill({json: posting && uploaded === 2
           ? {status: "AI", jobId: "review-test", message: `Batch 1/2: Review warning: ${notes[0]}`, metrics,
@@ -70,7 +71,7 @@ const assert = require("node:assert/strict");
         await page.waitForFunction(expected =>
           document.querySelector(".cp-message")?.textContent === expected,
         run === 0 ? "No products found with applicable compliance requirements." : "Sheets ready");
-        assert.equal(await page.locator(".cp-links a").count(), run === 0 ? 0 : 2);
+        assert.equal(await page.locator(".cp-links a").count(), run === 0 ? 0 : 3);
         await form.getByRole("button", {name: "Generate compliance sheets"}).waitFor();
       }
       assert.equal(uploaded, 2);

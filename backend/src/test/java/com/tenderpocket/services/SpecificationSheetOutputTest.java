@@ -11,6 +11,7 @@ import org.springframework.mock.web.*;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.xwpf.usermodel.*;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SpecificationSheetOutputTest {
@@ -93,6 +94,17 @@ class SpecificationSheetOutputTest {
                 SpecificationSheetRenderer.docx(Map.of(), List.of(product), null, null)))) {
             assertEquals("1", document.getTables().get(0).getRow(1).getCell(0).getText());
         }
+
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(
+                SpecificationSheetRenderer.xlsx(Map.of(), List.of(product))))) {
+            var sheet = workbook.getSheetAt(0);
+            assertEquals("Sr. No.", sheet.getRow(5).getCell(0).getStringCellValue());
+            assertEquals("1", sheet.getRow(6).getCell(0).getStringCellValue());
+            assertEquals("Warranty shall be five years.", sheet.getRow(6).getCell(1).getStringCellValue());
+            for (int column = 2; column < 5; column++) {
+                assertEquals("", sheet.getRow(6).getCell(column).getStringCellValue());
+            }
+        }
     }
 
     @Test
@@ -146,10 +158,12 @@ class SpecificationSheetOutputTest {
         progress.start("1", "first.pdf");
         Object first = progress.snapshot("1").get("jobId");
         List<Map<String, Object>> products = List.of(Map.of("productName", "Pump", "scheduleNumber", "1",
-                "clauseCount", 3, "pdfDownloadUrl", "/documents/1/1.pdf", "docxDownloadUrl", "/documents/1/1.docx"));
+                "clauseCount", 3, "pdfDownloadUrl", "/documents/1/1.pdf", "docxDownloadUrl", "/documents/1/1.docx",
+                "xlsxDownloadUrl", "/documents/1/1.xlsx"));
         progress.completeProducts("1", 3, products);
         assertEquals(products, progress.snapshot("1").get("products"));
         assertEquals("/documents/1/1.pdf", progress.snapshot("1").get("pdfDownloadUrl"));
+        assertEquals("/documents/1/1.xlsx", progress.snapshot("1").get("xlsxDownloadUrl"));
         progress.start("1", "second.pdf");
         assertNotEquals(first, progress.snapshot("1").get("jobId"));
         assertEquals(List.of(), progress.snapshot("1").get("products"));

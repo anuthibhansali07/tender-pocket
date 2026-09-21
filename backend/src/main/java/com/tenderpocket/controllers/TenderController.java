@@ -831,6 +831,7 @@ public class TenderController {
                 response.put("products", List.of());
                 response.put("pdfDownloadUrl", null);
                 response.put("docxDownloadUrl", null);
+                response.put("xlsxDownloadUrl", null);
                 response.put("clauseCount", 0);
                 response.put("status", resolveStatus(tender, LocalDate.now().toString()));
                 response.put("metrics", conversionMetrics.snapshot());
@@ -871,9 +872,10 @@ public class TenderController {
                     stem += "_Product_" + ordinal;
                     usedFileStems.add(stem.toLowerCase(Locale.ROOT));
                 }
-                String pdfFileName = stem + ".pdf", docxFileName = stem + ".docx";
+                String pdfFileName = stem + ".pdf", docxFileName = stem + ".docx", xlsxFileName = stem + ".xlsx";
                 String productPdfUrl = "/documents/" + id + "/" + pdfFileName;
                 String productDocxUrl = "/documents/" + id + "/" + docxFileName;
+                String productXlsxUrl = "/documents/" + id + "/" + xlsxFileName;
                 int percent = 80 + (ordinal - 1) * 16 / sheets.size();
                 complianceProgressService.update(id, "RENDERING_PDF", "Generating PDF for " + sheet.name(),
                         percent, 0, 0, totalClauses);
@@ -881,13 +883,18 @@ public class TenderController {
                 complianceProgressService.update(id, "RENDERING_DOCX", "Generating Word document for " + sheet.name(),
                         percent, 0, 0, totalClauses);
                 byte[] docxBytes = documentGeneratorService.generateProductSheetDocx(data, sheet);
+                complianceProgressService.update(id, "RENDERING_XLSX", "Generating Excel workbook for " + sheet.name(),
+                        percent, 0, 0, totalClauses);
+                byte[] xlsxBytes = documentGeneratorService.generateProductSheetXlsx(data, sheet);
                 Files.write(Paths.get(docDir, pdfFileName), pdfBytes);
                 Files.write(Paths.get(docDir, docxFileName), docxBytes);
+                Files.write(Paths.get(docDir, xlsxFileName), xlsxBytes);
                 File downloadsDir = new File(System.getProperty("user.home"), "Downloads");
                 if (downloadsDir.isDirectory()) {
                     try {
                         Files.write(downloadsDir.toPath().resolve(pdfFileName), pdfBytes);
                         Files.write(downloadsDir.toPath().resolve(docxFileName), docxBytes);
+                        Files.write(downloadsDir.toPath().resolve(xlsxFileName), xlsxBytes);
                     } catch (java.io.IOException copyFailure) {
                         System.err.println("[TenderController] Optional Downloads copy failed.");
                     }
@@ -896,13 +903,16 @@ public class TenderController {
                         "filename", pdfFileName, "local_path", productPdfUrl, "created_date", createdDate));
                 newDocs.add(Map.of("name", "Technical Specification - " + sheet.name() + " (DOCX)",
                         "filename", docxFileName, "local_path", productDocxUrl, "created_date", createdDate));
+                newDocs.add(Map.of("name", "Technical Specification - " + sheet.name() + " (XLSX)",
+                        "filename", xlsxFileName, "local_path", productXlsxUrl, "created_date", createdDate));
                 products.add(Map.of("productName", sheet.name(), "scheduleNumber", sheet.schedule(),
                         "clauseCount", sheet.clauseCount(), "pdfDownloadUrl", productPdfUrl,
-                        "docxDownloadUrl", productDocxUrl));
+                        "docxDownloadUrl", productDocxUrl, "xlsxDownloadUrl", productXlsxUrl));
             }
             conversionMetrics.endRendering();
             String pdfDownloadUrl = (String) products.get(0).get("pdfDownloadUrl");
             String docxDownloadUrl = (String) products.get(0).get("docxDownloadUrl");
+            String xlsxDownloadUrl = (String) products.get(0).get("xlsxDownloadUrl");
 
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             tender.setSpecVerificationStatus("Generated");
@@ -914,7 +924,7 @@ public class TenderController {
             ActivityLog log = new ActivityLog(
                     username, userRole, "Uploaded Technical Specification & Generated Documents", id,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    "Uploaded specification.pdf and generated Technical Specification Sheet PDF & DOCX outputs with " + extractedClauses.size() + " extracted clauses."
+                    "Uploaded specification.pdf and generated Technical Specification Sheet PDF, DOCX & XLSX outputs with " + extractedClauses.size() + " extracted clauses."
             );
             activityLogRepository.save(log);
 
@@ -923,6 +933,7 @@ public class TenderController {
             response.put("generated", true);
             response.put("pdfDownloadUrl", pdfDownloadUrl);
             response.put("docxDownloadUrl", docxDownloadUrl);
+            response.put("xlsxDownloadUrl", xlsxDownloadUrl);
             response.put("products", products);
             response.put("message", "Separate technical data sheets generated for " + products.size() + " products.");
             response.put("status", resolveStatus(tender, LocalDate.now().toString()));

@@ -460,11 +460,13 @@
         group.appendChild(name);
         group.appendChild(downloadLink(product.pdfDownloadUrl, "PDF"));
         group.appendChild(downloadLink(product.docxDownloadUrl, "Word DOCX"));
+        group.appendChild(downloadLink(product.xlsxDownloadUrl, "Excel XLSX"));
         links.appendChild(group);
       });
     } else {
       if (data.pdfDownloadUrl) links.appendChild(downloadLink(data.pdfDownloadUrl, "Download PDF"));
       if (data.docxDownloadUrl) links.appendChild(downloadLink(data.docxDownloadUrl, "Download DOCX"));
+      if (data.xlsxDownloadUrl) links.appendChild(downloadLink(data.xlsxDownloadUrl, "Download XLSX"));
     }
     return terminal;
   }

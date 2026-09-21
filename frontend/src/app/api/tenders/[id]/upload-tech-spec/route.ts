@@ -101,7 +101,8 @@ export async function POST(
     if (backendResult.generated === true && Array.isArray(backendResult.products)) {
       for (const product of backendResult.products) {
         if (!isObject(product)) continue;
-        for (const [key, type] of [['pdfDownloadUrl', 'PDF'], ['docxDownloadUrl', 'DOCX']]) {
+        for (const [key, type] of [['pdfDownloadUrl', 'PDF'], ['docxDownloadUrl', 'DOCX'],
+          ['xlsxDownloadUrl', 'XLSX']]) {
           const url = product[key] as string;
           newDocs.push({ name: `Technical Specification - ${String(product.productName || 'Product')} (${type})`,
             filename: decodeURIComponent(url.slice(url.lastIndexOf('/') + 1)),
