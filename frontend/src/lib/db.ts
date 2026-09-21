@@ -234,6 +234,18 @@ try {
   // Ignored if column already exists
 }
 
+// Dynamic tender_approval_requests schema migration
+try {
+  db.exec("ALTER TABLE tender_approval_requests ADD COLUMN reviewed_by TEXT");
+} catch (e) {
+  // Ignored if column already exists
+}
+try {
+  db.exec("ALTER TABLE tender_approval_requests ADD COLUMN reviewer_comment TEXT");
+} catch (e) {
+  // Ignored if column already exists
+}
+
 // User password hashing helper
 export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');

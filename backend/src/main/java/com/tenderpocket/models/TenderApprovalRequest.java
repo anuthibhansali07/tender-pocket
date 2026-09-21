@@ -57,6 +57,12 @@ public class TenderApprovalRequest {
     @Column(name = "mis_final_price")
     private Double misFinalPrice;
 
+    @Column(name = "reviewed_by")
+    private String reviewedBy;
+
+    @Column(name = "reviewer_comment", columnDefinition = "TEXT")
+    private String reviewerComment;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -117,6 +123,12 @@ public class TenderApprovalRequest {
 
     public Double getMisFinalPrice() { return misFinalPrice; }
     public void setMisFinalPrice(Double misFinalPrice) { this.misFinalPrice = misFinalPrice; }
+
+    public String getReviewedBy() { return reviewedBy; }
+    public void setReviewedBy(String reviewedBy) { this.reviewedBy = reviewedBy; }
+
+    public String getReviewerComment() { return reviewerComment; }
+    public void setReviewerComment(String reviewerComment) { this.reviewerComment = reviewerComment; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -25,69 +25,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const stage = searchParams.get('stage') || '';
     const search = searchParams.get('search') || '';
+    const team = searchParams.get('team') || '';
+    const roleParam = searchParams.get('role') || '';
 
-    // 1. Try forwarding to backend if available and has records
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8090';
-    if (backendUrl && backendUrl !== 'http://localhost:8080') {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
-        const headers: Record<string, string> = { Accept: 'application/json' };
-        const authH = request.headers.get('authorization');
-        if (authH) headers['authorization'] = authH;
-
-        const backendRes = await fetch(`${backendUrl}/api/approvals/pending?${searchParams.toString()}`, {
-          headers,
-          signal: controller.signal,
-          cache: 'no-store'
-        });
-        clearTimeout(timeout);
-
-        if (backendRes.ok) {
-          const cType = backendRes.headers.get('content-type') || '';
-          if (cType.includes('application/json')) {
-            const data = await backendRes.json();
-            if (data && Array.isArray(data.approvals) && data.approvals.length > 0) {
-              data.approvals = data.approvals.map((a: any) => ({
-                id: a.id,
-                tenderId: a.tenderId || a.tender_id || '',
-                stage: a.stage || '',
-                stageName: a.stageName || a.stage_name || a.stage || '',
-                requestedBy: a.requestedBy || a.requested_by || 'Unknown',
-                assignedTo: a.assignedTo || a.assigned_to || '',
-                status: a.status || 'PENDING',
-                workingPath: a.workingPath || a.working_path || null,
-                emdAmount: a.emdAmount != null ? a.emdAmount : a.emd_amount,
-                transferMode: a.transferMode || a.transfer_mode || null,
-                transferRefNo: a.transferRefNo || a.transfer_ref_no || null,
-                receiptFileUrl: a.receiptFileUrl || a.receipt_file_url || null,
-                lossReasonExecutive: a.lossReasonExecutive || a.loss_reason_executive || null,
-                lossReasonMis: a.lossReasonMis || a.loss_reason_mis || null,
-                tpcPurchasePrice: a.tpcPurchasePrice != null ? a.tpcPurchasePrice : a.tpc_purchase_price,
-                misFinalPrice: a.misFinalPrice != null ? a.misFinalPrice : a.mis_final_price,
-                createdAt: a.createdAt || a.created_at,
-                updatedAt: a.updatedAt || a.updated_at,
-                tenderRefNo: a.tenderRefNo || a.tender_ref_no || '',
-                tenderTitle: a.tenderTitle || a.tender_title || a.tenderId || a.tender_id || '',
-                tenderAuthority: a.tenderAuthority || a.tender_authority || '',
-                tenderDueDate: a.tenderDueDate || a.tender_due_date || '',
-                tenderEstimatedCost: a.tenderEstimatedCost != null ? a.tenderEstimatedCost : a.tender_estimated_cost,
-                tenderEmd: a.tenderEmd != null ? a.tenderEmd : a.tender_emd,
-                tenderLocation: a.tenderLocation || a.tender_location || '',
-                tenderSector: a.tenderSector || a.tender_sector || '',
-                tenderStatus: a.tenderStatus || a.tender_status || '',
-                tenderCurrentStage: a.tenderCurrentStage || a.tender_current_stage || '',
-                misExecutive: a.misExecutive || a.mis_executive || ''
-              }));
-              return NextResponse.json(redactManufacturerPricing(data, auth.role));
-            }
-            // If backend returned empty list [], do NOT return empty if SQLite has pending items
-          }
-        }
-      } catch (err) {
-        // Backend not reachable, fall back to SQLite
-      }
-    }
+    const statusParam = (searchParams.get('status') || 'PENDING').toUpperCase();
 
     // 2. Query SQLite
     let query = `
@@ -110,6 +51,8 @@ export async function GET(request: Request) {
         r.mis_final_price as misFinalPrice,
         r.created_at as createdAt,
         r.updated_at as updatedAt,
+        r.reviewed_by as reviewedBy,
+        r.reviewer_comment as reviewerComment,
         t.ref_no as tenderRefNo,
         t.title as tenderTitle,
         t.authority as tenderAuthority,
@@ -119,16 +62,25 @@ export async function GET(request: Request) {
         t.location as tenderLocation,
         t.sector as tenderSector,
         t.status as tenderStatus,
+        t.current_stage as tenderCurrentStage,
         t.mis_executive as misExecutive
       FROM tender_approval_requests r
       LEFT JOIN tenders t ON r.tender_id = t.id
-      WHERE r.status = 'PENDING'
     `;
 
     const params: any[] = [];
 
+    if (statusParam === 'HISTORY') {
+      query += " WHERE r.status != 'PENDING'";
+    } else if (statusParam !== 'ALL') {
+      query += " WHERE r.status = ?";
+      params.push(statusParam);
+    } else {
+      query += " WHERE 1=1";
+    }
+
     if (auth.role === 'Admin') {
-      // Admin sees all pending
+      // Admin sees all approvals according to status
     } else if (auth.role === 'MIS Team') {
       query += ` AND (
         LOWER(r.assigned_to) = LOWER(?) 
@@ -136,30 +88,30 @@ export async function GET(request: Request) {
         OR LOWER(r.assigned_to) = 'mis team' 
         OR r.assigned_to IS NULL 
         OR r.stage IN ('SPEC_CLEARANCE', 'TPC_PRICING', 'MIS_PRICING', 'PAYMENT_APPROVAL', 'DOC_VERIFICATION', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING')
+        OR LOWER(r.requested_by) = LOWER(?)
       )`;
-      params.push(auth.username);
+      params.push(auth.username, auth.username);
     } else if (auth.role === 'Specification Team' || auth.role === 'Clearance Team') {
-      // Specification Team & Clearance Team see SPEC_CLEARANCE stage items
       query += ` AND (
         LOWER(r.assigned_to) = LOWER(?)
         OR LOWER(r.assigned_to) = 'specification team'
         OR LOWER(r.assigned_to) = 'clearance'
         OR LOWER(r.assigned_to) = 'clearance team'
         OR r.stage = 'SPEC_CLEARANCE'
+        OR LOWER(r.requested_by) = LOWER(?)
       )`;
-      params.push(auth.username);
+      params.push(auth.username, auth.username);
     } else if (auth.role === 'TPC Team' || auth.role === 'TPC Pricing Team') {
-      // TPC Team sees TPC_PRICING stage items
       query += ` AND (
         LOWER(r.assigned_to) = LOWER(?)
         OR LOWER(r.assigned_to) = 'tpc'
         OR LOWER(r.assigned_to) = 'tpc team'
         OR LOWER(r.assigned_to) = 'tpc pricing team'
         OR r.stage = 'TPC_PRICING'
+        OR LOWER(r.requested_by) = LOWER(?)
       )`;
-      params.push(auth.username);
+      params.push(auth.username, auth.username);
     } else if (auth.role === 'MIS Executive' || auth.role === 'Tender Executive' || auth.role === 'Executive') {
-      // MIS / Tender Executives see approvals they requested or assigned to them
       query += ' AND (LOWER(r.requested_by) = LOWER(?) OR LOWER(r.assigned_to) = LOWER(?))';
       params.push(auth.username, auth.username);
     } else {
@@ -172,12 +124,22 @@ export async function GET(request: Request) {
       params.push(stage);
     }
 
+    if (team && team !== 'ALL') {
+      query += ' AND LOWER(r.assigned_to) = LOWER(?)';
+      params.push(team);
+    }
+
+    if (roleParam && roleParam !== 'ALL') {
+      query += ' AND LOWER(r.requested_by) = LOWER(?)';
+      params.push(roleParam);
+    }
+
     if (search) {
       query += ' AND (t.title LIKE ? OR t.ref_no LIKE ? OR t.authority LIKE ? OR r.tender_id LIKE ? OR r.requested_by LIKE ?)';
       params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    query += ' ORDER BY r.created_at DESC';
+    query += ' ORDER BY r.updated_at DESC, r.created_at DESC';
 
     const approvals = db.prepare(query).all(...params);
 
