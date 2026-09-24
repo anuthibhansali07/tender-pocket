@@ -278,6 +278,8 @@ export default function Dashboard() {
   const [formActiveTab, setFormActiveTab] = useState<'tender' | 'company' | 'signatory' | 'clauses'>('tender');
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
+    companyKey: "me",
+    orientation: "portrait",
     date: "",
     authorityName: "",
     authorityDept: "",
@@ -313,6 +315,8 @@ export default function Dashboard() {
     const formattedToday = `${d.getDate()}-${months[d.getMonth()]}-${d.getFullYear()}`;
 
     setBidFormFields({
+      companyKey: "me",
+      orientation: "portrait",
       date: formattedToday,
       authorityName: selectedTender.authority || "",
       authorityDept: selectedTender.authority || "",
@@ -6424,6 +6428,58 @@ export default function Dashboard() {
 
                 {formActiveTab === 'tender' && (
                   <div className="form-grid">
+                    <div className="form-group span-2" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ color: '#3b82f6', fontWeight: 'bold' }}>🏢 Letterhead & Template Format</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '6px' }}>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '11px' }}>Select Company</label>
+                          <select
+                            className="form-input"
+                            value={bidFormFields.companyKey || 'me'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'healthtech') {
+                                setBidFormFields(prev => ({
+                                  ...prev,
+                                  companyKey: 'healthtech',
+                                  companyName: 'Healthtech Limited',
+                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
+                                  companyEmail: 'info@healthtech.co.in',
+                                  companyWebsite: 'www.healthtech.co.in',
+                                  companyContact: '0253 2381200 / +91 98220 12345'
+                                }));
+                              } else {
+                                setBidFormFields(prev => ({
+                                  ...prev,
+                                  companyKey: 'me',
+                                  companyName: 'Mark Enterprises',
+                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+                                  companyEmail: 'info@markenworld.com',
+                                  companyWebsite: 'www.markenworld.com',
+                                  companyContact: '09175559646 / 090111 04332'
+                                }));
+                              }
+                            }}
+                            style={{ fontWeight: '600' }}
+                          >
+                            <option value="me">Mark Enterprises (ME)</option>
+                            <option value="healthtech">Healthtech Limited</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '11px' }}>Page Orientation</label>
+                          <select
+                            className="form-input"
+                            value={bidFormFields.orientation || 'portrait'}
+                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
+                            style={{ fontWeight: '600' }}
+                          >
+                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
+                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                     <div className="form-group">
                       <label className="form-label">Bid / Tender Number</label>
                       <input

@@ -210,7 +210,7 @@ function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value
 }
 
 // Helper to launch Puppeteer and print HTML content to PDF
-async function generatePdfFile(htmlContent: string, outputPath: string) {
+async function generatePdfFile(htmlContent: string, outputPath: string, isLandscape = false) {
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -221,6 +221,7 @@ async function generatePdfFile(htmlContent: string, outputPath: string) {
     await page.pdf({
       path: outputPath,
       format: 'A4',
+      landscape: isLandscape,
       printBackground: true,
       margin: {
         top: '0px',
@@ -272,6 +273,25 @@ export async function POST(
       return NextResponse.json({ success: false,
         error: 'Specification clearance and finalized MIS pricing are required before generating bid documents.' }, { status: 409 });
     }
+
+    const companyKey = (body.companyKey || (body.companyName?.toLowerCase().includes('healthtech') ? 'healthtech' : 'me')).toLowerCase();
+    const orientation = (body.orientation || 'portrait').toLowerCase();
+    const isLandscape = orientation === 'landscape';
+
+    const defaultCompany = companyKey === 'healthtech' ? {
+      companyName: 'Healthtech Limited',
+      companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
+      companyEmail: 'info@healthtech.co.in',
+      companyWebsite: 'www.healthtech.co.in',
+      companyContact: '0253 2381200 / +91 98220 12345'
+    } : {
+      companyName: 'Mark Enterprises',
+      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
+      companyContact: '09175559646 / 090111 04332'
+    };
+
     const templateData = {
       bidNumber: body.bidNumber || tender.ref_no || id,
       productDescription: body.productDescription || tender.product_name_as_per_tender || tender.title || 'Equipment / Goods',
@@ -279,14 +299,16 @@ export async function POST(
       authorityName: body.authorityName || tender.authority || '',
       authorityDept: body.authorityDept || '',
       authorityAddress: body.authorityAddress || tender.location || '',
-      offeredMake: body.offeredMake || 'MarkEn',
+      offeredMake: body.offeredMake || (companyKey === 'healthtech' ? 'Healthtech' : 'MarkEn'),
       offeredModel: body.offeredModel || '-',
       scheduleNo: body.scheduleNo || '',
-      companyName: body.companyName || 'Mark Enterprises',
-      companyAddress: body.companyAddress || 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-      companyEmail: body.companyEmail || 'info@markenworld.com',
-      companyWebsite: body.companyWebsite || 'www.markenworld.com',
-      companyContact: body.companyContact || '09175559646 / 090111 04332',
+      companyKey,
+      orientation,
+      companyName: body.companyName || defaultCompany.companyName,
+      companyAddress: body.companyAddress || defaultCompany.companyAddress,
+      companyEmail: body.companyEmail || defaultCompany.companyEmail,
+      companyWebsite: body.companyWebsite || defaultCompany.companyWebsite,
+      companyContact: body.companyContact || defaultCompany.companyContact,
       signatoryName: body.signatoryName || 'Korra Praveen Naik',
       signatoryDesignation: body.signatoryDesignation || 'Partner',
       date: body.date || new Date().toLocaleDateString('en-GB'),
@@ -305,7 +327,7 @@ export async function POST(
     const pdfFileName = `Bid_Documents_${id}.pdf`;
     const pdfFilePath = path.join(docDir, pdfFileName);
     const pdfDownloadPath = localDocumentUrl(id, pdfFileName);
-    await generatePdfFile(htmlContent, pdfFilePath);
+    await generatePdfFile(htmlContent, pdfFilePath, isLandscape);
 
     // 2. Generate and save Word document using html-to-docx
     const docFileName = `Bid_Documents_${id}.docx`;
@@ -316,11 +338,17 @@ export async function POST(
       table: { row: { cantSplit: true } },
       footer: true,
       pageNumber: true,
-      margins: {
-        top: 1960,    // 98pt * 20 = 1960 dxa
-        bottom: 800,  // 40pt * 20 = 800 dxa
-        left: 850,    // 42.5pt * 20 = 850 dxa
-        right: 850    // 42.5pt * 20 = 850 dxa
+      orientation: isLandscape ? 'landscape' : 'portrait',
+      margins: isLandscape ? {
+        top: 1200,
+        bottom: 800,
+        left: 850,
+        right: 850
+      } : {
+        top: 1960,
+        bottom: 800,
+        left: 850,
+        right: 850
       }
     });
     fs.writeFileSync(docFilePath, docxBuffer);
@@ -332,7 +360,7 @@ export async function POST(
     const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
     const specPdfFilePath = path.join(docDir, specPdfFileName);
     const specPdfDownloadPath = localDocumentUrl(id, specPdfFileName);
-    await generatePdfFile(specHtml, specPdfFilePath);
+    await generatePdfFile(specHtml, specPdfFilePath, isLandscape);
 
     const specDocFileName = `Technical_Specification_Sheet_${id}.docx`;
     const specDocFilePath = path.join(docDir, specDocFileName);
@@ -340,6 +368,7 @@ export async function POST(
 
     const specDocxBuffer = await HTMLtoDOCX(specHtml, null, {
       table: { row: { cantSplit: true } },
+      orientation: isLandscape ? 'landscape' : 'portrait',
       margins: {
         top: 1440,
         bottom: 1440,

@@ -91,6 +91,8 @@ export default function TenderDetailPage() {
   const [isBidDocFormOpen, setIsBidDocFormOpen] = useState(false);
   const [generatingBidDocs, setGeneratingBidDocs] = useState(false);
   const [bidFormFields, setBidFormFields] = useState({
+    companyKey: 'me',
+    orientation: 'portrait',
     bidNumber: '',
     bidDate: '',
     authorityName: '',
@@ -572,17 +574,19 @@ export default function TenderDetailPage() {
   const openBidDocForm = () => {
     if (!selectedTender) return;
     setBidFormFields({
+      companyKey: 'me',
+      orientation: 'portrait',
       bidNumber: selectedTender.id || '',
       bidDate: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
       authorityName: selectedTender.authority || '',
       authorityDept: '',
       authorityAddress: selectedTender.location || '',
       productDescription: selectedTender.product_name_as_per_tender || selectedTender.title || '',
-      companyName: 'Marken Company',
-      companyContact: '+91 99999 88888',
-      companyAddress: 'Industrial Zone, Sector 4, New Delhi',
-      companyEmail: 'info@markencompany.com',
-      companyWebsite: 'www.markencompany.com',
+      companyName: 'Mark Enterprises',
+      companyContact: '09175559646 / 090111 04332',
+      companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+      companyEmail: 'info@markenworld.com',
+      companyWebsite: 'www.markenworld.com',
       manufacturerName: 'Marken OEM Division',
       manufacturerAddress: 'Industrial Area Phase 2, Mumbai',
       signatoryName: 'John Doe',
@@ -2376,6 +2380,56 @@ export default function TenderDetailPage() {
                   {/* Tender details */}
                   <div>
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--primary)' }}>Tender Parameters</h4>
+                    <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '12px' }}>
+                      <label style={{ fontSize: '12px', color: '#3b82f6', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>🏢 Letterhead & Template Format</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Select Company</label>
+                          <select
+                            value={bidFormFields.companyKey || 'me'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'healthtech') {
+                                setBidFormFields(prev => ({
+                                  ...prev,
+                                  companyKey: 'healthtech',
+                                  companyName: 'Healthtech Limited',
+                                  companyAddress: 'Plot No. 45, Healthcare Park, MIDC Industrial Area, Ambad, Nashik – 422010, Maharashtra, India',
+                                  companyEmail: 'info@healthtech.co.in',
+                                  companyWebsite: 'www.healthtech.co.in',
+                                  companyContact: '0253 2381200 / +91 98220 12345'
+                                }));
+                              } else {
+                                setBidFormFields(prev => ({
+                                  ...prev,
+                                  companyKey: 'me',
+                                  companyName: 'Mark Enterprises',
+                                  companyAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
+                                  companyEmail: 'info@markenworld.com',
+                                  companyWebsite: 'www.markenworld.com',
+                                  companyContact: '09175559646 / 090111 04332'
+                                }));
+                              }
+                            }}
+                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
+                          >
+                            <option value="me">Mark Enterprises (ME)</option>
+                            <option value="healthtech">Healthtech Limited</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Page Orientation</label>
+                          <select
+                            value={bidFormFields.orientation || 'portrait'}
+                            onChange={(e) => setBidFormFields(prev => ({ ...prev, orientation: e.target.value }))}
+                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
+                          >
+                            <option value="portrait">📄 Portrait (A4 Vertical)</option>
+                            <option value="landscape">📜 Landscape (A4 Horizontal)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Bid / Tender ID</label>
