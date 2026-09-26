@@ -108,6 +108,82 @@ class SpecificationSheetOutputTest {
     }
 
     @Test
+    void compactItemScheduleMakesOneShortSheetInAllThreeFormats() throws Exception {
+        var generator = new DocumentGeneratorService();
+        String context = "[SOURCE_PAGE pdf=\"1\"]\nTECHNICAL SPECIFICATION OF ITEMS\n"
+                + "Ser No Specification A/U Qty Remarks\n[/SOURCE_PAGE]";
+        List<String[]> extracted = new ArrayList<>();
+        for (int i = 1; i <= 7; i++) {
+            extracted.add(new String[]{String.valueOf(i), "Item " + i + " A/U: Nos; Qty: 0" + i,
+                    "", "", "", "Item " + i, "-", "PDF p. 1", "requirement", "", "", ""});
+        }
+        List<String[]> grouped = generator.groupCompactItemSchedule(extracted, context);
+        assertEquals("Item 1", extracted.get(0)[5], "Grouping must not change validated source rows");
+        var products = SpecificationSheetContent.from(grouped);
+        assertEquals(1, products.size());
+        var product = products.get(0);
+        assertEquals("Technical Specification of Items", product.name());
+        assertEquals(7, product.clauseCount());
+        byte[] pdf = generator.generateProductSheetPdf(Map.of(), product);
+        try (PDDocument document = PDDocument.load(pdf)) {
+            assertTrue(document.getNumberOfPages() <= 2,
+                    "A seven-row schedule should stay short; got " + document.getNumberOfPages());
+            String text = new PDFTextStripper().getText(document);
+            for (int i = 1; i <= 7; i++) {
+                assertTrue(java.util.regex.Pattern.compile("(?m)^" + i + "\\s+Item\\b[^\\r\\n]*\\b0" + i + "\\s*$")
+                        .matcher(text).find(), "Missing item " + i + " or its quantity from: " + text);
+            }
+        }
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(
+                generator.generateProductSheetDocx(Map.of(), product)))) {
+            var table = document.getTables().get(0);
+            assertEquals(8, table.getRows().size());
+            for (int i = 1; i <= 7; i++) {
+                assertEquals(String.valueOf(i), table.getRow(i).getCell(0).getText());
+                assertTrue(table.getRow(i).getCell(1).getText().contains("Qty: 0" + i));
+                assertEquals("", table.getRow(i).getCell(2).getText());
+            }
+        }
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(
+                generator.generateProductSheetXlsx(Map.of(), product)))) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            var sheet = workbook.getSheetAt(0);
+            for (int i = 1; i <= 7; i++) {
+                assertEquals(String.valueOf(i), sheet.getRow(i + 5).getCell(0).getStringCellValue());
+                assertTrue(sheet.getRow(i + 5).getCell(1).getStringCellValue().contains("Qty: 0" + i));
+            }
+        }
+    }
+
+    @Test
+    void compactGroupingRequiresTableEvidenceAndDoesNotMergeDetailedVariants() {
+        var generator = new DocumentGeneratorService();
+        List<String[]> scanned = List.of(
+                new String[]{"1", "Ice Tray A/U: Nos; Qty: 06", "", "", "", "Ice Tray",
+                        "-", "PDF p. 1", "requirement", "", "Technical Specification of Items", ""},
+                new String[]{"2", "DC Fan A/U: Nos; Qty: 06", "", "", "", "DC Fan",
+                        "-", "PDF p. 1", "requirement", "", "Technical Specification of Items", ""});
+        assertEquals(1, SpecificationSheetContent.from(generator.groupCompactItemSchedule(
+                scanned, "[SOURCE_PAGE pdf=\"1\"]\n[/SOURCE_PAGE]")).size(),
+                "Scanned tables can identify the compact schedule through validated row headings");
+        List<String[]> detailed = List.of(
+                new String[]{"3.10", "Capacity 100 litres", "", "", "", "ILR Large",
+                        "-", "PDF p. 1", "requirement", "3", "Technical Specifications", ""},
+                new String[]{"3.11", "Capacity 60 litres", "", "", "", "ILR Small",
+                        "-", "PDF p. 1", "requirement", "3", "Technical Specifications", ""});
+        String tableHeader = "TECHNICAL SPECIFICATION OF ITEMS\nSer No Specification A/U Qty Remarks";
+        assertEquals(2, SpecificationSheetContent.from(generator.groupCompactItemSchedule(
+                detailed, tableHeader)).size(), "Original detailed product sections stay separate");
+        List<String[]> withoutTableTitle = scanned.stream().map(row -> {
+            String[] copy = row.clone();
+            copy[10] = "";
+            return copy;
+        }).toList();
+        assertEquals(2, SpecificationSheetContent.from(generator.groupCompactItemSchedule(
+                withoutTableTitle, "A different document without a compact table")).size());
+    }
+
+    @Test
     void usageMetricsCalculateInrWithoutDoubleBillingReasoningTokens() {
         var metrics = new ComplianceConversionMetrics("0.20", "0.02", "1.25", "80", "2026-09-13");
         metrics.recordApiAttempt(125, true, "{\"usage\":{\"input_tokens\":1000,"

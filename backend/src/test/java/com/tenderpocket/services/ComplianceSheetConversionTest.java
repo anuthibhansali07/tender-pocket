@@ -26,6 +26,54 @@ class ComplianceSheetConversionTest {
     private final DocumentGeneratorService generator = new DocumentGeneratorService();
 
     @Test
+    void nativeItemScheduleGeneratesOneGroupInsteadOfOneFilePerItem() throws Exception {
+        byte[] input;
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.beginText();
+                content.setFont(PDType1Font.HELVETICA, 12);
+                content.newLineAtOffset(50, 700);
+                for (String line : List.of("TECHNICAL SPECIFICATION OF ITEMS",
+                        "Ser No Specification A/U Qty Remarks", "1 Ice Tray Nos 06",
+                        "2 DC Fan Nos 06", "3 Plastic Tray Nos 04")) {
+                    content.showText(line);
+                    content.newLineAtOffset(0, -20);
+                }
+                content.endText();
+            }
+            document.save(out);
+            input = out.toByteArray();
+        }
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var directGenerator = new DocumentGeneratorService();
+        setAi(directGenerator, new AISpecificationIntelligenceService() {
+            @Override
+            List<String[]> processOcrAndSynthesizeClauses(String text, byte[] bytes,
+                    Map<String, String> data, List<String> products) {
+                assertTrue(text.contains("TECHNICAL SPECIFICATION OF ITEMS"));
+                assertNotNull(bytes);
+                calls.incrementAndGet();
+                return List.of(
+                        new String[]{"1", "Ice Tray A/U: Nos; Qty: 06", "", "", "", "Ice Tray",
+                                "-", "PDF p. 1", "requirement", "", "", ""},
+                        new String[]{"2", "DC Fan A/U: Nos; Qty: 06", "", "", "", "DC Fan",
+                                "-", "PDF p. 1", "requirement", "", "", ""},
+                        new String[]{"3", "Plastic Tray A/U: Nos; Qty: 04", "", "", "", "Plastic Tray",
+                                "-", "PDF p. 1", "requirement", "", "", ""});
+            }
+        });
+
+        var rows = directGenerator.parseSpecificationClauses(input, "items.pdf", baseData());
+        var products = SpecificationSheetContent.from(rows);
+        assertEquals(1, calls.get());
+        assertEquals(1, products.size());
+        assertEquals("Technical Specification of Items", products.get(0).name());
+        assertEquals(3, products.get(0).clauseCount());
+    }
+
+    @Test
     void successfulNativePdfBatchDoesNotInvokeOcr() throws Exception {
         java.util.concurrent.atomic.AtomicInteger ocrCalls = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger nativeCalls = new java.util.concurrent.atomic.AtomicInteger();

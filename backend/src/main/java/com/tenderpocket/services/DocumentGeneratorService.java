@@ -1812,7 +1812,9 @@ public class DocumentGeneratorService {
         for (List<String[]> rows : extracted) {
             for (String[] row : rows) mergeConversionRow(merged, row);
         }
-        int productCount = (int) merged.values().stream().map(row -> row[5]).distinct().count();
+        List<String[]> consolidated = groupCompactItemSchedule(
+                new ArrayList<>(merged.values()), fullSourceContext.toString());
+        int productCount = (int) consolidated.stream().map(row -> row[5]).distinct().count();
         progress.onProgress("VALIDATING", "Extraction complete. Validated " + merged.size()
                 + " unique requirements across " + productCount + " products.",
                 78, batches.size(), batches.size(), merged.size());
@@ -1820,7 +1822,41 @@ public class DocumentGeneratorService {
         if (merged.isEmpty()) progress.onProgress("NO_PRODUCTS",
                 "No products found with applicable compliance requirements.", 100, batches.size(), batches.size(), 0);
         return merged.isEmpty() ? AISpecificationIntelligenceService.completedEmptyRows()
-                : new ArrayList<>(merged.values());
+                : consolidated;
+    }
+
+    List<String[]> groupCompactItemSchedule(List<String[]> rows, String sourceContext) {
+        if (rows.size() < 2 || rows.size() > 30) return rows;
+        String context = sourceContext == null ? "" : sourceContext;
+        boolean sourceTable = context.matches("(?is).*\\btechnical\\s+specifications?\\s+of\\s+items\\b.*")
+                && context.matches("(?is).*\\b(?:sr|ser|serial)\\.?\\s*no\\b.*")
+                && context.matches("(?is).*\\bspecification\\b.*")
+                && context.matches("(?is).*\\bqty\\b.*");
+        boolean modelTable = rows.stream().allMatch(row -> SpecificationSheetContent.value(row, 10)
+                .matches("(?i)technical specifications? of items"));
+        if (!sourceTable && !modelTable) return rows;
+
+        Set<String> products = new LinkedHashSet<>();
+        Set<String> references = new HashSet<>();
+        for (String[] row : rows) {
+            String reference = SpecificationSheetContent.value(row, 0);
+            String product = SpecificationSheetContent.value(row, 5);
+            if (!reference.matches("[1-9]\\d{0,2}") || !references.add(reference)
+                    || product.isBlank() || SpecificationSheetContent.value(row, 1).length() > 300
+                    || !SpecificationSheetContent.value(row, 8).equals("requirement")
+                    || !SpecificationSheetContent.value(row, 11).isBlank()) return rows;
+            products.add(product);
+        }
+        if (products.size() < 2 || products.size() != rows.size()) return rows;
+
+        List<String[]> grouped = new ArrayList<>(rows.size());
+        for (String[] row : rows) {
+            String[] copy = row.clone();
+            copy[5] = "Technical Specification of Items";
+            copy[10] = "";
+            grouped.add(copy);
+        }
+        return grouped;
     }
 
     private List<PdfBatch> annotateProductContexts(List<PdfBatch> batches, List<String> products) {
