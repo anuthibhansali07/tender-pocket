@@ -66,10 +66,10 @@ import {
 } from 'recharts';
 import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
-import { canPerform } from '@/lib/workflowAuthorization';
+import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
 
 
-type TabType = 'dashboard' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
 
 interface Toast {
   message: string;
@@ -86,6 +86,7 @@ export default function Dashboard() {
   // User Authentication & Session States
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS Executive' || currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const techSpecUploadInFlight = useRef(false);
   const [usernameInput, setUsernameInput] = useState('');
@@ -164,6 +165,15 @@ export default function Dashboard() {
   const [misExecutiveFilter, setMisExecutiveFilter] = useState('');
   const [sortBy, setSortBy] = useState('scraped_at');
   const [sortOrder, setSortOrder] = useState('desc');
+
+  // Status Tab Dedicated Filter States
+  const [statusTabSearch, setStatusTabSearch] = useState('');
+  const [statusTabStatusFilter, setStatusTabStatusFilter] = useState('');
+  const [statusTabStageFilter, setStatusTabStageFilter] = useState('');
+  const [statusTabUrgencyFilter, setStatusTabUrgencyFilter] = useState('');
+  const [statusTabActionRequiredOnly, setStatusTabActionRequiredOnly] = useState(false);
+  const [statusTabSortBy, setStatusTabSortBy] = useState<'due_date' | 'scraped_at' | 'estimated_cost'>('due_date');
+  const [statusTabSortOrder, setStatusTabSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
   const selectedTenderRef = useRef<Tender | null>(selectedTender);
@@ -1232,6 +1242,271 @@ export default function Dashboard() {
     }
   };
 
+  const resolveTenderStage = (tender: Tender) => {
+    // Stage 8: Final Outcome (Won/Lost)
+    if (tender.status === 'Won' || tender.status === 'Awarded' || tender.outcome_status === 'Won' || tender.current_stage === 'WON') {
+      return {
+        stageNumber: 8,
+        stageKey: 'WON',
+        stageName: 'Stage 8: Won & Awarded',
+        shortStage: 'Won / Awarded',
+        actionTitle: 'Tender Won & Awarded',
+        actionDesc: 'Bid awarded successfully. Order/Contract processing active.',
+        statusColor: '#10b981',
+        badgeBg: 'rgba(16, 185, 129, 0.12)',
+        badgeBorder: 'rgba(16, 185, 129, 0.3)',
+        needsAction: false,
+        blocker: 'Completed'
+      };
+    }
+    if (tender.status === 'Lost' || tender.status === 'Not Awarded' || tender.outcome_status === 'Lost' || tender.current_stage === 'LOST') {
+      return {
+        stageNumber: 8,
+        stageKey: 'LOST',
+        stageName: 'Stage 8: Lost / Closed',
+        shortStage: 'Lost / Closed',
+        actionTitle: 'Tender Lost',
+        actionDesc: tender.loss_reason ? `Loss reason: ${tender.loss_reason}` : 'Bid concluded without contract award.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.12)',
+        badgeBorder: 'rgba(239, 68, 68, 0.3)',
+        needsAction: false,
+        blocker: 'Closed'
+      };
+    }
+    if (tender.status === 'Not Participating') {
+      return {
+        stageNumber: 0,
+        stageKey: 'NOT_PARTICIPATING',
+        stageName: 'Intake: Declined',
+        shortStage: 'Not Participating',
+        actionTitle: 'Participation Declined',
+        actionDesc: 'Tender marked as not participating. You can re-activate participation anytime.',
+        statusColor: '#64748b',
+        badgeBg: 'rgba(100, 116, 139, 0.12)',
+        badgeBorder: 'rgba(100, 116, 139, 0.3)',
+        needsAction: false,
+        blocker: 'Declined'
+      };
+    }
+    // Stage 7: Submission
+    if (tender.status === 'Submitted' || tender.status === 'Filed' || tender.submission_status === 'Approved') {
+      return {
+        stageNumber: 7,
+        stageKey: 'SUBMITTED',
+        stageName: 'Stage 7: Bid Submitted',
+        shortStage: 'Submitted',
+        actionTitle: 'Submitted to Portal',
+        actionDesc: 'Bid filed on portal and verified by MIS Team. Awaiting commercial evaluation.',
+        statusColor: '#3b82f6',
+        badgeBg: 'rgba(59, 130, 246, 0.12)',
+        badgeBorder: 'rgba(59, 130, 246, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Results'
+      };
+    }
+    if (tender.submission_status === 'Pending') {
+      return {
+        stageNumber: 7,
+        stageKey: 'SUBMISSION_PENDING',
+        stageName: 'Stage 7: Submission Audit',
+        shortStage: 'Audit Pending',
+        actionTitle: 'Awaiting Submission Audit',
+        actionDesc: 'Bid filed. Awaiting MIS Team verification audit to confirm submission.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting MIS Audit'
+      };
+    }
+    if (tender.payment_status === 'Approved') {
+      return {
+        stageNumber: 7,
+        stageKey: 'READY_TO_SUBMIT',
+        stageName: 'Stage 7: Portal Submission',
+        shortStage: 'Ready to File',
+        actionTitle: 'Action Required: File Bid on Portal',
+        actionDesc: 'EMD Payment confirmed! Please physically/digitally file the bid on portal and request audit.',
+        statusColor: '#8b5cf6',
+        badgeBg: 'rgba(139, 92, 246, 0.15)',
+        badgeBorder: 'rgba(139, 92, 246, 0.35)',
+        needsAction: true,
+        blocker: 'File Bid on Portal'
+      };
+    }
+    // Stage 6: EMD Payment
+    if (tender.payment_status === 'Pending') {
+      return {
+        stageNumber: 6,
+        stageKey: 'EMD_PENDING',
+        stageName: 'Stage 6: EMD Payment Approval',
+        shortStage: 'EMD In Progress',
+        actionTitle: 'Awaiting EMD Payment Approval',
+        actionDesc: 'EMD request submitted to MIS Team. Awaiting payment reference and approval.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting EMD'
+      };
+    }
+    if (tender.verification_status === 'Approved') {
+      return {
+        stageNumber: 6,
+        stageKey: 'EMD_REQ_READY',
+        stageName: 'Stage 6: EMD Payment Prep',
+        shortStage: 'Request EMD',
+        actionTitle: 'Action: Submit EMD Request',
+        actionDesc: 'Bid documents approved by MIS Team. Please submit EMD payment request to MIS.',
+        statusColor: '#3b82f6',
+        badgeBg: 'rgba(59, 130, 246, 0.15)',
+        badgeBorder: 'rgba(59, 130, 246, 0.35)',
+        needsAction: true,
+        blocker: 'Submit EMD Request'
+      };
+    }
+    // Stage 5: Doc Verification
+    if (tender.verification_status === 'Pending') {
+      return {
+        stageNumber: 5,
+        stageKey: 'DOC_VERIFICATION',
+        stageName: 'Stage 5: Doc Verification',
+        shortStage: 'Doc Review',
+        actionTitle: 'Awaiting MIS Doc Approval',
+        actionDesc: 'Generated bid documents submitted. Awaiting MIS Team audit & sign-off.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Doc Review'
+      };
+    }
+    if (tender.verification_status === 'Rejected') {
+      return {
+        stageNumber: 4,
+        stageKey: 'DOCS_REJECTED',
+        stageName: 'Stage 4: Docs Revision',
+        shortStage: 'Docs Rejected',
+        actionTitle: 'Action: Revise Bid Documents',
+        actionDesc: 'MIS Team requested changes to bid documents. Regenerate and resubmit.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.15)',
+        badgeBorder: 'rgba(239, 68, 68, 0.35)',
+        needsAction: true,
+        blocker: 'Revise Bid Docs'
+      };
+    }
+    // Stage 4: Docs Prep
+    if (tender.mis_final_price && Number(tender.mis_final_price) > 0) {
+      return {
+        stageNumber: 4,
+        stageKey: 'DOCS_PREP',
+        stageName: 'Stage 4: Docs Preparation',
+        shortStage: 'Generate Docs',
+        actionTitle: 'Action: Generate Bid Documents',
+        actionDesc: 'MIS Provided Price configured. Fill the bid form and generate Annexure docs.',
+        statusColor: '#10b981',
+        badgeBg: 'rgba(16, 185, 129, 0.15)',
+        badgeBorder: 'rgba(16, 185, 129, 0.35)',
+        needsAction: true,
+        blocker: 'Generate Bid Docs'
+      };
+    }
+    // Stage 3: MIS Pricing
+    if (tender.tpc_purchase_price && Number(tender.tpc_purchase_price) > 0) {
+      return {
+        stageNumber: 3,
+        stageKey: 'MIS_PRICING',
+        stageName: 'Stage 3: MIS Pricing',
+        shortStage: 'MIS Pricing',
+        actionTitle: 'Awaiting MIS Team Pricing',
+        actionDesc: 'Manufacturer quote submitted by TPC Team. Awaiting MIS Team provided price.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting MIS Price'
+      };
+    }
+    // Stage 2: TPC Pricing
+    if (tender.spec_verification_status === 'Approved') {
+      return {
+        stageNumber: 2,
+        stageKey: 'TPC_PRICING',
+        stageName: 'Stage 2: TPC Pricing',
+        shortStage: 'TPC Quote',
+        actionTitle: 'Awaiting TPC Pricing',
+        actionDesc: 'Technical specs approved by Clearance Team. Awaiting OEM purchase price from TPC Team.',
+        statusColor: '#ec4899',
+        badgeBg: 'rgba(236, 72, 153, 0.12)',
+        badgeBorder: 'rgba(236, 72, 153, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting TPC Quote'
+      };
+    }
+    // Stage 1: Spec Clearance
+    if (tender.spec_verification_status === 'Pending') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_CLEARANCE_PENDING',
+        stageName: 'Stage 1: Spec Clearance',
+        shortStage: 'Clearance Pending',
+        actionTitle: 'Awaiting Clearance Team Approval',
+        actionDesc: 'Technical specs submitted. Awaiting Clearance Team verification and sign-off.',
+        statusColor: '#8b5cf6',
+        badgeBg: 'rgba(139, 92, 246, 0.12)',
+        badgeBorder: 'rgba(139, 92, 246, 0.3)',
+        needsAction: false,
+        blocker: 'Awaiting Clearance'
+      };
+    }
+    if (tender.spec_verification_status === 'Rejected') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_REJECTED',
+        stageName: 'Stage 1: Specs Rejected',
+        shortStage: 'Specs Rejected',
+        actionTitle: 'Action: Re-upload Technical Specs',
+        actionDesc: 'Clearance Team rejected technical specification. Upload revised document.',
+        statusColor: '#ef4444',
+        badgeBg: 'rgba(239, 68, 68, 0.15)',
+        badgeBorder: 'rgba(239, 68, 68, 0.35)',
+        needsAction: true,
+        blocker: 'Re-upload Specs'
+      };
+    }
+    if (tender.status === 'Participating') {
+      return {
+        stageNumber: 1,
+        stageKey: 'SPEC_NOT_STARTED',
+        stageName: 'Stage 1: Spec Clearance',
+        shortStage: 'Upload Specs',
+        actionTitle: 'Action: Upload Tech Spec Document',
+        actionDesc: 'Bid accepted for participation. Upload tender PDF/Doc to generate technical specs.',
+        statusColor: 'var(--primary)',
+        badgeBg: 'rgba(99, 102, 241, 0.15)',
+        badgeBorder: 'rgba(99, 102, 241, 0.35)',
+        needsAction: true,
+        blocker: 'Upload Tech Specs'
+      };
+    }
+    // Stage 0: Intake / Decision (New / Issued / Lapsed)
+    return {
+      stageNumber: 0,
+      stageKey: 'NEW_UNREVIEWED',
+      stageName: 'Intake: New Assignment',
+      shortStage: 'Decision Needed',
+      actionTitle: 'Action: Accept or Decline Bid',
+      actionDesc: 'New tender assigned to you. Review requirement and decide whether to participate.',
+      statusColor: 'var(--accent-yellow)',
+      badgeBg: 'rgba(245, 158, 11, 0.15)',
+      badgeBorder: 'rgba(245, 158, 11, 0.35)',
+      needsAction: true,
+      blocker: 'Accept / Decline Bid'
+    };
+  };
+
   // Update Tender Status
   const handleStatusChange = async (tenderId: string, newStatus: 'Issued' | 'Participating' | 'Not Participating' | 'Filed' | 'Awarded' | 'Not Awarded') => {
     try {
@@ -1792,6 +2067,22 @@ export default function Dashboard() {
             <Layers size={18} />
             <span>Dashboard</span>
           </button>
+          {isExecutive && (
+            <button 
+              className={`menu-item ${activeTab === 'status' ? 'active' : ''}`}
+              onClick={() => {
+                setStatusFilter('');
+                setSearchQuery('');
+                setLocationFilter('');
+                setSectorFilter('');
+                setMisExecutiveFilter('');
+                setActiveTab('status');
+              }}
+            >
+              <Activity size={18} />
+              <span>Status</span>
+            </button>
+          )}
           <button 
             className={`menu-item ${activeTab === 'tenders' ? 'active' : ''}`}
             onClick={() => {
@@ -1945,6 +2236,7 @@ export default function Dashboard() {
           <div className="header-title-area">
             <h1>
               {activeTab === 'dashboard' && 'Control Desk'}
+              {activeTab === 'status' && 'Tender Status & Stage Tracker'}
               {activeTab === 'tenders' && 'Tender Repositories'}
               {activeTab === 'analytics' && 'Tender Analytics'}
               {activeTab === 'settings' && 'Platform Settings'}
@@ -1955,6 +2247,7 @@ export default function Dashboard() {
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
+              {activeTab === 'status' && 'Comprehensive stage tracker and operational pipeline of all tenders allotted to you.'}
               {activeTab === 'tenders' && 'Search, filter, and modify status for all parsed tenders.'}
               {activeTab === 'analytics' && 'Distribution of bids by value brackets, regions, and authorities.'}
               {activeTab === 'settings' && 'Manage connections, SQLite configurations, and database options.'}
@@ -1974,7 +2267,7 @@ export default function Dashboard() {
             >
               <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             </button>
-            {(activeTab === 'tenders' || activeTab === 'dashboard') && (
+            {(activeTab === 'tenders' || activeTab === 'dashboard' || activeTab === 'status') && (
               <button className="btn btn-secondary" onClick={exportToCSV} style={{ gap: '6px' }}>
                 <Download size={16} />
                 <span>Export CSV</span>
@@ -2122,7 +2415,7 @@ export default function Dashboard() {
                             <div className="metric-info">
                               <h3>Total Tenders</h3>
                               <div className="metric-number">{totalTenders}</div>
-                              <div className="metric-trend">From {processedEmails} parsed emails</div>
+                              <div className="metric-trend">{isExecutive ? 'Assigned to you' : `From ${processedEmails} parsed emails`}</div>
                             </div>
                           </div>
 
@@ -2402,6 +2695,658 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* TAB: EXECUTIVE STATUS TRACKER */}
+            {activeTab === 'status' && (() => {
+              // Get today in IST
+              const todayIST = (() => {
+                const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
+                const formatter = new Intl.DateTimeFormat('en-IN', options as any);
+                const parts = formatter.formatToParts(new Date());
+                const day = parts.find(p => p.type === 'day')?.value || '01';
+                const month = parts.find(p => p.type === 'month')?.value || '01';
+                const year = parts.find(p => p.type === 'year')?.value || '2026';
+                return `${year}-${month}-${day}`;
+              })();
+
+              const parsedToday = new Date(todayIST + 'T00:00:00+05:30');
+              const threeDaysLater = new Date(parsedToday);
+              threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+              const sevenDaysLater = new Date(parsedToday);
+              sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+
+              const execTenders = tenders;
+
+              // Pre-calculate stages and metrics
+              const tendersWithStage = execTenders.map(t => ({
+                tender: t,
+                stage: resolveTenderStage(t)
+              }));
+
+              const totalCount = tendersWithStage.length;
+              const participatingCount = tendersWithStage.filter(({ tender }) => tender.status === 'Participating').length;
+              const actionNeededCount = tendersWithStage.filter(({ stage }) => stage.needsAction).length;
+              const waitingCount = tendersWithStage.filter(({ tender, stage }) => tender.status === 'Participating' && !stage.needsAction).length;
+              const wonCount = tendersWithStage.filter(({ tender, stage }) => tender.status === 'Won' || tender.status === 'Awarded' || stage.stageKey === 'WON').length;
+
+              // Filtering
+              let filtered = tendersWithStage.filter(({ tender, stage }) => {
+                // Search filter
+                if (statusTabSearch.trim()) {
+                  const q = statusTabSearch.trim().toLowerCase();
+                  const matches = (
+                    tender.id?.toLowerCase().includes(q) ||
+                    tender.ref_no?.toLowerCase().includes(q) ||
+                    tender.title?.toLowerCase().includes(q) ||
+                    tender.authority?.toLowerCase().includes(q) ||
+                    tender.product_name_as_per_tender?.toLowerCase().includes(q) ||
+                    tender.location?.toLowerCase().includes(q)
+                  );
+                  if (!matches) return false;
+                }
+
+                // Status filter
+                if (statusTabStatusFilter) {
+                  if (statusTabStatusFilter === 'New') {
+                    if (tender.status !== 'New' && tender.status !== 'Issued' && tender.status !== 'Lapsed') return false;
+                  } else if (statusTabStatusFilter === 'Participating') {
+                    if (tender.status !== 'Participating') return false;
+                  } else if (statusTabStatusFilter === 'Not Participating') {
+                    if (tender.status !== 'Not Participating') return false;
+                  } else if (statusTabStatusFilter === 'Submitted') {
+                    if (tender.status !== 'Submitted' && tender.status !== 'Filed') return false;
+                  } else if (statusTabStatusFilter === 'Won') {
+                    if (tender.status !== 'Won' && tender.status !== 'Awarded' && stage.stageKey !== 'WON') return false;
+                  } else if (statusTabStatusFilter === 'Lost') {
+                    if (tender.status !== 'Lost' && tender.status !== 'Not Awarded' && stage.stageKey !== 'LOST') return false;
+                  } else if (statusTabStatusFilter === 'Missed Deadline') {
+                    if (tender.status !== 'Missed Deadline') return false;
+                  }
+                }
+
+                // Stage filter
+                if (statusTabStageFilter) {
+                  const targetStageNum = parseInt(statusTabStageFilter, 10);
+                  if (stage.stageNumber !== targetStageNum) return false;
+                }
+
+                // Urgency filter
+                if (statusTabUrgencyFilter) {
+                  if (!tender.due_date) return false;
+                  if (statusTabUrgencyFilter === 'today') {
+                    if (tender.due_date !== todayIST) return false;
+                  } else if (statusTabUrgencyFilter === '3days') {
+                    const d = new Date(tender.due_date + 'T00:00:00+05:30');
+                    if (d <= parsedToday || d > threeDaysLater) return false;
+                  } else if (statusTabUrgencyFilter === '7days') {
+                    const d = new Date(tender.due_date + 'T00:00:00+05:30');
+                    if (d <= parsedToday || d > sevenDaysLater) return false;
+                  } else if (statusTabUrgencyFilter === 'overdue') {
+                    if (tender.due_date >= todayIST) return false;
+                  }
+                }
+
+                // Action required toggle
+                if (statusTabActionRequiredOnly) {
+                  if (!stage.needsAction) return false;
+                }
+
+                return true;
+              });
+
+              // Sorting
+              filtered.sort((a, b) => {
+                let cmp = 0;
+                if (statusTabSortBy === 'due_date') {
+                  const dateA = a.tender.due_date || '9999-99-99';
+                  const dateB = b.tender.due_date || '9999-99-99';
+                  cmp = dateA.localeCompare(dateB);
+                } else if (statusTabSortBy === 'estimated_cost') {
+                  const costA = a.tender.estimated_cost || 0;
+                  const costB = b.tender.estimated_cost || 0;
+                  cmp = costA - costB;
+                } else {
+                  // scraped_at
+                  const dateA = a.tender.scraped_at || '';
+                  const dateB = b.tender.scraped_at || '';
+                  cmp = dateA.localeCompare(dateB);
+                }
+                return statusTabSortOrder === 'asc' ? cmp : -cmp;
+              });
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* Top KPI Cards */}
+                  <div>
+                    <h2 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>
+                      Pipeline Status Overview
+                    </h2>
+                    <section className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '14px' }}>
+                      {/* All Tenders */}
+                      <div 
+                        className="card metric-card" 
+                        onClick={() => {
+                          setStatusTabStatusFilter('');
+                          setStatusTabStageFilter('');
+                          setStatusTabActionRequiredOnly(false);
+                        }}
+                        style={{ cursor: 'pointer', borderLeft: statusTabStatusFilter === '' && !statusTabActionRequiredOnly && statusTabStageFilter === '' ? '3px solid var(--primary)' : undefined }}
+                      >
+                        <div className="metric-icon-box total">
+                          <FileText size={22} />
+                        </div>
+                        <div className="metric-info">
+                          <h3>Total Allotted</h3>
+                          <div className="metric-number">{totalCount}</div>
+                          <div className="metric-trend">All bids assigned to you</div>
+                        </div>
+                      </div>
+
+                      {/* Action Needed */}
+                      <div 
+                        className="card metric-card" 
+                        onClick={() => setStatusTabActionRequiredOnly(prev => !prev)}
+                        style={{ cursor: 'pointer', borderLeft: statusTabActionRequiredOnly ? '3px solid var(--accent-red)' : '3px solid rgba(239, 68, 68, 0.4)' }}
+                      >
+                        <div className="metric-icon-box" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)' }}>
+                          <AlertTriangle size={22} />
+                        </div>
+                        <div className="metric-info">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <h3>Action Required</h3>
+                            {statusTabActionRequiredOnly && (
+                              <span style={{ fontSize: '10px', background: 'var(--accent-red)', color: '#fff', padding: '1px 6px', borderRadius: '8px', fontWeight: '700' }}>Active</span>
+                            )}
+                          </div>
+                          <div className="metric-number">{actionNeededCount}</div>
+                          <div className="metric-trend">Waiting on your action</div>
+                        </div>
+                      </div>
+
+                      {/* Participating Active */}
+                      <div 
+                        className="card metric-card" 
+                        onClick={() => {
+                          setStatusTabActionRequiredOnly(false);
+                          setStatusTabStatusFilter(statusTabStatusFilter === 'Participating' ? '' : 'Participating');
+                        }}
+                        style={{ cursor: 'pointer', borderLeft: statusTabStatusFilter === 'Participating' ? '3px solid var(--accent-green)' : undefined }}
+                      >
+                        <div className="metric-icon-box review" style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)' }}>
+                          <CheckCircle2 size={22} />
+                        </div>
+                        <div className="metric-info">
+                          <h3>Participating</h3>
+                          <div className="metric-number">{participatingCount}</div>
+                          <div className="metric-trend">Active bids in prep</div>
+                        </div>
+                      </div>
+
+                      {/* Waiting on Other Teams */}
+                      <div 
+                        className="card metric-card" 
+                        onClick={() => {
+                          setStatusTabActionRequiredOnly(false);
+                          setStatusTabStatusFilter('Participating');
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="metric-icon-box" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-yellow)' }}>
+                          <Clock size={22} />
+                        </div>
+                        <div className="metric-info">
+                          <h3>Team Review</h3>
+                          <div className="metric-number">{waitingCount}</div>
+                          <div className="metric-trend">Clearance / TPC / MIS audit</div>
+                        </div>
+                      </div>
+
+                      {/* Won */}
+                      <div 
+                        className="card metric-card" 
+                        onClick={() => {
+                          setStatusTabActionRequiredOnly(false);
+                          setStatusTabStatusFilter(statusTabStatusFilter === 'Won' ? '' : 'Won');
+                        }}
+                        style={{ cursor: 'pointer', borderLeft: statusTabStatusFilter === 'Won' ? '3px solid var(--accent-green)' : undefined }}
+                      >
+                        <div className="metric-icon-box" style={{ backgroundColor: 'rgba(52, 211, 153, 0.15)', color: 'var(--accent-green)' }}>
+                          <TrendingUp size={22} />
+                        </div>
+                        <div className="metric-info">
+                          <h3>Won</h3>
+                          <div className="metric-number">{wonCount}</div>
+                          <div className="metric-trend">Awarded tenders</div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* Main Tenders Status List with Filters */}
+                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Controls Bar */}
+                    <div className="controls-bar" style={{ flexWrap: 'wrap', gap: '10px' }}>
+                      {/* Search */}
+                      <div className="search-input-wrapper" style={{ minWidth: '260px', flexGrow: 1 }}>
+                        <Search size={18} />
+                        <input
+                          type="text"
+                          className="search-input"
+                          placeholder="Search allotted tenders by ID, Authority, Title..."
+                          value={statusTabSearch}
+                          onChange={(e) => setStatusTabSearch(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Status Filter */}
+                      <select
+                        className="filter-select"
+                        value={statusTabStatusFilter}
+                        onChange={(e) => setStatusTabStatusFilter(e.target.value)}
+                        style={{ minWidth: '150px' }}
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="New">New / Unreviewed</option>
+                        <option value="Participating">Participating</option>
+                        <option value="Not Participating">Not Participating</option>
+                        <option value="Submitted">Submitted</option>
+                        <option value="Won">Won</option>
+                        <option value="Lost">Lost</option>
+                        <option value="Missed Deadline">Missed Deadline</option>
+                      </select>
+
+                      {/* Stage Filter */}
+                      <select
+                        className="filter-select"
+                        value={statusTabStageFilter}
+                        onChange={(e) => setStatusTabStageFilter(e.target.value)}
+                        style={{ minWidth: '170px' }}
+                      >
+                        <option value="">All Pipeline Stages</option>
+                        <option value="0">Intake / Decision</option>
+                        <option value="1">Stage 1: Spec Clearance</option>
+                        <option value="2">Stage 2: TPC Pricing</option>
+                        <option value="3">Stage 3: MIS Pricing</option>
+                        <option value="4">Stage 4: Docs Prep</option>
+                        <option value="5">Stage 5: Doc Verification</option>
+                        <option value="6">Stage 6: EMD Payment</option>
+                        <option value="7">Stage 7: Submission</option>
+                        <option value="8">Stage 8: Final Outcome</option>
+                      </select>
+
+                      {/* Urgency Filter */}
+                      <select
+                        className="filter-select"
+                        value={statusTabUrgencyFilter}
+                        onChange={(e) => setStatusTabUrgencyFilter(e.target.value)}
+                        style={{ minWidth: '150px' }}
+                      >
+                        <option value="">All Deadlines</option>
+                        <option value="today">Due Today (T2)</option>
+                        <option value="3days">Due in 3 Days (T2-3)</option>
+                        <option value="7days">Due in 7 Days</option>
+                        <option value="overdue">Past Due Date</option>
+                      </select>
+
+                      {/* Action Needed Toggle Button */}
+                      <button
+                        className={`btn ${statusTabActionRequiredOnly ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{
+                          padding: '8px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: statusTabActionRequiredOnly ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : undefined,
+                          borderColor: statusTabActionRequiredOnly ? '#dc2626' : undefined,
+                          color: statusTabActionRequiredOnly ? '#fff' : undefined
+                        }}
+                        onClick={() => setStatusTabActionRequiredOnly(prev => !prev)}
+                      >
+                        <AlertTriangle size={15} />
+                        <span>My Action Needed ({actionNeededCount})</span>
+                      </button>
+
+                      {/* Sort dropdown */}
+                      <select
+                        className="filter-select"
+                        value={statusTabSortBy}
+                        onChange={(e) => setStatusTabSortBy(e.target.value as any)}
+                        style={{ minWidth: '130px' }}
+                      >
+                        <option value="due_date">Sort: Due Date</option>
+                        <option value="scraped_at">Sort: Scraped Date</option>
+                        <option value="estimated_cost">Sort: Tender Value</option>
+                      </select>
+
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: '8px 12px' }}
+                        onClick={() => setStatusTabSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                        title={`Currently ${statusTabSortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+                      >
+                        <ArrowUpDown size={15} />
+                        <span style={{ fontSize: '12px' }}>{statusTabSortOrder === 'asc' ? 'Asc' : 'Desc'}</span>
+                      </button>
+
+                      {/* Reset Button */}
+                      {(statusTabSearch || statusTabStatusFilter || statusTabStageFilter || statusTabUrgencyFilter || statusTabActionRequiredOnly) && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '8px 12px', fontSize: '12px' }}
+                          onClick={() => {
+                            setStatusTabSearch('');
+                            setStatusTabStatusFilter('');
+                            setStatusTabStageFilter('');
+                            setStatusTabUrgencyFilter('');
+                            setStatusTabActionRequiredOnly(false);
+                          }}
+                        >
+                          <X size={14} /> Reset
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Results Counter */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px', color: 'var(--text-muted)', paddingBottom: '4px', borderBottom: '1px solid var(--border-color)' }}>
+                      <span>Showing <strong>{filtered.length}</strong> of <strong>{totalCount}</strong> tenders allotted to you</span>
+                      {filtered.length > 0 && (
+                        <span style={{ fontSize: '11.5px' }}>
+                          Click <strong>Open Workflow</strong> on any tender to view details, upload specs, and manage bids.
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Tenders Card List */}
+                    {filtered.length === 0 ? (
+                      <div className="empty-state" style={{ padding: '60px 20px', textAlign: 'center' }}>
+                        <SlidersHorizontal size={44} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
+                        <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>No Matching Tenders Found</h3>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '440px', margin: '0 auto 16px auto' }}>
+                          No allotted tenders match your current search, status, or stage filters. Try clearing your filters or refreshing your sync.
+                        </p>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setStatusTabSearch('');
+                            setStatusTabStatusFilter('');
+                            setStatusTabStageFilter('');
+                            setStatusTabUrgencyFilter('');
+                            setStatusTabActionRequiredOnly(false);
+                          }}
+                        >
+                          Clear All Filters
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {filtered.map(({ tender, stage }) => {
+                          const deadline = getDeadlineStatus(tender.due_date);
+                          const isNewTender = tender.status === 'New' || tender.status === 'Issued' || tender.status === 'Lapsed';
+                          const isDeclined = tender.status === 'Not Participating';
+
+                          // 8 Stages definition for stepper
+                          const pipelineSteps = [
+                            { num: 1, name: 'Spec Clearance', short: 'Clearance' },
+                            { num: 2, name: 'TPC Quote', short: 'TPC Quote' },
+                            { num: 3, name: 'MIS Pricing', short: 'MIS Price' },
+                            { num: 4, name: 'Docs Prep', short: 'Docs Prep' },
+                            { num: 5, name: 'MIS Verification', short: 'Verification' },
+                            { num: 6, name: 'EMD Payment', short: 'EMD Payment' },
+                            { num: 7, name: 'Portal Filing', short: 'Portal File' },
+                            { num: 8, name: 'Outcome', short: 'Outcome' },
+                          ];
+
+                          return (
+                            <div 
+                              key={tender.id}
+                              className="card"
+                              style={{
+                                padding: '20px',
+                                borderRadius: '12px',
+                                border: '1px solid var(--border-color)',
+                                borderLeft: stage.needsAction ? '4px solid var(--accent-red)' : `4px solid ${stage.statusColor}`,
+                                background: 'var(--bg-card)',
+                                boxShadow: 'var(--shadow-sm)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '16px',
+                                transition: 'all 0.2s ease'
+                              }}
+                            >
+                              {/* Card Header Row */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  {/* Tender ID */}
+                                  <span style={{
+                                    fontFamily: 'monospace',
+                                    fontWeight: '700',
+                                    fontSize: '13px',
+                                    color: 'var(--text-primary)',
+                                    background: 'var(--bg-subtle)',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    border: '1px solid var(--border-color)'
+                                  }}>
+                                    {tender.id}
+                                  </span>
+
+                                  {/* Portal Source */}
+                                  <span style={{
+                                    fontSize: '10.5px',
+                                    fontWeight: '600',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                                    color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
+                                    border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
+                                  }}>
+                                    {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247'}
+                                  </span>
+
+                                  {/* Overall Status Badge */}
+                                  <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`} style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
+                                    {tender.status}
+                                  </span>
+
+                                  {/* Ref No if available */}
+                                  {tender.ref_no && (
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      Ref: {tender.ref_no}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  {/* Cost */}
+                                  <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                    {formatCost(tender.estimated_cost, tender.estimated_cost_raw)}
+                                  </div>
+
+                                  {/* Deadline Status */}
+                                  <div className={`tender-deadline ${deadline.className}`} style={{ fontSize: '11.5px', padding: '4px 10px', borderRadius: '8px' }}>
+                                    {deadline.label}: {formatDate(tender.due_date)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Tender Title & Authority Row */}
+                              <div>
+                                <h3 
+                                  style={{ margin: '0 0 6px 0', fontSize: '14.5px', fontWeight: '700', color: 'var(--text-primary)', cursor: 'pointer', lineHeight: '1.4' }}
+                                  onClick={() => openTenderDetails(tender)}
+                                >
+                                  {tender.product_name_as_per_tender || tender.title}
+                                </h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                  {tender.authority && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <Building size={13} /> {tender.authority}
+                                    </span>
+                                  )}
+                                  {tender.location && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <MapPin size={13} /> {tender.location}
+                                    </span>
+                                  )}
+                                  {tender.sector && (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <Tag size={13} /> {tender.sector}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 8-Stage Visual Pipeline Stepper */}
+                              <div style={{ background: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 16px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    Current Stage: <strong style={{ color: stage.statusColor }}>{stage.stageName}</strong>
+                                  </span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    {stage.stageNumber === 0 ? 'Intake' : `Stage ${stage.stageNumber} of 8`}
+                                  </span>
+                                </div>
+
+                                {/* Stepper track */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', padding: '0 4px' }}>
+                                  <div style={{ position: 'absolute', top: '12px', left: '16px', right: '16px', height: '2px', backgroundColor: 'var(--border-color)', zIndex: 0 }} />
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: '12px',
+                                    left: '16px',
+                                    width: stage.stageNumber === 0 ? '0%' : `${Math.min(100, Math.round(((stage.stageNumber - 1) / 7) * 100))}%`,
+                                    height: '2px',
+                                    backgroundColor: 'var(--primary)',
+                                    zIndex: 0,
+                                    transition: 'width 0.3s ease'
+                                  }} />
+
+                                  {pipelineSteps.map((step) => {
+                                    const isDone = stage.stageNumber > step.num || stage.stageKey === 'WON';
+                                    const isCurrent = stage.stageNumber === step.num && stage.stageKey !== 'WON';
+                                    return (
+                                      <div key={step.num} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1 }}>
+                                        <div style={{
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '50%',
+                                          backgroundColor: isDone ? '#10b981' : isCurrent ? 'var(--primary)' : 'var(--bg-card)',
+                                          border: isDone ? '2px solid #10b981' : isCurrent ? '2px solid var(--primary)' : '2px solid var(--border-color)',
+                                          color: isDone || isCurrent ? '#fff' : 'var(--text-muted)',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: '10px',
+                                          fontWeight: '700',
+                                          boxShadow: isCurrent ? '0 0 8px rgba(99, 102, 241, 0.4)' : undefined
+                                        }}>
+                                          {isDone ? '✓' : step.num}
+                                        </div>
+                                        <span style={{
+                                          fontSize: '9.5px',
+                                          marginTop: '4px',
+                                          fontWeight: isCurrent ? '700' : '500',
+                                          color: isCurrent ? 'var(--text-primary)' : 'var(--text-muted)',
+                                          textAlign: 'center',
+                                          whiteSpace: 'nowrap'
+                                        }}>
+                                          {step.short}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Blocker / Next Action Box + Actions Row */}
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: '12px',
+                                padding: '12px 16px',
+                                borderRadius: '10px',
+                                background: stage.badgeBg,
+                                border: `1px solid ${stage.badgeBorder}`
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexGrow: 1, minWidth: '240px' }}>
+                                  <div style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    backgroundColor: stage.badgeBg,
+                                    color: stage.statusColor,
+                                    flexShrink: 0
+                                  }}>
+                                    {stage.needsAction ? <AlertCircle size={18} /> : <Clock size={18} />}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: '700', color: stage.statusColor }}>
+                                      {stage.actionTitle}
+                                    </span>
+                                    <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                      {stage.actionDesc}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  {/* Quick Decision for New Bids */}
+                                  {isNewTender && (
+                                    <>
+                                      <button
+                                        className="btn btn-primary"
+                                        style={{ padding: '7px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        onClick={() => handleStatusChange(tender.id, 'Participating')}
+                                      >
+                                        <CheckCircle2 size={14} /> Accept & Participate
+                                      </button>
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '7px 14px', fontSize: '12px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        onClick={() => handleStatusChange(tender.id, 'Not Participating')}
+                                      >
+                                        <Trash2 size={14} /> Decline
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {/* Re-activate if declined */}
+                                  {isDeclined && (
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ padding: '7px 14px', fontSize: '12px', color: 'var(--primary)' }}
+                                      onClick={() => handleStatusChange(tender.id, 'Participating')}
+                                    >
+                                      Re-activate & Participate
+                                    </button>
+                                  )}
+
+                                  {/* Open Workflow Button */}
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '7px 16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
+                                    onClick={() => openTenderDetails(tender)}
+                                  >
+                                    <span>Open Workflow</span>
+                                    <ChevronRight size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* TAB: ALL TENDERS */}
             {activeTab === 'tenders' && (
@@ -5280,6 +6225,69 @@ export default function Dashboard() {
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Workflow Pipeline</span>
                 </div>
 
+                {/* Participation Decision Actions */}
+                {currentUser?.role !== 'Admin' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    background: (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed')
+                      ? 'rgba(245, 158, 11, 0.08)'
+                      : selectedTender.status === 'Participating'
+                      ? 'rgba(16, 185, 129, 0.08)'
+                      : 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-color)',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Participation:</span>
+                      <span style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontWeight: '700',
+                        backgroundColor: selectedTender.status === 'Participating' ? 'rgba(16, 185, 129, 0.15)' : selectedTender.status === 'Not Participating' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: selectedTender.status === 'Participating' ? '#10b981' : selectedTender.status === 'Not Participating' ? '#ef4444' : '#f59e0b'
+                      }}>
+                        {selectedTender.status === 'Participating' ? 'Participating' : selectedTender.status === 'Not Participating' ? 'Declined' : 'Decision Pending'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {(selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Participating')}
+                        >
+                          <CheckCircle2 size={14} /> Accept & Participate
+                        </button>
+                      )}
+                      {(selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed') && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Not Participating')}
+                        >
+                          <Trash2 size={14} /> Decline
+                        </button>
+                      )}
+                      {selectedTender.status === 'Participating' && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 10px', fontSize: '11px', color: 'var(--text-muted)' }}
+                          onClick={() => handleStatusChange(selectedTender.id, 'Not Participating')}
+                        >
+                          Change to Not Participating
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Horizontal Stepper Progress Bar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', margin: '10px 0 20px 0', padding: '0 6px' }}>
                   <div style={{ position: 'absolute', top: '12px', left: '16px', right: '16px', height: '2px', backgroundColor: 'var(--border-color)', zIndex: 0 }}></div>
@@ -6854,33 +7862,6 @@ export default function Dashboard() {
         )}
         <span>{toast.message}</span>
       </div>
-
-      {/* Floating Active Session Indicator - Positioned clear of sidebar and logout button */}
-      {currentUser && (
-        <div className="active-session-indicator">
-          <div style={{
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
-              currentUser.role === 'MIS Team' ? '#10b981' :
-              currentUser.role === 'Clearance Team' ? '#8b5cf6' :
-              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
-            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' :
-              currentUser.role === 'MIS Team' ? '#10b981' :
-              currentUser.role === 'Clearance Team' ? '#8b5cf6' :
-              currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
-          }} />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>
-              Active Session
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
-              {currentUser.username} • <span style={{ color: 'var(--primary)' }}>{currentUser.role}</span>
-            </span>
-          </div>
-        </div>
-      )}
 
     </div>
   );

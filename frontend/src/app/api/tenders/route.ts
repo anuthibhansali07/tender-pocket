@@ -62,7 +62,7 @@ export async function GET(request: Request) {
       } else if (status === 'New' || status === 'Lapsed') {
         query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL)";
       } else if (status === 'Participating') {
-        query += " AND status = 'Participating'";
+        query += " AND (status = 'Participating' OR status = 'In Progress')";
       } else if (status === 'Not Participating') {
         query += " AND status = 'Not Participating'";
       } else if (status === 'Submitted') {
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       } else if (status === 'Lost') {
         query += " AND (status = 'Not Awarded' OR status = 'Lost')";
       } else if (status === 'Missed Deadline') {
-        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL OR status = 'Participating') AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
+        query += " AND (status = 'Issued' OR status = 'New' OR status IS NULL) AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
         params.push(todayISTString);
       } else if (status === 'Missed Opportunity') {
         query += " AND status = 'Not Participating' AND due_date IS NOT NULL AND due_date != '' AND due_date < ?";
@@ -125,9 +125,9 @@ export async function GET(request: Request) {
     // strict JS filter
     if (status) {
       tenders = tenders.filter(t => {
-        if (status === 'New') return t.status === 'New';
+        if (status === 'New') return t.status === 'New' || t.status === 'Issued';
         if (status === 'Lapsed') return t.status === 'Lapsed';
-        if (status === 'Participating') return t.status === 'Participating';
+        if (status === 'Participating') return t.status === 'Participating' || (t as any).status === 'In Progress';
         if (status === 'Not Participating') return t.status === 'Not Participating';
         if (status === 'Submitted') return t.status === 'Submitted';
         if (status === 'Won') return t.status === 'Won';
@@ -154,7 +154,7 @@ export async function GET(request: Request) {
     let locations: string[] = [];
     let sectors: string[] = [];
 
-    if (userRole === 'MIS Executive') {
+    if (userRole === 'MIS Executive' || userRole === 'Tender Executive' || userRole === 'Executive') {
       const locStmt = db.prepare("SELECT DISTINCT location FROM tenders WHERE location IS NOT NULL AND location != '' AND mis_executive = ? ORDER BY location");
       const secStmt = db.prepare("SELECT DISTINCT sector FROM tenders WHERE sector IS NOT NULL AND sector != '' AND mis_executive = ? ORDER BY sector");
       locations = (locStmt.all(username) as { location: string }[]).map(r => r.location);

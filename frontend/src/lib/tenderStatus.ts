@@ -33,7 +33,7 @@ export function isLapsed(publishDateStr: string | null | undefined, todayISTStr:
 }
 
 export function resolveStatus(t: any, todayIST: string): string {
-  const hasPassedDueDate = Boolean(t.due_date && t.due_date < todayIST);
+  const hasPassedDueDate = Boolean(t.due_date && typeof t.due_date === 'string' && t.due_date.trim() !== '' && t.due_date !== 'N/A' && t.due_date < todayIST);
 
   if (t.status === 'Awarded' || t.status === 'Won') return 'Won';
   if (t.status === 'Not Awarded' || t.status === 'Lost') return 'Lost';
@@ -43,7 +43,8 @@ export function resolveStatus(t: any, todayIST: string): string {
     if (t.status === 'Not Participating') {
       return 'Missed Opportunity';
     }
-    if (t.status === 'Issued' || t.status === 'New' || t.status === 'Participating' || !t.status) {
+    // Only unreviewed / unacted bids become Missed Deadline
+    if (t.status === 'Issued' || t.status === 'New' || !t.status) {
       return 'Missed Deadline';
     }
   }

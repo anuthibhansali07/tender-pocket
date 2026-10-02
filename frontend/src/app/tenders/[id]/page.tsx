@@ -1095,6 +1095,38 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
+              {/* Participation Decision Banner for New / Unreviewed Tenders */}
+              {canRecordOperationalStages && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      {selectedTender.status === 'Not Participating' ? 'Tender Marked as Not Participating' : 'Participation Decision Pending'}
+                    </h4>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {selectedTender.status === 'Not Participating' ? 'You declined this tender. Click below to reactivate and participate.' : 'Review this tender requirement and accept participation to activate technical specs and documentation.'}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      className="btn btn-primary"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px' }}
+                      onClick={() => updateTenderField({ status: 'Participating' })}
+                    >
+                      <CheckCircle2 size={16} /> Accept & Participate
+                    </button>
+                    {selectedTender.status !== 'Not Participating' && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                        onClick={() => updateTenderField({ status: 'Not Participating' })}
+                      >
+                        <XCircle size={16} /> Decline / Not Participating
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Stepper Card */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px' }}>
                 <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>

@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
     // Load all tenders to classify in JS (filtered by executive if applicable)
     let rawTenders: any[];
-    if (userRole === 'MIS Executive' || userRole === 'Tender Executive') {
+    if (userRole === 'MIS Executive' || userRole === 'Tender Executive' || userRole === 'Executive' || auth.role === 'Tender Executive') {
       rawTenders = db.prepare('SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders WHERE mis_executive = ?').all(username) as any[];
     } else if (userRole === 'Clearance Team' || userRole === 'Specification Team') {
       rawTenders = db.prepare("SELECT status, estimated_cost, publish_date, due_date, authority, sector, spec_verification_status, current_stage, tpc_purchase_price, mis_final_price FROM tenders WHERE assigned_mis_member_spec = ? OR assigned_mis_member_spec = 'clearance' OR assigned_mis_member_spec = 'Clearance Team' OR current_stage = 'SPEC_CLEARANCE'").all(username) as any[];
