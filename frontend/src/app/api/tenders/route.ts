@@ -29,15 +29,22 @@ export async function GET(request: Request) {
     let query = 'SELECT * FROM tenders WHERE 1=1';
     const params: any[] = [];
 
-    if (userRole === 'MIS Executive' || userRole === 'Tender Executive' || userRole === 'Executive') {
-      query += ' AND mis_executive = ?';
-      params.push(username);
-    } else if (userRole === 'Clearance Team' || userRole === 'Specification Team') {
-      query += " AND (assigned_mis_member_spec = ? OR assigned_mis_member_spec = 'clearance' OR assigned_mis_member_spec = 'Clearance Team' OR current_stage = 'SPEC_CLEARANCE')";
-      params.push(username);
-    } else if (userRole === 'TPC Team' || userRole === 'TPC Pricing Team') {
-      query += " AND (current_stage = 'TPC_PRICING' OR tpc_purchase_price IS NOT NULL)";
-    } else if (misExecutive) {
+    // Scope parameter
+    const scopeAll = searchParams.get('all') === 'true' || searchParams.get('scope') === 'all';
+
+    if (!scopeAll) {
+      if (userRole === 'MIS Executive' || userRole === 'Tender Executive' || userRole === 'Executive') {
+        query += ' AND mis_executive = ?';
+        params.push(username);
+      } else if (userRole === 'Clearance Team' || userRole === 'Specification Team') {
+        query += " AND (assigned_mis_member_spec = ? OR assigned_mis_member_spec = 'clearance' OR assigned_mis_member_spec = 'Clearance Team' OR current_stage = 'SPEC_CLEARANCE')";
+        params.push(username);
+      } else if (userRole === 'TPC Team' || userRole === 'TPC Pricing Team') {
+        query += " AND (current_stage = 'TPC_PRICING' OR tpc_purchase_price IS NOT NULL)";
+      }
+    }
+
+    if (misExecutive) {
       query += ' AND mis_executive = ?';
       params.push(misExecutive);
     }
