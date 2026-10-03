@@ -23,6 +23,9 @@ import {
   CreditCard,
   Eye,
   Shield,
+  ShieldCheck,
+  Calculator,
+  UploadCloud,
   Filter,
   MoreVertical,
   ExternalLink,
@@ -61,7 +64,7 @@ export default function StatusDashboard({
 }: StatusDashboardProps) {
   // Navigation & Filtering States
   const [selectedCardKey, setSelectedCardKey] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'PIPELINE' | 'DOCUMENTS' | 'OUTCOMES' | 'ACTION_REQUIRED'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED'>('ALL');
   const [executiveFilter, setExecutiveFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [urgencyFilter, setUrgencyFilter] = useState<'' | 'today' | '3days' | '7days' | 'high_value'>('');
@@ -168,33 +171,31 @@ export default function StatusDashboard({
     });
   }, [scopedTenders, todayIST, threeDaysLater, sevenDaysLater, currentUser]);
 
-  // Stage Cards Definitions (Covering ALL stages without exception)
+  // Stage Cards Definitions (First 4 Overview Cards + 8 Workflow Pipeline Stage Cards = Exactly 12 Cards)
   const stageCards = useMemo(() => {
-    const totalCount = tendersWithStage.length;
+    const totalCount = scopedTenders.length;
     const newTodayCount = tendersWithStage.filter(i => i.flags.isNewToday || i.flags.isNew).length;
     const closingSoonCount = tendersWithStage.filter(i => i.flags.isClosingSoon).length;
     const actionRequiredCount = tendersWithStage.filter(i => i.flags.needsAction).length;
-    const participatingCount = tendersWithStage.filter(i => i.tender.status === 'Participating').length;
-    const specClearanceCount = tendersWithStage.filter(i => i.flags.isSpecClearancePending || i.flags.isSpecRejected || i.flags.isSpecNotStarted).length;
-    const tpcPricingCount = tendersWithStage.filter(i => i.flags.isTpcPricingPending).length;
-    const misPricingCount = tendersWithStage.filter(i => i.flags.isMisPricingPending).length;
-    const docsPendingCount = tendersWithStage.filter(i => i.flags.isDocsPrep || i.flags.isDocRejected).length;
-    const docVerificationCount = tendersWithStage.filter(i => i.flags.isDocVerificationPending).length;
-    const emdPendingCount = tendersWithStage.filter(i => i.flags.isEmdPending || i.flags.isEmdReqReady).length;
-    const readyToSubmitCount = tendersWithStage.filter(i => i.flags.isReadyToSubmit || i.flags.isSubmissionPending).length;
-    const underEvaluationCount = tendersWithStage.filter(i => i.flags.isSubmitted && !i.flags.isWon && !i.flags.isLost).length;
-    const wonCount = tendersWithStage.filter(i => i.flags.isWon).length;
-    const lostCount = tendersWithStage.filter(i => i.flags.isLost).length;
-    const alertsCount = tendersWithStage.filter(i => i.flags.isOverdue || i.flags.isClosing3Days || i.flags.isDocRejected || i.flags.isSpecRejected).length;
+
+    // 8 Pipeline Stages
+    const stage1Count = tendersWithStage.filter(i => i.stage.stageNumber === 1 || (i.stage.currentStepIndex === 0 && i.tender.status === 'Participating')).length;
+    const stage2Count = tendersWithStage.filter(i => i.stage.stageNumber === 2).length;
+    const stage3Count = tendersWithStage.filter(i => i.stage.stageNumber === 3).length;
+    const stage4Count = tendersWithStage.filter(i => i.stage.stageNumber === 4).length;
+    const stage5Count = tendersWithStage.filter(i => i.stage.stageNumber === 5).length;
+    const stage6Count = tendersWithStage.filter(i => i.stage.stageNumber === 6).length;
+    const stage7Count = tendersWithStage.filter(i => i.stage.stageNumber === 7).length;
+    const stage8Count = tendersWithStage.filter(i => i.stage.stageNumber === 8).length;
 
     return [
-      // ── ROW 1: KEY OVERVIEW & URGENCY ──
+      // ── ROW 1: KEY OVERVIEW & URGENCY (FIRST 4 CARDS) ──
       {
         key: 'TOTAL',
         title: 'Total Tenders',
         group: 'OVERVIEW',
         count: totalCount,
-        trend: '+12 this week',
+        trend: 'all active bids',
         subText: 'All bids in your view',
         icon: FileText,
         iconColor: '#6366f1',
@@ -206,7 +207,7 @@ export default function StatusDashboard({
         title: 'New Today',
         group: 'OVERVIEW',
         count: newTodayCount,
-        trend: '+3 from yesterday',
+        trend: 'new bids today',
         subText: 'Intake: Decision needed',
         icon: Zap,
         iconColor: '#f59e0b',
@@ -239,115 +240,112 @@ export default function StatusDashboard({
         filterFn: (i: any) => i.flags.needsAction
       },
 
-      // ── ROW 2: ACTIVE PIPELINE & EARLY STAGES ──
+      // ── 8 TENDER PIPELINE STAGES ──
       {
-        key: 'PARTICIPATING',
-        title: 'Participating',
+        key: 'STAGE_1_CLEARANCE',
+        title: '1. Clearance',
         group: 'PIPELINE',
-        count: participatingCount,
-        trend: 'active bids',
-        subText: 'Accepted tenders in progress',
-        icon: Building,
-        iconColor: '#3b82f6',
-        bgColor: 'rgba(59, 130, 246, 0.1)',
-        filterFn: (i: any) => i.tender.status === 'Participating'
+        count: stage1Count,
+        trend: 'Stage 1 of 8',
+        subText: 'Technical spec clearance',
+        icon: ShieldCheck,
+        iconColor: '#8b5cf6',
+        bgColor: 'rgba(139, 92, 246, 0.1)',
+        filterFn: (i: any) => i.stage.stageNumber === 1 || (i.stage.currentStepIndex === 0 && i.tender.status === 'Participating')
       },
       {
-        key: 'UNDER_REVIEW',
-        title: 'Under Review',
-        group: 'OUTCOMES',
-        count: underEvaluationCount,
-        trend: 'in evaluation',
-        subText: 'Submitted, awaiting opening',
-        icon: Eye,
-        iconColor: '#0284c7',
-        bgColor: 'rgba(2, 132, 199, 0.1)',
-        filterFn: (i: any) => i.flags.isSubmitted && !i.flags.isWon && !i.flags.isLost
+        key: 'STAGE_2_TPC',
+        title: '2. TPC Quote',
+        group: 'PIPELINE',
+        count: stage2Count,
+        trend: 'Stage 2 of 8',
+        subText: 'OEM purchase quote',
+        icon: Tag,
+        iconColor: '#ec4899',
+        bgColor: 'rgba(236, 72, 153, 0.1)',
+        filterFn: (i: any) => i.stage.stageNumber === 2
       },
       {
-        key: 'WON',
-        title: 'Won',
-        group: 'OUTCOMES',
-        count: wonCount,
-        trend: 'this financial year',
-        subText: 'Tenders successfully awarded',
-        icon: Trophy,
-        iconColor: '#10b981',
-        bgColor: 'rgba(16, 185, 129, 0.12)',
-        filterFn: (i: any) => i.flags.isWon
-      },
-      {
-        key: 'LOST',
-        title: 'Lost',
-        group: 'OUTCOMES',
-        count: lostCount,
-        trend: 'this financial year',
-        subText: 'Bids concluded without award',
-        icon: XCircle,
-        iconColor: '#ef4444',
-        bgColor: 'rgba(239, 68, 68, 0.1)',
-        filterFn: (i: any) => i.flags.isLost
-      },
-
-      // ── ROW 3: OPERATIONAL PREPARATION & COMPLIANCE ──
-      {
-        key: 'DOCS_PENDING',
-        title: 'Documents Pending',
-        group: 'DOCUMENTS',
-        count: docsPendingCount,
-        trend: 'need submission',
-        subText: 'Generate or revise bid docs',
-        icon: FileText,
+        key: 'STAGE_3_MIS',
+        title: '3. MIS Price',
+        group: 'PIPELINE',
+        count: stage3Count,
+        trend: 'Stage 3 of 8',
+        subText: 'Final margin price setting',
+        icon: Calculator,
         iconColor: '#f59e0b',
         bgColor: 'rgba(245, 158, 11, 0.1)',
-        filterFn: (i: any) => i.flags.isDocsPrep || i.flags.isDocRejected
+        filterFn: (i: any) => i.stage.stageNumber === 3
       },
       {
-        key: 'EMD_PENDING',
-        title: 'EMD Pending',
-        group: 'DOCUMENTS',
-        count: emdPendingCount,
-        trend: 'payment pending',
-        subText: 'EMD request / payment approval',
+        key: 'STAGE_4_DOCS_PREP',
+        title: '4. Docs Prep',
+        group: 'PIPELINE',
+        count: stage4Count,
+        trend: 'Stage 4 of 8',
+        subText: 'Bid documents preparation',
+        icon: FileText,
+        iconColor: '#06b6d4',
+        bgColor: 'rgba(6, 182, 212, 0.1)',
+        filterFn: (i: any) => i.stage.stageNumber === 4
+      },
+      {
+        key: 'STAGE_5_VERIFICATION',
+        title: '5. Verification',
+        group: 'PIPELINE',
+        count: stage5Count,
+        trend: 'Stage 5 of 8',
+        subText: 'Document review & approval',
+        icon: CheckCircle2,
+        iconColor: '#10b981',
+        bgColor: 'rgba(16, 185, 129, 0.1)',
+        filterFn: (i: any) => i.stage.stageNumber === 5
+      },
+      {
+        key: 'STAGE_6_EMD',
+        title: '6. EMD Payment',
+        group: 'PIPELINE',
+        count: stage6Count,
+        trend: 'Stage 6 of 8',
+        subText: 'EMD fee approval & payment',
         icon: CreditCard,
         iconColor: '#d97706',
         bgColor: 'rgba(217, 119, 6, 0.1)',
-        filterFn: (i: any) => i.flags.isEmdPending || i.flags.isEmdReqReady
+        filterFn: (i: any) => i.stage.stageNumber === 6
       },
       {
-        key: 'TPC_PENDING',
-        title: 'TPC Pending',
+        key: 'STAGE_7_SUBMISSION',
+        title: '7. Portal File',
         group: 'PIPELINE',
-        count: tpcPricingCount,
-        trend: 'approval required',
-        subText: 'Awaiting OEM purchase quote',
-        icon: ClipboardCheck,
+        count: stage7Count,
+        trend: 'Stage 7 of 8',
+        subText: 'Portal filing & audit',
+        icon: UploadCloud,
         iconColor: '#3b82f6',
         bgColor: 'rgba(59, 130, 246, 0.1)',
-        filterFn: (i: any) => i.flags.isTpcPricingPending
+        filterFn: (i: any) => i.stage.stageNumber === 7
       },
       {
-        key: 'ALERTS',
-        title: 'Alerts',
-        group: 'OVERVIEW',
-        count: alertsCount,
-        trend: 'new notifications',
-        subText: 'Urgent issues or deadlines',
-        icon: AlertCircle,
-        iconColor: '#eab308',
-        bgColor: 'rgba(234, 179, 8, 0.1)',
-        filterFn: (i: any) => i.flags.isOverdue || i.flags.isClosing3Days || i.flags.isDocRejected || i.flags.isSpecRejected
+        key: 'STAGE_8_OUTCOME',
+        title: '8. Outcome',
+        group: 'PIPELINE',
+        count: stage8Count,
+        trend: 'Stage 8 of 8',
+        subText: 'Under evaluation, Won & Lost',
+        icon: Trophy,
+        iconColor: '#a855f7',
+        bgColor: 'rgba(168, 85, 247, 0.1)',
+        filterFn: (i: any) => i.stage.stageNumber === 8
       }
     ];
-  }, [tendersWithStage]);
+  }, [tendersWithStage, scopedTenders.length]);
 
   // Determine which cards to show according to category filter
   const visibleCards = useMemo(() => {
     if (categoryFilter === 'ALL') return stageCards;
+    if (categoryFilter === 'OVERVIEW') return stageCards.filter(c => c.group === 'OVERVIEW');
     if (categoryFilter === 'PIPELINE') return stageCards.filter(c => c.group === 'PIPELINE');
-    if (categoryFilter === 'DOCUMENTS') return stageCards.filter(c => c.group === 'DOCUMENTS');
-    if (categoryFilter === 'OUTCOMES') return stageCards.filter(c => c.group === 'OUTCOMES');
-    if (categoryFilter === 'ACTION_REQUIRED') return stageCards.filter(c => c.key === 'ACTION_REQUIRED' || c.key === 'ALERTS' || c.key === 'CLOSING_SOON');
+    if (categoryFilter === 'ACTION_REQUIRED') return stageCards.filter(c => c.key === 'ACTION_REQUIRED');
     return stageCards;
   }, [stageCards, categoryFilter]);
 
@@ -355,64 +353,6 @@ export default function StatusDashboard({
   const activeCard = useMemo(() => {
     return stageCards.find(c => c.key === selectedCardKey) || null;
   }, [stageCards, selectedCardKey]);
-
-  // Dynamic Recent Activity items
-  const recentActivities = useMemo(() => {
-    const list: any[] = [];
-
-    tendersWithStage.forEach(({ tender, stage, flags }) => {
-      if (flags.isDocRejected || flags.isDocsPrep) {
-        list.push({
-          id: tender.id,
-          tender,
-          title: flags.isDocRejected ? 'Document revision required' : 'Document submission pending',
-          subtitle: `${tender.authority || 'Procuring Authority'} - ${tender.title.substring(0, 32)}...`,
-          time: 'Urgent Action',
-          icon: AlertTriangle,
-          iconColor: '#ef4444',
-          bgColor: 'rgba(239, 68, 68, 0.1)'
-        });
-      }
-      if (flags.isClosing3Days) {
-        list.push({
-          id: tender.id,
-          tender,
-          title: flags.isClosingToday ? 'Deadline Today!' : 'Deadline in 2-3 days',
-          subtitle: `${tender.authority || 'Procuring Authority'} - ${tender.title.substring(0, 32)}...`,
-          time: tender.due_date ? tender.due_date.split(' ')[0] : 'Closing Soon',
-          icon: Clock,
-          iconColor: '#f97316',
-          bgColor: 'rgba(249, 115, 22, 0.1)'
-        });
-      }
-      if (flags.isSpecClearancePending) {
-        list.push({
-          id: tender.id,
-          tender,
-          title: 'Technical spec in clearance',
-          subtitle: `${tender.authority || 'Procuring Authority'} - ${tender.title.substring(0, 32)}...`,
-          time: 'Under Verification',
-          icon: ClipboardCheck,
-          iconColor: '#3b82f6',
-          bgColor: 'rgba(59, 130, 246, 0.1)'
-        });
-      }
-      if (flags.isWon) {
-        list.push({
-          id: tender.id,
-          tender,
-          title: 'Result declared (Awarded)',
-          subtitle: `${tender.authority || 'Procuring Authority'} - ${tender.title.substring(0, 32)}...`,
-          time: 'Won Contract',
-          icon: Trophy,
-          iconColor: '#10b981',
-          bgColor: 'rgba(16, 185, 129, 0.1)'
-        });
-      }
-    });
-
-    return list.slice(0, 4);
-  }, [tendersWithStage]);
 
   // Filtered and Sorted Tenders List
   const filteredTenders = useMemo(() => {
@@ -512,6 +452,97 @@ export default function StatusDashboard({
     }
   };
 
+  const renderCard = (card: typeof stageCards[0]) => {
+    const isSelected = selectedCardKey === card.key;
+    const Icon = card.icon;
+
+    return (
+      <div
+        key={card.key}
+        onClick={() => handleCardClick(card.key)}
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          borderRadius: '14px',
+          padding: '18px 20px',
+          border: isSelected
+            ? `2px solid ${card.iconColor}`
+            : card.isAlert
+            ? '1.5px solid #f87171'
+            : '1px solid var(--border-color)',
+          boxShadow: isSelected
+            ? `0 0 14px ${card.bgColor}`
+            : 'var(--shadow-sm)',
+          background: card.isAlert && !isSelected
+            ? 'rgba(239, 68, 68, 0.035)'
+            : 'var(--bg-card)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = isSelected ? `0 0 14px ${card.bgColor}` : 'var(--shadow-sm)';
+        }}
+      >
+        {/* Selected indicator pin */}
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '3px',
+            backgroundColor: card.iconColor
+          }} />
+        )}
+
+        {/* Left Side: Icon & Info */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '12px',
+              backgroundColor: card.bgColor,
+              color: card.iconColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            <Icon size={22} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+              {card.title}
+            </span>
+            <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: '1.2', margin: '2px 0' }}>
+              {card.count}
+            </div>
+            <span style={{ fontSize: '11px', color: card.iconColor, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ fontSize: '12px' }}>↑</span> {card.trend}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Side: Chevron */}
+        <div style={{ color: isSelected ? card.iconColor : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+          <ChevronRight size={18} style={{ transform: isSelected ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease' }} />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       
@@ -550,7 +581,7 @@ export default function StatusDashboard({
             </div>
           )}
 
-          {/* Category Filter Dropdown (like the photo's 'All Categories' dropdown) */}
+          {/* Category Filter Dropdown */}
           <select
             className="filter-select"
             value={categoryFilter}
@@ -562,10 +593,9 @@ export default function StatusDashboard({
               fontSize: '12.5px'
             }}
           >
-            <option value="ALL">All Categories</option>
-            <option value="PIPELINE">Core Pipeline (Stages 1-3)</option>
-            <option value="DOCUMENTS">Docs & Finance (Stages 4-7)</option>
-            <option value="OUTCOMES">Results & Outcomes (Stage 8)</option>
+            <option value="ALL">All Cards (12)</option>
+            <option value="OVERVIEW">Overview (4 Cards)</option>
+            <option value="PIPELINE">8 Pipeline Stages</option>
             <option value="ACTION_REQUIRED">Action Required Only</option>
           </select>
 
@@ -582,213 +612,50 @@ export default function StatusDashboard({
         </div>
       </div>
 
-      {/* ── 16 DEDICATED STAGE & OVERVIEW CARDS (4 COLUMNS GRID) ── */}
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: '16px'
-        }}
-      >
-        {visibleCards.map((card) => {
-          const isSelected = selectedCardKey === card.key;
-          const Icon = card.icon;
-
-          return (
+      {/* ── OVERVIEW (4 CARDS) & 8 PIPELINE STAGE CARDS ── */}
+      {categoryFilter === 'ALL' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          {/* Row 1: Key Overview & Urgency (First 4 Cards) */}
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Overview Metrics
+            </div>
             <div
-              key={card.key}
-              onClick={() => handleCardClick(card.key)}
               style={{
-                backgroundColor: 'var(--bg-card)',
-                borderRadius: '14px',
-                padding: '18px 20px',
-                border: isSelected
-                  ? `2px solid ${card.iconColor}`
-                  : card.isAlert
-                  ? '1.5px solid #f87171'
-                  : '1px solid var(--border-color)',
-                boxShadow: isSelected
-                  ? `0 0 14px ${card.bgColor}`
-                  : 'var(--shadow-sm)',
-                background: card.isAlert && !isSelected
-                  ? 'rgba(239, 68, 68, 0.035)'
-                  : 'var(--bg-card)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = isSelected ? `0 0 14px ${card.bgColor}` : 'var(--shadow-sm)';
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                gap: '16px'
               }}
             >
-              {/* Selected indicator pin */}
-              {isSelected && (
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: '3px',
-                  backgroundColor: card.iconColor
-                }} />
-              )}
-
-              {/* Left Side: Icon & Info */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <div
-                  style={{
-                    width: '46px',
-                    height: '46px',
-                    borderRadius: '12px',
-                    backgroundColor: card.bgColor,
-                    color: card.iconColor,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
-                  }}
-                >
-                  <Icon size={22} />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                    {card.title}
-                  </span>
-                  <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-primary)', lineHeight: '1.2', margin: '2px 0' }}>
-                    {card.count}
-                  </div>
-                  <span style={{ fontSize: '11px', color: card.iconColor, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <span style={{ fontSize: '12px' }}>↑</span> {card.trend}
-                  </span>
-                </div>
-              </div>
-
-              {/* Right Side: Chevron */}
-              <div style={{ color: isSelected ? card.iconColor : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-                <ChevronRight size={18} style={{ transform: isSelected ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease' }} />
-              </div>
+              {stageCards.filter(c => c.group === 'OVERVIEW').map(renderCard)}
             </div>
-          );
-        })}
-      </section>
+          </div>
 
-      {/* ── RECENT ACTIVITY / NEEDS ATTENTION SECTION ── */}
-      {recentActivities.length > 0 && (
+          {/* Rows 2 & 3: 8 Workflow Pipeline Stages */}
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Workflow Pipeline Stages (1 – 8)
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                gap: '16px'
+              }}
+            >
+              {stageCards.filter(c => c.group === 'PIPELINE').map(renderCard)}
+            </div>
+          </div>
+        </div>
+      ) : (
         <section
           style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '14px',
-            padding: '16px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px'
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gap: '16px'
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                Recent Activity / Needs Attention
-              </span>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: '#ef4444',
-                  boxShadow: '0 0 8px #ef4444',
-                  display: 'inline-block'
-                }}
-              />
-            </div>
-            
-            <button
-              onClick={() => setSelectedCardKey('ACTION_REQUIRED')}
-              style={{
-                fontSize: '12px',
-                fontWeight: '600',
-                color: 'var(--primary)',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              View All
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: '12px'
-            }}
-          >
-            {recentActivities.map((act, index) => {
-              const ActIcon = act.icon;
-              return (
-                <div
-                  key={index}
-                  onClick={() => openTenderDetails(act.tender)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    backgroundColor: 'var(--bg-app)',
-                    border: '1px solid var(--border-color)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '8px',
-                      backgroundColor: act.bgColor,
-                      color: act.iconColor,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <ActIcon size={16} />
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {act.title}
-                    </span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {act.subtitle}
-                    </span>
-                    <span style={{ fontSize: '10px', color: act.iconColor, fontWeight: '600', marginTop: '1px' }}>
-                      {act.time}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {visibleCards.map(renderCard)}
         </section>
       )}
 

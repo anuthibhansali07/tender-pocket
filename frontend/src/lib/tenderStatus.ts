@@ -217,7 +217,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // 4. Stage 7: Submitted / Under Evaluation (Portal File Completed)
+  // 4. Stage 8: Submitted / Under Evaluation (Portal File Completed, Awaiting Outcome)
   if (
     tender.status === 'Submitted' || 
     tender.status === 'Filed' || 
@@ -227,7 +227,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     tender.current_stage === 'SUBMITTED'
   ) {
     return {
-      stageNumber: 7,
+      stageNumber: 8,
       stageKey: 'SUBMITTED',
       stageName: 'Bid Submitted',
       shortStage: 'Under Evaluation',
