@@ -67,6 +67,7 @@ import {
 import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
+import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { canPerform, canonicalRole } from '@/lib/workflowAuthorization';
 
 
@@ -5651,83 +5652,13 @@ export default function Dashboard() {
                 )}
 
                 {/* Horizontal Stepper Progress Bar */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', margin: '10px 0 20px 0', padding: '0 6px' }}>
-                  <div style={{ position: 'absolute', top: '12px', left: '16px', right: '16px', height: '2px', backgroundColor: 'var(--border-color)', zIndex: 0 }}></div>
-                  {(() => {
-                    const isStep1Done = Boolean(selectedTender && (selectedTender.spec_verification_status === 'Approved' || isOutcomeState));
-                    const isStep2Done = Boolean(isStep1Done && (((selectedTender?.tpc_purchase_price && Number(selectedTender.tpc_purchase_price) > 0)) || isStage2Complete || isOutcomeState));
-                    const isStep3Done = Boolean(isStep2Done && isStage2Complete);
-                    const isStep4Done = Boolean(isStep3Done && isStage3Complete);
-                    const isStep5Done = Boolean(isStep4Done && isStage4Complete);
-                    const isStep6Done = Boolean(isStep5Done && isStage5Complete);
-                    const isStep7Done = Boolean(isStep6Done && isStage6Complete);
-                    const isStep8Done = Boolean(isStep7Done && (selectedTender?.status === 'Won' || selectedTender?.status === 'Lost' || selectedTender?.status === 'Awarded' || selectedTender?.status === 'Not Awarded' || selectedTender?.outcome_status === 'Won' || selectedTender?.outcome_status === 'Lost'));
-
-                    const stepCompleted = [isStep1Done, isStep2Done, isStep3Done, isStep4Done, isStep5Done, isStep6Done, isStep7Done, isStep8Done];
-                    const firstUnfinishedIdx = stepCompleted.findIndex(done => !done);
-                    const currentStepIdx = firstUnfinishedIdx === -1 ? 7 : firstUnfinishedIdx;
-
-                    const progressWidth = isStep8Done
-                      ? '100%'
-                      : currentStepIdx === 0 && !isStep1Done
-                      ? '0%'
-                      : `${Math.min(100, Math.round((currentStepIdx / 7) * 100))}%`;
-
-                    const steps = [
-                      { name: 'Spec Clearance', label: '1' },
-                      { name: 'TPC Pricing', label: '2' },
-                      { name: 'MIS Pricing', label: '3' },
-                      { name: 'Docs Prep', label: '4' },
-                      { name: 'Docs Approval', label: '5' },
-                      { name: 'EMD Payment', label: '6' },
-                      { name: 'Submission', label: '7' },
-                      { name: 'Outcome', label: '8' }
-                    ];
-
-                    return (
-                      <>
-                        <div style={{ 
-                          position: 'absolute', 
-                          top: '12px', 
-                          left: '16px', 
-                          width: progressWidth,
-                          height: '2px', 
-                          backgroundColor: 'var(--primary)', 
-                          transition: 'width 0.3s ease',
-                          zIndex: 0 
-                        }}></div>
-
-                        {steps.map((step, idx) => {
-                          const isDone = stepCompleted[idx];
-                          const isCurrent = idx === currentStepIdx && !isStep8Done;
-                          const isActive = isDone || isCurrent;
-
-                          return (
-                            <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, position: 'relative' }}>
-                              <div style={{
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '50%',
-                                backgroundColor: isActive ? 'var(--primary)' : 'var(--bg-app)',
-                                border: `2px solid ${isActive ? 'var(--primary)' : 'var(--border-color)'}`,
-                                color: isActive ? '#fff' : 'var(--text-muted)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: '700'
-                              }}>
-                                {step.label}
-                              </div>
-                              <span style={{ fontSize: '9.5px', color: isActive ? 'var(--text-primary)' : 'var(--text-muted)', marginTop: '4px', fontWeight: isActive ? '700' : '500', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                {step.name}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
+                <div style={{ margin: '10px 0 20px 0' }}>
+                  <WorkflowPipelineStepper
+                    tender={selectedTender}
+                    currentUser={currentUser}
+                    showStageTitle={true}
+                    showActionBanner={true}
+                  />
                 </div>
 
                 {/* Workflow Cards */}

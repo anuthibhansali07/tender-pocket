@@ -44,6 +44,8 @@ export function reconcileApprovalRequests(): void {
       SELECT id, mis_executive 
       FROM tenders 
       WHERE current_stage = 'TPC_PRICING'
+        AND (tpc_purchase_price IS NULL OR tpc_purchase_price = 0)
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Not Participating', 'Submitted', 'Filed'))
     `).all() as any[];
 
     for (const t of pendingTpc) {
@@ -61,6 +63,8 @@ export function reconcileApprovalRequests(): void {
       SELECT id, tpc_purchase_price, assigned_mis_member 
       FROM tenders 
       WHERE current_stage = 'MIS_PRICING'
+        AND (mis_final_price IS NULL OR mis_final_price = 0)
+        AND (status IS NULL OR status NOT IN ('Won', 'Lost', 'Awarded', 'Not Awarded', 'Not Participating', 'Submitted', 'Filed'))
     `).all() as any[];
 
     for (const t of pendingMis) {
@@ -182,14 +186,22 @@ export function reconcileApprovalRequests(): void {
       UPDATE tender_approval_requests 
       SET status = 'APPROVED', updated_at = ? 
       WHERE status = 'PENDING' AND stage = 'TPC_PRICING' 
-        AND tender_id IN (SELECT id FROM tenders WHERE current_stage != 'TPC_PRICING')
+        AND tender_id IN (
+          SELECT id FROM tenders 
+          WHERE (tpc_purchase_price IS NOT NULL AND tpc_purchase_price > 0)
+             OR current_stage != 'TPC_PRICING'
+        )
     `).run(now);
 
     db.prepare(`
       UPDATE tender_approval_requests 
       SET status = 'APPROVED', updated_at = ? 
       WHERE status = 'PENDING' AND stage = 'MIS_PRICING' 
-        AND tender_id IN (SELECT id FROM tenders WHERE current_stage != 'MIS_PRICING')
+        AND tender_id IN (
+          SELECT id FROM tenders 
+          WHERE (mis_final_price IS NOT NULL AND mis_final_price > 0)
+             OR current_stage != 'MIS_PRICING'
+        )
     `).run(now);
 
     db.prepare(`

@@ -3,7 +3,7 @@ import db, { addActivityLog } from '@/lib/db';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { reconcileApprovalRequests } from '@/lib/approvalsSync';
 import { workflowActor, workflowForbidden, canPerform, forbiddenPatchFields, redactManufacturerPricing } from '@/lib/workflowAuthorization';
-import { getTodayISTString, resolveStatus } from '@/lib/tenderStatus';
+import { getTodayISTString, resolveStatus, resolveTenderStageKey } from '@/lib/tenderStatus';
 
 export async function GET(
   request: Request,
@@ -27,6 +27,9 @@ export async function GET(
 
     const userRole = auth.role;
     const username = auth.username;
+
+    // Preserve has_tpc_price flag before confidentiality redaction
+    tender.has_tpc_price = Boolean(tender.tpc_purchase_price && Number(tender.tpc_purchase_price) > 0);
 
     // Confidentiality Rule: strictly hide TPC Purchase Price from Tender Executives
     if (!canPerform(userRole, 'viewTpcPrice')) {
@@ -71,6 +74,15 @@ export async function GET(
     };
 
     tender.status = resolveStatus(tender, todayISTString);
+    const canonicalStage = resolveTenderStageKey(tender);
+    if (tender.current_stage !== canonicalStage) {
+      tender.current_stage = canonicalStage;
+      try {
+        db.prepare('UPDATE tenders SET current_stage = ? WHERE id = ?').run(canonicalStage, id);
+      } catch (err) {
+        console.error('Failed to auto-heal current_stage in GET:', err);
+      }
+    }
     history = history.map(h => ({
       ...h,
       from_status: mapDbStatusToPlainEnglish(h.from_status),
@@ -214,10 +226,8 @@ export async function PATCH(
       logDetails.push(`status changed from '${oldTender.status}' to '${status}'`);
 
       if (status === 'Awarded' || status === 'Won') {
-        fieldsToUpdate.push("current_stage = 'WON'");
         fieldsToUpdate.push("outcome_status = 'Won'");
       } else if (status === 'Not Awarded' || status === 'Lost') {
-        fieldsToUpdate.push("current_stage = 'LOST'");
         fieldsToUpdate.push("outcome_status = 'Lost'");
       }
     }
@@ -320,34 +330,16 @@ export async function PATCH(
       logDetails.push(`loss reason updated`);
     }
 
-    if (current_stage !== undefined && current_stage !== oldTender.current_stage) {
-      fieldsToUpdate.push('current_stage = ?');
-      updateParams.push(current_stage || null);
-      logDetails.push(`current stage changed to '${current_stage}'`);
-    }
-
     if (payment_status !== undefined && payment_status !== oldTender.payment_status) {
       fieldsToUpdate.push('payment_status = ?');
       updateParams.push(payment_status);
       logDetails.push(`payment status changed from '${oldTender.payment_status}' to '${payment_status}'`);
-
-      if (payment_status === 'Approved' && current_stage === undefined) {
-        fieldsToUpdate.push('current_stage = ?');
-        updateParams.push('SUBMISSION_PENDING');
-        logDetails.push("advanced stage to 'SUBMISSION_PENDING'");
-      }
     }
 
     if (verification_status !== undefined && verification_status !== oldTender.verification_status) {
       fieldsToUpdate.push('verification_status = ?');
       updateParams.push(verification_status);
       logDetails.push(`verification status changed from '${oldTender.verification_status}' to '${verification_status}'`);
-
-      if (verification_status === 'Approved' && current_stage === undefined) {
-        fieldsToUpdate.push('current_stage = ?');
-        updateParams.push('PAYMENT_APPROVAL');
-        logDetails.push("advanced stage to 'PAYMENT_APPROVAL'");
-      }
     }
 
     if (submission_status !== undefined && submission_status !== oldTender.submission_status) {
@@ -358,9 +350,7 @@ export async function PATCH(
       if (submission_status === 'Approved' && outcome_status === undefined && oldTender.outcome_status !== 'Won' && oldTender.outcome_status !== 'Lost') {
         fieldsToUpdate.push('outcome_status = ?');
         updateParams.push('Pending');
-        fieldsToUpdate.push('current_stage = ?');
-        updateParams.push('WIN_LOSS_PENDING');
-        logDetails.push("advanced to outcome verification pending ('WIN_LOSS_PENDING')");
+        logDetails.push("advanced outcome status to 'Pending'");
       }
     }
 
@@ -392,6 +382,29 @@ export async function PATCH(
       fieldsToUpdate.push('mis_final_price = ?');
       updateParams.push(mis_final_price === null ? null : parseFloat(mis_final_price));
       logDetails.push(`MIS final price updated to ₹${mis_final_price}`);
+    }
+
+    // Determine the new canonical current_stage
+    const simulatedTender = {
+      ...oldTender,
+      ...body,
+      has_tpc_price: Boolean(
+        (body.tpc_purchase_price !== undefined ? body.tpc_purchase_price : oldTender.tpc_purchase_price) &&
+        Number(body.tpc_purchase_price !== undefined ? body.tpc_purchase_price : oldTender.tpc_purchase_price) > 0
+      )
+    };
+    if (status !== undefined) simulatedTender.status = status;
+    if (verification_status !== undefined) simulatedTender.verification_status = verification_status;
+    if (payment_status !== undefined) simulatedTender.payment_status = payment_status;
+    if (submission_status !== undefined) simulatedTender.submission_status = submission_status;
+    if (outcome_status !== undefined) simulatedTender.outcome_status = outcome_status;
+    if (spec_verification_status !== undefined) simulatedTender.spec_verification_status = spec_verification_status;
+
+    const canonicalStage = current_stage !== undefined ? current_stage : resolveTenderStageKey(simulatedTender);
+    if (canonicalStage && canonicalStage !== oldTender.current_stage) {
+      fieldsToUpdate.push('current_stage = ?');
+      updateParams.push(canonicalStage);
+      logDetails.push(`current stage updated to '${canonicalStage}'`);
     }
 
     if (fieldsToUpdate.length === 0) {

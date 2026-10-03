@@ -97,9 +97,6 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
       ? 'approveSpecs' : 'uploadSpecs';
     if (!canPerform(role, action)) denied.push('spec_verification_status');
   }
-  if ('current_stage' in body && body.current_stage !== old.current_stage) {
-    denied.push('current_stage');
-  }
   if (canonical === 'Admin') {
     const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission'];
     for (const f of adminRestrictedFields) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import db, { Tender } from '@/lib/db';
 import { workflowActor, workflowForbidden, redactManufacturerPricing, forbiddenPatchFields } from '@/lib/workflowAuthorization';
-import { getTodayISTString, isLapsed, resolveStatus } from '@/lib/tenderStatus';
+import { getTodayISTString, isLapsed, resolveStatus, resolveTenderStageKey } from '@/lib/tenderStatus';
 
 export async function GET(request: Request) {
   try {
@@ -124,10 +124,16 @@ export async function GET(request: Request) {
     const rawTenders = statement.all(...params) as Tender[];
 
     // Dynamic resolution in JS
-    let tenders = rawTenders.map(t => ({
-      ...t,
-      status: resolveStatus(t, todayISTString) as any
-    }));
+    let tenders = rawTenders.map(t => {
+      const resolvedStatus = resolveStatus(t, todayISTString);
+      const stageKey = resolveTenderStageKey({ ...t, status: resolvedStatus });
+      return {
+        ...t,
+        status: resolvedStatus as any,
+        current_stage: t.current_stage || stageKey,
+        has_tpc_price: Boolean(t.tpc_purchase_price && Number(t.tpc_purchase_price) > 0)
+      };
+    });
 
     // strict JS filter
     if (status) {
@@ -176,6 +182,7 @@ export async function GET(request: Request) {
     // Confidentiality Rule: strictly hide TPC Purchase Price from Tender Executives
     if (userRole && userRole.toLowerCase().includes('executive')) {
       tenders.forEach((t: any) => {
+        t.has_tpc_price = Boolean(t.tpc_purchase_price && Number(t.tpc_purchase_price) > 0);
         t.tpc_purchase_price = null;
       });
     }
