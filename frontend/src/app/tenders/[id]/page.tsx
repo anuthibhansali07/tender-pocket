@@ -2549,6 +2549,7 @@ export default function TenderDetailPage() {
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--primary)' }}>Tender Parameters</h4>
                     <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '12px' }}>
                       <label style={{ fontSize: '12px', color: '#3b82f6', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>🏢 Letterhead & Template Format</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Select Company</label>
                           <select
@@ -2567,6 +2568,27 @@ export default function TenderDetailPage() {
                             <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Page Orientation</label>
+                          <select
+                            value={bidFormFields.orientation || 'portrait'}
+                            onChange={(e) => {
+                              const val = e.target.value as 'portrait' | 'landscape';
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                orientation: val
+                              }));
+                            }}
+                            style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '600' }}
+                          >
+                            <option value="portrait">📄 Portrait Mode (A4)</option>
+                            <option value="landscape">📑 Landscape Mode (A4)</option>
+                          </select>
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
+                            * Tech specs sheet is always generated in landscape mode
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

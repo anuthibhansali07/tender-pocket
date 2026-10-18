@@ -7067,6 +7067,7 @@ export default function Dashboard() {
                   <div className="form-grid">
                     <div className="form-group span-2" style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '8px' }}>
                       <label className="form-label" style={{ color: '#3b82f6', fontWeight: 'bold' }}>🏢 Letterhead & Template Format</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                           <label className="form-label" style={{ fontSize: '11px' }}>Select Company</label>
                           <select
@@ -7086,7 +7087,29 @@ export default function Dashboard() {
                             <option value="healthtech">Healthtech Limited (Marken)</option>
                           </select>
                         </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '11px' }}>Page Orientation</label>
+                          <select
+                            className="form-input"
+                            value={bidFormFields.orientation || 'portrait'}
+                            onChange={(e) => {
+                              const val = e.target.value as 'portrait' | 'landscape';
+                              setBidFormFields(prev => ({
+                                ...prev,
+                                orientation: val
+                              }));
+                            }}
+                            style={{ fontWeight: '600' }}
+                          >
+                            <option value="portrait">📄 Portrait Mode (A4)</option>
+                            <option value="landscape">📑 Landscape Mode (A4)</option>
+                          </select>
+                          <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>
+                            * Tech specs sheet is always generated in landscape mode
+                          </div>
+                        </div>
                       </div>
+                    </div>
                     <div className="form-group">
                       <label className="form-label">Bid / Tender Number</label>
                       <input

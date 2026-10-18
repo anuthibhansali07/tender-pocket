@@ -7,6 +7,8 @@ services:
     envVars:
       - key: PORT
         value: 10000
+      - key: SPRING_PORT
+        value: 10000
       - key: SPRING_MAIL_USERNAME
         sync: false
       - key: SPRING_MAIL_PASSWORD

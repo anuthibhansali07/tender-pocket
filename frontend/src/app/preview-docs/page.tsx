@@ -7,6 +7,7 @@ import { ArrowLeft, Printer, RefreshCw, Eye, CheckCircle2, ShieldCheck, Building
 export default function DocumentPreviewPage() {
   const [companyKey, setCompanyKey] = useState<'me' | 'healthtech'>('me');
   const [docType, setDocType] = useState<string>('all');
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [showSignature, setShowSignature] = useState(true);
   const [showStamp, setShowStamp] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,7 @@ export default function DocumentPreviewPage() {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const fetchPreview = async (comp = companyKey, type = docType, fields = formData, sig = showSignature, st = showStamp) => {
+  const fetchPreview = async (comp = companyKey, type = docType, fields = formData, sig = showSignature, st = showStamp, orient = orientation) => {
     try {
       setLoading(true);
       const res = await fetch('/api/preview-doc', {
@@ -44,8 +45,10 @@ export default function DocumentPreviewPage() {
         body: JSON.stringify({
           companyKey: comp,
           docType: type,
+          orientation: orient,
           sampleData: {
             ...fields,
+            orientation: orient,
             showSignature: sig,
             showStamp: st
           }
@@ -102,8 +105,8 @@ export default function DocumentPreviewPage() {
   }, [companyKey]);
 
   useEffect(() => {
-    fetchPreview();
-  }, [companyKey, docType, showSignature, showStamp]);
+    fetchPreview(companyKey, docType, formData, showSignature, showStamp, orientation);
+  }, [companyKey, docType, showSignature, showStamp, orientation]);
 
   const handlePrint = () => {
     if (iframeRef.current && iframeRef.current.contentWindow) {
@@ -113,13 +116,14 @@ export default function DocumentPreviewPage() {
 
   const handleRunTests = async () => {
     setRunningTests(true);
-    const testCases = [
-      { name: 'Theme A (Mark Enterprises) - Full Bid Document Package', company: 'me', type: 'all' },
-      { name: 'Theme A (Mark Enterprises) - Tech Spec Compliance Sheet', company: 'me', type: 'spec' },
-      { name: 'Theme B (Marken Healthtech) - Full Bid Document Package', company: 'healthtech', type: 'all' },
-      { name: 'Theme B (Marken Healthtech) - Tech Spec Compliance Sheet', company: 'healthtech', type: 'spec' },
-      { name: 'Theme A (Mark Enterprises) - Unsigned / Unstamped Draft', company: 'me', type: 'all', sig: false, st: false },
-      { name: 'Theme B (Marken Healthtech) - Unsigned / Unstamped Draft', company: 'healthtech', type: 'all', sig: false, st: false },
+    const testCases: { name: string; company: 'me' | 'healthtech'; type: string; orient: 'portrait' | 'landscape'; sig?: boolean; st?: boolean }[] = [
+      { name: 'Theme A (ME) - Full Bid Package Portrait', company: 'me', type: 'all', orient: 'portrait' },
+      { name: 'Theme A (ME) - Full Bid Package Landscape', company: 'me', type: 'all', orient: 'landscape' },
+      { name: 'Theme A (ME) - Tech Spec Compliance Sheet (Landscape)', company: 'me', type: 'spec', orient: 'landscape' },
+      { name: 'Theme B (Healthtech) - Full Bid Package Portrait', company: 'healthtech', type: 'all', orient: 'portrait' },
+      { name: 'Theme B (Healthtech) - Full Bid Package Landscape', company: 'healthtech', type: 'all', orient: 'landscape' },
+      { name: 'Theme B (Healthtech) - Tech Spec Compliance Sheet (Landscape)', company: 'healthtech', type: 'spec', orient: 'landscape' },
+      { name: 'Theme A (ME) - Unsigned / Unstamped Draft', company: 'me', type: 'all', orient: 'portrait', sig: false, st: false },
     ];
 
     setTestResults(testCases.map(t => ({ name: t.name, status: 'pending' })));
@@ -133,8 +137,10 @@ export default function DocumentPreviewPage() {
           body: JSON.stringify({
             companyKey: tc.company,
             docType: tc.type,
+            orientation: tc.orient,
             sampleData: {
               ...formData,
+              orientation: tc.orient,
               showSignature: tc.sig !== undefined ? tc.sig : true,
               showStamp: tc.st !== undefined ? tc.st : true
             }
@@ -300,6 +306,68 @@ export default function DocumentPreviewPage() {
             </select>
           </div>
 
+          {/* Orientation Mode */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px' }}>
+                Page Orientation
+              </label>
+              {docType === 'spec' && (
+                <span style={{ fontSize: '10.5px', color: '#38bdf8', fontWeight: 600 }}>
+                  (Locked: Always Landscape)
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button
+                onClick={() => setOrientation('portrait')}
+                disabled={docType === 'spec'}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: `2px solid ${(docType === 'spec' ? false : orientation === 'portrait') ? '#38bdf8' : '#334155'}`,
+                  background: (docType === 'spec' ? false : orientation === 'portrait') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
+                  color: (docType === 'spec' ? false : orientation === 'portrait') ? '#38bdf8' : '#94a3b8',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: docType === 'spec' ? 'not-allowed' : 'pointer',
+                  opacity: docType === 'spec' ? 0.45 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                📄 Portrait
+              </button>
+              <button
+                onClick={() => setOrientation('landscape')}
+                disabled={docType === 'spec'}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: `2px solid ${(docType === 'spec' || orientation === 'landscape') ? '#38bdf8' : '#334155'}`,
+                  background: (docType === 'spec' || orientation === 'landscape') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
+                  color: (docType === 'spec' || orientation === 'landscape') ? '#38bdf8' : '#94a3b8',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: docType === 'spec' ? 'default' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                📑 Landscape
+              </button>
+            </div>
+            {docType === 'spec' && (
+              <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                Technical Specification Compliance Sheets are strictly generated in Landscape mode.
+              </div>
+            )}
+          </div>
+
           {/* Signature & Stamp Toggles */}
           <div style={{ background: '#0f172a', padding: '12px', borderRadius: '8px', border: '1px solid #334155' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, color: '#e2e8f0', marginBottom: '8px' }}>
@@ -424,13 +492,14 @@ export default function DocumentPreviewPage() {
             srcDoc={htmlContent}
             title="A4 Document Preview"
             style={{
-              width: '210mm',
-              minHeight: '297mm',
+              width: (docType === 'spec' || orientation === 'landscape') ? '297mm' : '210mm',
+              minHeight: (docType === 'spec' || orientation === 'landscape') ? '210mm' : '297mm',
               height: '100%',
               border: 'none',
               borderRadius: '4px',
               boxShadow: '0 10px 30px rgba(0, 0, 0, 0.4)',
-              background: '#ffffff'
+              background: '#ffffff',
+              transition: 'width 0.2s ease, min-height 0.2s ease'
             }}
           />
         </div>

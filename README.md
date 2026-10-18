@@ -280,7 +280,7 @@ Open your browser at: 👉 **[http://localhost:8085](http://localhost:8085)**
 
 ```bash
 cd backend
-mvn spring-boot:rune
+mvn spring-boot:run
 ```
 
 Or run the production JAR:

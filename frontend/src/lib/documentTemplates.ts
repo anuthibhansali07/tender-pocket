@@ -10,7 +10,8 @@ export function resolveImagePath(subPath: string): string {
 
 export function generateHtmlTemplates(data: any): string {
   const profile = getCompanyProfile(data.companyKey || data.companyName);
-  const renderer = new DocumentLayoutRenderer(profile);
+  const orientation: 'portrait' | 'landscape' = (data.orientation || 'portrait').toLowerCase() === 'landscape' ? 'landscape' : 'portrait';
+  const renderer = new DocumentLayoutRenderer(profile, orientation);
 
   const isThemeA = profile.theme === 'A';
   const bidNumber = data.bidNumber || data.ref_no || 'GEM/2026/B/8015551';
@@ -34,7 +35,7 @@ export function generateHtmlTemplates(data: any): string {
   const renderOpts: RenderOptions = {
     showSignature: data.showSignature !== false,
     showStamp: data.showStamp !== false,
-    docDate,
+    docDate: isThemeA ? docDate : undefined,
     bidDate,
     bidNumber
   };
@@ -51,11 +52,11 @@ export function generateHtmlTemplates(data: any): string {
     if (authorityName) {
       authorityName.split('\n').forEach((l: string) => {
         const tr = l.trim();
-        if (tr) lines.push(`<strong>${tr}</strong>`);
+        if (tr) lines.push(isThemeA ? `<strong>${tr}</strong>` : tr);
       });
     }
-    if (authorityDept) lines.push(authorityDept);
-    if (authorityAddress) lines.push(authorityAddress);
+    if (authorityDept && authorityDept.trim()) lines.push(authorityDept.trim());
+    if (authorityAddress && authorityAddress.trim()) lines.push(authorityAddress.trim());
 
     return `<div class="address-block">${lines.join('<br/>')}</div>`;
   };
@@ -65,8 +66,8 @@ export function generateHtmlTemplates(data: any): string {
     if (isThemeA) {
       return `
         <div class="subject-ref-block">
-          ${subject ? `<p style="margin: 1px 0;"><strong>Subject: ${subject}</strong></p>` : ''}
-          <p style="margin: 1px 0;"><strong>${refLabel}: Bid No.: ${bidNumber}, Dated: ${bidDate}.</strong></p>
+          ${subject ? `<p style="margin: 0 0 2pt 0;"><strong>Subject: ${subject.trim()}</strong></p>` : ''}
+          <p style="margin: 0;"><strong>${refLabel}: Bid No.: ${bidNumber.trim()}, Dated: ${bidDate.trim()}.</strong></p>
         </div>
       `;
     } else {
@@ -77,13 +78,13 @@ export function generateHtmlTemplates(data: any): string {
               <tr>
                 <td style="width: 14%; font-weight: bold;">Subject</td>
                 <td style="width: 2%; font-weight: bold;">:</td>
-                <td style="width: 84%;">${subject}</td>
+                <td style="width: 84%; font-weight: bold;">${subject.trim()}</td>
               </tr>
             ` : ''}
             <tr>
               <td style="width: 14%; font-weight: bold;">${refLabel}</td>
               <td style="width: 2%; font-weight: bold;">:</td>
-              <td style="width: 84%;">Bid No.: ${bidNumber}, Dated: ${bidDate}.</td>
+              <td style="width: 84%;">Bid No.: ${bidNumber.trim()}, Dated: ${bidDate.trim()}.</td>
             </tr>
           </table>
         </div>
@@ -91,98 +92,127 @@ export function generateHtmlTemplates(data: any): string {
     }
   };
 
-  const pages: string[] = [];
+  // =========================================================================
+  // MODULAR DOCUMENT RENDER FUNCTIONS
+  // =========================================================================
 
-  // =========================================================================
-  // DOCUMENT 1: BIDDER PARTICULARS / INFORMATION
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
-    <table class="data-table" style="font-size: 9pt; line-height: 1.18; margin: 4px 0 6px 0;">
+  // Doc 1: Bidder Information / Particulars
+  const renderDocBidderInfo = () => renderer.wrapPage(`
+    <table class="data-table table-bidder-info" style="margin: 6px 0 8px 0;">
       ${isThemeA ? `
         <thead>
           <tr>
-            <th style="width: 44%;">Particulars</th>
-            <th style="width: 56%;">Details</th>
+            <th style="width: 44%; background-color: #4F81BD; color: #ffffff; border: 1px solid #4F81BD;">Name of the Bidder</th>
+            <th style="width: 56%; background-color: #4F81BD; color: #ffffff; border: 1px solid #4F81BD;">${profile.shortName}</th>
           </tr>
         </thead>
-      ` : `
-        <thead>
+        <tbody>
           <tr>
-            <th style="width: 7%;" class="center">Sr.</th>
-            <th style="width: 38%;">Particulars</th>
-            <th style="width: 55%;">Details</th>
+            <td><strong>Address of the Bidder</strong></td>
+            <td>: ${profile.fullAddress}</td>
           </tr>
-        </thead>
+          <tr>
+            <td><strong>Name of the Manufacturer</strong></td>
+            <td>: <strong>${profile.manufacturerName}</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Address of the Manufacturer</strong></td>
+            <td>: ${profile.manufacturerAddress}</td>
+          </tr>
+          <tr>
+            <td><strong>Name and address of the person<br/>To whom all references shall be made regarding this tender inquiry.</strong></td>
+            <td>: <strong>${profile.signatoryName.startsWith('Mr.') ? profile.signatoryName : `Mr. ${profile.signatoryName}`}</strong><br/><strong>Address: ${profile.signatoryAddress || profile.fullAddress}</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Mobile no</strong></td>
+            <td>: <strong>+91 90111 04332</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Telephone</strong></td>
+            <td>: 0253-299 5112</td>
+          </tr>
+          <tr>
+            <td><strong>Telex</strong></td>
+            <td>: NA</td>
+          </tr>
+          <tr>
+            <td><strong>Fax</strong></td>
+            <td>: NA</td>
+          </tr>
+          <tr>
+            <td><strong>Email address</strong></td>
+            <td>: <strong>info@markworld.com</strong> / <strong>tender@markenworld.com</strong></td>
+          </tr>
+        </tbody>
+      ` : `
+        <tbody>
+          <tr>
+            <td class="center" style="width: 7%; font-weight: bold; border: 1px solid #000000;">1.</td>
+            <td style="width: 41%; font-weight: bold; border: 1px solid #000000;">Name of the Bidder</td>
+            <td style="width: 52%; border: 1px solid #000000;">: ${profile.shortName}</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">2.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Address of the Bidder</td>
+            <td style="border: 1px solid #000000;">: ${profile.fullAddress}</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">3.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Name of the Manufacturer</td>
+            <td style="border: 1px solid #000000;">: ${profile.manufacturerName}</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">4.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Address of the Manufacturer</td>
+            <td style="border: 1px solid #000000;">: ${profile.manufacturerAddress}</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">5.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Name and address of the person:<br/>To whom all references shall be made regarding this tender inquiry.</td>
+            <td style="border: 1px solid #000000;">: Mr. ${profile.signatoryName}<br/>Address: ${profile.signatoryAddress || profile.fullAddress}</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">6.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Telephone</td>
+            <td style="border: 1px solid #000000;">: 0253-299 5112</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">7.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Telex</td>
+            <td style="border: 1px solid #000000;">: NA</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">8.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Fax</td>
+            <td style="border: 1px solid #000000;">: NA</td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">9.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Email address</td>
+            <td style="border: 1px solid #000000;">: <strong>info@markworld.com</strong> / <strong>tender@markenworld.com</strong></td>
+          </tr>
+          <tr>
+            <td class="center" style="font-weight: bold; border: 1px solid #000000;">10.</td>
+            <td style="font-weight: bold; border: 1px solid #000000;">Witness</td>
+            <td style="border: 1px solid #000000;">: ${profile.witnessDetails || 'Mr. Shreedhar Shingare (Cell No.: 09011104332)'}</td>
+          </tr>
+        </tbody>
       `}
-      <tbody>
-        <tr>
-          ${!isThemeA ? `<td class="center">1.</td>` : ''}
-          <td><strong>Name of the Bidder</strong></td>
-          <td>${profile.shortName}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">2.</td>` : ''}
-          <td><strong>Address of the Bidder</strong></td>
-          <td>: ${profile.fullAddress}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">3.</td>` : ''}
-          <td><strong>Name of the Manufacturer</strong></td>
-          <td>: ${profile.manufacturerName}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">4.</td>` : ''}
-          <td><strong>Address of the Manufacturer</strong></td>
-          <td>: ${profile.manufacturerAddress}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">5.</td>` : ''}
-          <td><strong>Name and address of the person<br/>To whom all references shall be made regarding this tender inquiry.</strong></td>
-          <td>: Mr. ${profile.signatoryName}<br/>Address: ${profile.signatoryAddress || profile.fullAddress}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">6.</td>` : ''}
-          <td><strong>Mobile no</strong></td>
-          <td>: ${profile.phones[1] || profile.phones[0]}</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">7.</td>` : ''}
-          <td><strong>Telephone</strong></td>
-          <td>: 0253-299 5112</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">8.</td>` : ''}
-          <td><strong>Telex / Fax</strong></td>
-          <td>: NA</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">9.</td>` : ''}
-          <td><strong>Email address</strong></td>
-          <td>: info@markworld.com / tender@markenworld.com</td>
-        </tr>
-        <tr>
-          ${!isThemeA ? `<td class="center">10.</td>` : ''}
-          <td><strong>Witness</strong></td>
-          <td>: ${profile.witnessDetails || 'Mr. Shreedhar Shingare (Cell No.: 09011104332)'}</td>
-        </tr>
-      </tbody>
     </table>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: isThemeA ? 'BIDDER PARTICULARS' : 'BIDDER INFORMATION',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-1'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 2: OEM DECLARATION
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 2: OEM Declaration (Theme A only)
+  const renderDocOemDeclaration = () => renderer.wrapPage(`
     <p class="center bold" style="margin-bottom: 8px; text-decoration: underline;">TO WHOM SO EVER IT MAY CONCERN</p>
     <p class="justify">We <strong>${profile.shortName}</strong> who are established and reputable manufacturers or producers of <strong>Medical, Blood bank, hospital, & Cold Chain Equipment and Furniture</strong> having production facilities at <strong>${profile.manufacturerAddress}</strong>.</p>
     <p class="justify">We declare that we are original equipment Manufacturer (OEM) of quoted product.</p>
 
-    <table class="data-table">
+    <table class="data-table table-white-header">
       <thead>
         <tr>
           <th style="width: 10%;" class="center">Sr no</th>
@@ -206,14 +236,12 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'OEM DECLARATION',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-2'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 3: MANUFACTURER DECLARATION
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 3: Manufacturer Declaration (Theme A only)
+  const renderDocManufacturerDeclaration = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef(undefined, 'Reference')}
     <p><strong>${profile.salutation}</strong></p>
@@ -227,14 +255,12 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'MANUFACTURER DECLARATION',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-3'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 4: BID FORM (Compact typography to guarantee safe footer boundary)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 4: Bid Form
+  const renderDocBidForm = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Bid Form')}
     <p><strong>${profile.salutation}</strong></p>
@@ -249,14 +275,13 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'BID FORM',
-    docDate: isThemeA ? undefined : docDate,
-    pageClass: 'page-doc-4 compact-doc'
-  }));
+    docDate: docDate,
+    pageClass: 'page-doc-4 compact-doc',
+    dateBelowTitle: !isThemeA
+  });
 
-  // =========================================================================
-  // DOCUMENT 5: BID SECURITY DECLARATION FORM
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 5: Bid Security Declaration Form
+  const renderDocBidSecurity = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Bid Security Declaration Form')}
     <p><strong>${profile.salutation}</strong></p>
@@ -273,37 +298,43 @@ export function generateHtmlTemplates(data: any): string {
   `, {
     title: 'BID SECURITY DECLARATION FORM',
     subtitle: '(Rule 170 of General Financial Rule 2017)',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-5'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 6: UNDERTAKING (Acceptance of Tender Terms and Conditions)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 6: Acceptance of Tender Terms and Conditions
+  const renderDocAcceptanceOfTerms = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Acceptance of Tender Terms and Conditions as per Bid.')}
     <p><strong>${profile.salutation}</strong></p>
-    <ol type="a" style="margin-left: 18px;">
-      <li>We have downloaded/obtained the tender documents for the above-mentioned bid in reference to Supply & Installation of Equipment’s from the web site namely <strong>GeM Portal</strong>.</li>
-      <li>We hereby certify that we have reviewed entire terms and conditions of the tender documents (including all documents like annexure, schedules, etc., which is form part of the Contract Agreement and we shall abide hereby to the terms / conditions / Warranty / CMC / Delivery / Clauses contained therein.</li>
-      <li>The corrigendum(s) issued from time to time by your department / organization also has been taken into consideration, while submitting this acceptance letter.</li>
-      <li>We hereby unconditionally accept the tender conditions of above mentioned tender and its corrigendum(s) in totality / entirely.</li>
-      <li>In case any provision of this bid / tender is found violated, your department / organization shall be at liberty to reject this and we shall not have any claim/ right against the department in satisfaction of this condition.</li>
-    </ol>
-    <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
+    ${isThemeA ? `
+      <ol style="margin-left: 20px; padding-left: 0;">
+        <li>We have downloaded/obtained the tender documents for the above-mentioned bid in reference to Supply &amp; Installation of Equipment’s from the web site namely <strong>GeM Portal</strong>.</li>
+        <li>We hereby certify that we have reviewed entire terms and conditions of the tender documents (including all documents like annexure, schedules, etc., which is form part of the Contract Agreement and we shall abide hereby to the terms / conditions / Warranty / CMC / Delivery / Clauses contained therein.</li>
+        <li>The corrigendum(s) issued from time to time by your department / organization also has been taken into consideration, while submitting this acceptance letter.</li>
+        <li>We hereby unconditionally accept the tender conditions of above mentioned tender and its corrigendum(s) in totality / entirely.</li>
+        <li>In case any provision of this bid / tender are found violated, your department / organization shall be at liberty to reject this and we shall not have any claim/ right against the department in satisfaction of this condition.</li>
+      </ol>
+    ` : `
+      <ol type="a" style="margin-left: 18px; padding-left: 0;">
+        <li>We have downloaded/obtained the tender documents for the above-mentioned bid in reference to Supply &amp; Installation of Equipment’s from the web site namely <strong>GeM Portal</strong>.</li>
+        <li>We hereby certify that we have reviewed entire terms and conditions of the tender documents (including all documents like annexure, schedules, etc., which is form part of the Contract Agreement and we shall abide hereby to the terms / conditions / Warranty / CMC / Delivery / Clauses contained therein.</li>
+        <li>The corrigendum(s) issued from time to time by your department / organization also has been taken into consideration, while submitting this acceptance letter.</li>
+        <li>We hereby unconditionally accept the tender conditions of above mentioned tender and its corrigendum(s) in totality / entirely.</li>
+        <li>In case any provision of this bid / tender are found violated, your department / organization shall be at liberty to reject this and we shall not have any claim/ right against the department in satisfaction of this condition.</li>
+      </ol>
+    `}
+    ${isThemeA ? '<p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>' : '<p class="closing-line">Yours faithfully,</p>'}
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: isThemeA ? 'UNDERTAKING' : 'ACCEPTANCE OF TENDER TERMS AND CONDITIONS',
     subtitle: isThemeA ? '(Acceptance of Tender Terms and Conditions as per Bid)' : undefined,
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-6'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 7: DECLARATION (Availability of Spare Parts up to 10 Years)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 7: Spare Parts (Theme A only)
+  const renderDocSpareParts = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef(undefined, 'Reference')}
     <p><strong>${profile.salutation}</strong></p>
@@ -313,16 +344,47 @@ export function generateHtmlTemplates(data: any): string {
   `, {
     title: 'DECLARATION',
     subtitle: '(for Availability of Spare Parts up to 10 Years)',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-7'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 8: UNDERTAKING FOR WARRANTY
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 8a: Undertaking for Warranty (General Scope: Cold chain, Medical Equipment’s and Hospital Furniture)
+  const renderDocWarrantyGeneral = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Undertaking for Warranty', 'Reference')}
+    <p><strong>${profile.salutation}</strong></p>
+    <p class="justify">We, <strong>${profile.shortName}</strong> ourselves as an Established and Reputable, Indigenous Manufacturers of <strong>Cold chain , Medical Equipment’s and Hospital Furniture</strong> do hereby guarantee and warranty all work performed as part of the bid for a period of <strong>as per bid terms</strong> from the date of supply. We commit to repairing any defective spare parts associated with our work at no additional charges to the product.</p>
+    <p class="justify">We fully understand and acknowledge the importance of the warranty duration in meeting your requirements. Our commitment to providing a as per bid terms warranty reflects our confidence in the quality and durability of our products. This undertaking is a testament to our dedication to customer satisfaction and our assurance of the reliability of our offerings.</p>
+    <p class="justify">We are more than willing to address any queries and provide the necessary clarifications.</p>
+    <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
+    ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
+  `, {
+    title: 'UNDERTAKING FOR WARRANTY',
+    docDate: docDate,
+    pageClass: 'page-doc-8 compact-doc'
+  });
+
+  // Doc 8b: Undertaking for Warranty (Product-Specific Scope)
+  const renderDocWarrantyProduct = () => renderer.wrapPage(`
+    ${renderAddressBlock()}
+    ${renderSubjectRef('Undertaking for Warranty', 'Reference')}
+    <p><strong>${profile.salutation}</strong></p>
+    <p class="justify">We, <strong>${profile.shortName}</strong> ourselves as an Established and Reputable, Indigenous Manufacturers of <strong>${productDescription}</strong> do hereby guarantee and warranty all work performed as part of the bid for a period of <strong>as per bid terms</strong> from the date of supply. We commit to repairing any defective spare parts associated with our work at no additional charges to the product.</p>
+    <p class="justify">We fully understand and acknowledge the importance of the warranty duration in meeting your requirements. Our commitment to providing a as per bid terms warranty reflects our confidence in the quality and durability of our products. This undertaking is a testament to our dedication to customer satisfaction and our assurance of the reliability of our offerings.</p>
+    <p class="justify">We are more than willing to address any queries and provide the necessary clarifications.</p>
+    <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
+    ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
+  `, {
+    title: 'UNDERTAKING FOR WARRANTY',
+    subtitle: isThemeA ? '(Acceptance of Warranty Period and Terms and Conditions)' : undefined,
+    docDate: docDate,
+    pageClass: 'page-doc-8 compact-doc'
+  });
+
+  // Doc 8c: Undertaking for Warranty (Theme A full combined text)
+  const renderDocWarrantyThemeA = () => renderer.wrapPage(`
+    ${renderAddressBlock()}
+    ${renderSubjectRef(undefined, 'Reference')}
     <p><strong>${profile.salutation}</strong></p>
     <p class="justify">We, <strong>${profile.shortName}</strong> ourselves as an Established and Reputable, Indigenous Manufacturers of <strong>Blood Bank, Cold Chain, Medical, Hospital Equipment’s and Furniture</strong>, do hereby guarantee and warranty all work performed as part of the bid for a period of <strong>as per bid terms</strong> from the Date of supply. We commit to repairing any defective spare parts associated with our work at no additional charges to the product.</p>
     <p class="justify">We, do hereby confirm our participation in the tender for the supply of <strong>${productDescription}</strong>, as per the specifications outlined in the bid documents.</p>
@@ -333,16 +395,14 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'UNDERTAKING FOR WARRANTY',
-    subtitle: isThemeA ? '(Acceptance of Warranty Period and Terms and Conditions)' : undefined,
-    docDate: isThemeA ? undefined : docDate,
+    subtitle: '(Acceptance of Warranty Period and Terms and Conditions)',
+    docDate: docDate,
     pageClass: 'page-doc-8 compact-doc'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 9: PRICE DECLARATION
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
-    <p class="center bold" style="margin-bottom: 8px; text-decoration: underline;">TO WHOM SO EVER IT MAY CONCERN</p>
+  // Doc 9: Price Declaration
+  const renderDocPriceDeclaration = () => renderer.wrapPage(`
+    ${!isThemeA ? '<p class="center bold" style="margin-bottom: 6px; text-decoration: underline;">TO WHOM SO EVER IT MAY CONCERN</p>' : ''}
     ${renderAddressBlock()}
     ${renderSubjectRef('Price Declaration')}
     <p><strong>${profile.salutation}</strong></p>
@@ -353,38 +413,36 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'PRICE DECLARATION',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-9'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 10: DECLARATION (for Demonstration)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 10: Declaration for Demonstration
+  const renderDocDemonstration = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Declaration for Demonstration')}
     <p><strong>${profile.salutation}</strong></p>
-    <p class="justify">We <strong>${profile.shortName}</strong> having registered office at <strong>${profile.manufacturerAddress}</strong>. We, the undersigned, hereby declare our commitment to arranging a demonstration of our product at our own expense. We understand the importance of showcasing the features and capabilities of our product to your satisfaction.</p>
-    <p><strong>Terms of the Declaration:</strong></p>
+    <p class="justify">We <strong>${profile.shortName}</strong> having registered office at <strong>${profile.manufacturerAddress}</strong>.</p>
+    <p class="justify">We, the undersigned, hereby declare our commitment to arranging a demonstration of our product at our own expense. We understand the importance of showcasing the features and capabilities of our product to your satisfaction.</p>
+    <p style="margin-bottom: 4px;"><u><strong>Terms of the Declaration:</strong></u></p>
     <p class="justify"><strong>Demo Arrangement:</strong> We commit to organizing and conducting a comprehensive demonstration of our product as per your requirements.</p>
     <p class="justify"><strong>Cost Coverage:</strong> All expenses related to the demonstration, including travel, accommodation, and any other associated costs, will be borne entirely by us.</p>
     <p class="justify"><strong>Location and Timing:</strong> We are flexible and willing to conduct the demo at a location of your choice. We will coordinate with your team to determine a suitable Date and time for the demonstration.</p>
     <p class="justify"><strong>Customization:</strong> If there are specific aspects or features you wish to focus on during the demo, please communicate them in advance so that we can tailor our presentation to meet your needs.</p>
     <p class="justify"><strong>Feedback and Adjustments:</strong> We welcome any feedback you may have during or after the demonstration. If there are areas that require further clarification or adjustments, we commit to addressing them promptly.</p>
+    ${!isThemeA ? '<p class="justify">By signing this declaration, both parties affirm their understanding and agreement to the terms outlined herein. We look forward to the opportunity to showcase our product and demonstrate how it can meet and exceed your expectations.</p>' : ''}
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: 'DECLARATION',
-    subtitle: '(for Demonstration)',
-    docDate: isThemeA ? undefined : docDate,
-    pageClass: 'page-doc-10 compact-doc'
-  }));
+    title: isThemeA ? 'DECLARATION' : 'DECLARATION FOR DEMONSTRATION',
+    subtitle: isThemeA ? '(for Demonstration)' : undefined,
+    docDate: docDate,
+    pageClass: isThemeA ? 'page-doc-10 compact-doc' : 'page-doc-10'
+  });
 
-  // =========================================================================
-  // DOCUMENT 11: DECLARATION (on Non-Blacklisting / Debarring)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
-    <p class="center bold" style="margin-bottom: 8px; text-decoration: underline;">TO WHOM SO EVER IT MAY CONCERN</p>
+  // Doc 11: Declaration on Non-Blacklisting / Debarring
+  const renderDocNonBlacklisting = () => renderer.wrapPage(`
+    ${!isThemeA ? '<p class="center bold" style="margin-bottom: 6px; text-decoration: underline;">TO WHOM SO EVER IT MAY CONCERN</p>' : ''}
     ${renderAddressBlock()}
     ${renderSubjectRef('Declaration on Non-Blacklisting / Debarring')}
     <p><strong>${profile.salutation}</strong></p>
@@ -393,119 +451,118 @@ export function generateHtmlTemplates(data: any): string {
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: 'DECLARATION',
-    subtitle: '(on Non-Blacklisting / Debarring)',
-    docDate: isThemeA ? undefined : docDate,
+    title: isThemeA ? 'DECLARATION' : 'DECLARATION ON NON-BLACKLISTING / DEBARRING',
+    subtitle: isThemeA ? '(on Non-Blacklisting / Debarring)' : undefined,
+    docDate: docDate,
     pageClass: 'page-doc-11'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 12: UNDERTAKING (For Financial Standing)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 12: Undertaking for Financial Standing
+  const renderDocFinancialStanding = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Undertaking for Financial Standing')}
     <p><strong>${profile.salutation}</strong></p>
     <p class="justify">We, <strong>${profile.shortName}</strong>, represented by the company, located at <strong>${profile.manufacturerAddress}</strong>, hereby provide the following undertaking regarding our financial standing:</p>
-    <p class="justify"><strong>Business Nature:</strong> We are established and reputable indigenous manufacturers of <strong>Blood Bank Equipment, Medical Cold Chain Equipment, Medical Equipment’s and Furniture and Hospital Furniture, Refrigerated Van, Mobile Dental Van, Mobile Health Unit</strong>.</p>
+    <p class="justify"><strong>Business Nature:</strong> We are established and reputable indigenous manufacturers of <strong>${isThemeA ? 'Blood Bank Equipment, Medical Cold Chain Equipment, Medical Equipment’s and Furniture and Hospital Furniture, Refrigerated Van, Mobile Dental Van, Mobile Health Unit' : 'Medical Equipment’s and Hospital Furniture'}</strong>.</p>
     <p class="justify"><strong>Location:</strong> Our manufacturing facilities are situated at <strong>${profile.manufacturerAddress}</strong>.</p>
     <p><strong>Financial Standing:</strong> We declare that, to the best of our knowledge and belief, as of the Date of this undertaking:</p>
-    <p style="margin-left: 18px;">a. We are not under liquidation, court receivership, or any similar proceedings.<br/>b. We are not bankrupt.</p>
+    <p style="margin: 2px 0 4px 18px;">a. We are not under liquidation, court receivership, or any similar proceedings.<br/>b. We are not bankrupt.</p>
     <p class="justify"><strong>Commitment:</strong> We undertake to promptly inform the concerned parties if there are any changes in our financial standing during any agreements or contracts.</p>
     <p class="justify"><strong>Accuracy of Information:</strong> The information provided in this undertaking is true and accurate to the best of our knowledge, and we understand the legal consequences of providing false information.</p>
     <p>We hereby affix our signature and company seal to confirm the authenticity of this undertaking.</p>
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: 'UNDERTAKING',
-    subtitle: '(For Financial Standing)',
-    docDate: isThemeA ? undefined : docDate,
+    title: isThemeA ? 'UNDERTAKING' : 'UNDERTAKING FOR FINANCIAL STANDING',
+    subtitle: isThemeA ? '(For Financial Standing)' : undefined,
+    docDate: docDate,
     pageClass: 'page-doc-12 compact-doc'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 13: DECLARATION (For Certificate of Country of Origin)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 13: Declaration for Certificate of Country of Origin
+  const renderDocCountryOfOrigin = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Declaration for Certificate Of Country of Origin Reference', 'Reference')}
     <p><strong>${profile.salutation}</strong></p>
-    <p class="justify">We <strong>${profile.shortName}</strong> introduce ourselves as an Established and Reputable, Indigenous Manufacturers of Medical Equipment’s and Hospital Furniture would like to inform you that the quoted product <strong>${productDescription}</strong>, is manufactured by us and we are Self-Manufacturer of the same. This product is made entirely in our Company using the raw materials available in India.</p>
-    <p class="justify">We ensure that no foreign raw materials are used in our manufactured products i.e. <strong>${productDescription}</strong>, However, we assure you that the products we manufacture are entirely Indian made and that we are the Original Equipment’s Manufacture (OEM) of the original products.</p>
+    <p class="justify">We <strong>${profile.shortName}</strong> introduce ourselves as an Established and Reputable, Indigenous Manufacturers of <strong>${isThemeA ? 'Medical Equipment’s and Hospital Furniture' : productDescription}</strong> would like to inform you that the quoted product <strong>${productDescription}</strong>, is manufactured by us and we are Self-Manufacturer of the same. This product is made entirely in our Company using the raw materials available in India.</p>
+    <p class="justify">We ensure that no foreign raw materials are used in our manufactured products i.e <strong>${productDescription}</strong> ${!isThemeA ? '' : ','}However, we assure you that the products we manufacture are entirely Indian made and that we are the Original Equipment’s Manufacture (OEM) of the original products.</p>
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: 'DECLARATION',
-    subtitle: '(For Certificate of Country of Origin)',
-    docDate: isThemeA ? undefined : docDate,
+    title: isThemeA ? 'DECLARATION' : 'DECLARATION FOR CERTIFICATE OF COUNTRY OF ORIGIN',
+    subtitle: isThemeA ? '(For Certificate of Country of Origin)' : undefined,
+    docDate: docDate,
     pageClass: 'page-doc-13'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 14: DECLARATION CERTIFICATE FOR LOCAL CONTENT (Page 1)
-  // =========================================================================
-  const isPppMsme = preferencePolicy.toUpperCase().includes('MSME');
-  pages.push(renderer.wrapPage(`
-    <p class="justify" style="font-size: 9pt; margin-bottom: 3px;">This declaration must form part of all tenders & it contains general information and serves as a declaration form for all bidders. (Before completing this declaration, bidders must study the General Conditions, Definitions, Govt. Directives applicable in respect of Local Content & prescribed tender conditions).</p>
-    <p class="justify bold" style="font-size: 9pt; margin-bottom: 3px;">LOCAL CONTENT DECLARATION BY CHIEF FINANCIAL OFFICER OR OTHER LEGALLY RESPONSIBLE PERSON NOMINATED IN WRITING BY THE CHIEF EXECUTIVE OR SENIOR MEMBER/PERSON WITH MANAGEMENT RESPONSIBILITY (CORPORATION, PARTNERSHIP OR INDIVIDUAL)</p>
-    <p class="justify bold" style="font-size: 9pt; margin-bottom: 3px;">IN RESPECT OF BID / TENDER No.: ${bidNumber}, Dated: ${bidDate}, Issued By: ${profile.shortName}.</p>
-    <p class="justify" style="font-size: 9pt; margin-bottom: 3px;">NB: The obligation to complete, duly sign and submit his declaration cannot be transferred to an external authorized representative, auditor or any other third party acting on behalf of the bidder.</p>
-    <p class="justify" style="font-size: 9pt; margin-bottom: 3px;">I, the undersigned, <strong>${profile.signatoryName}</strong> do hereby declare, in my capacity as <strong>Partner / Authorized Signatory</strong> of <strong>${profile.shortName}</strong> the following:</p>
-    <ol type="a" style="margin: 2px 0 3px 16px; font-size: 9pt;">
-      <li>The facts contained herein are within my own personal knowledge.</li>
-      <li>I have read and understood the requirement of local content (LC) and same is specified as percentage calculated in accordance with the definition provided at clause 2 of revised Public Procurement (preference to Make in India) Order 2017.</li>
-      <li>“Local content” as per above order means the amount of value added in India which shall be the total value of items procured (excluding net domestic indirect taxes) minus the value of imported content in the item (including all customs duties) as a proportion of the total value in percent.</li>
-      <li>I have satisfied myself that the goods/services/works to be delivered in terms of the above-specified bid comply with the local content requirements as specified in the tender for ‘Class-I Local Supplier’ / ‘Class-II Local Supplier’, and as above.</li>
-      <li>I understand that a bidder can seek benefit of either Public Procurement Policy for MSEs–Order 2012 or Public Procurement (preference to Make in India) Order 2017 and not both and once the option is declared / selected it is not permitted to be modified subsequently. Accordingly, I seek the benefit from the below declared purchase preference policy only.</li>
-      <li>I seek benefits against the following policy only (Select only one Option):</li>
-    </ol>
+  // Doc 14: Declaration Certificate for Local Content (Page 1)
+  const renderDocLocalContentP1 = () => {
+    const isPppMsme = preferencePolicy.toUpperCase().includes('MSME');
+    const itemFontSize = isThemeA ? '9pt' : '9.8pt';
+    const itemMargin = isThemeA ? '3px' : '5px';
+    const itemLineHeight = isThemeA ? '1.2' : '1.28';
 
-    <table style="width: 100%; border-collapse: collapse; margin: 3px 0 4px 0; font-size: 9pt;">
-      <tr>
-        <td style="width: 32px; vertical-align: middle; padding: 2px 0;">
-          <div style="width: 20px; height: 20px; border: 1.5px solid #000; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: bold;">
-            ${isPppMsme ? '✔' : '&nbsp;'}
-          </div>
-        </td>
-        <td style="vertical-align: middle; padding: 2px 4px;">
-          <strong>1) PPP MSME Order 2012</strong> (applicable for MSE manufacturers)
-        </td>
-      </tr>
-      <tr>
-        <td style="width: 32px; vertical-align: middle; padding: 2px 0;">
-          <div style="width: 20px; height: 20px; border: 1.5px solid #000; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: bold;">
-            ${!isPppMsme ? '✔' : '&nbsp;'}
-          </div>
-        </td>
-        <td style="vertical-align: middle; padding: 2px 4px;">
-          <strong>2) PPP MII 2017</strong> (applicable for Class I suppliers as well as MSE manufacturers)
-        </td>
-      </tr>
-    </table>
-    <p style="font-size: 9pt; margin: 2px 0;">e) The local content calculated using the definition given above are as under:</p>
-  `, {
-    title: 'DECLARATION CERTIFICATE FOR LOCAL CONTENT',
-    docDate: isThemeA ? undefined : docDate,
-    pageClass: 'page-doc-14-1'
-  }));
+    return renderer.wrapPage(`
+      <p class="justify" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">This declaration must form part of all tenders &amp; it contains general information and serves as a declaration form for all bidders. (Before completing this declaration, bidders must study the General Conditions, Definitions, Govt. Directives applicable in respect of Local Content &amp; prescribed tender conditions).</p>
+      <p class="justify bold" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">LOCAL CONTENT DECLARATION BY CHIEF FINANCIAL OFFICER OR OTHER LEGALLY RESPONSIBLE PERSON NOMINATED IN WRITING BY THE CHIEF EXECUTIVE OR SENIOR MEMBER/PERSON WITH MANAGEMENT RESPONSIBILITY (CORPORATION, PARTNERSHIP OR INDIVIDUAL)</p>
+      <p class="justify bold" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">IN RESPECT OF BID / TENDER No.: ${bidNumber}, Dated: ${bidDate}. Issued By: ${profile.shortName}.</p>
+      <p class="justify" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">NB: The obligation to complete, duly sign and submit his declaration cannot be transferred to an external authorized representative, auditor or any other third party acting on behalf of the bidder.</p>
+      <p class="justify" style="font-size: ${itemFontSize}; line-height: ${itemLineHeight}; margin-bottom: ${itemMargin};">I, the undersigned, <strong>${profile.signatoryName}</strong> do hereby declare, in my capacity as <strong>${isThemeA ? 'Partner / Authorized Signatory' : 'Partner'}</strong> of <strong>${profile.shortName}</strong> the following:</p>
+      <ol type="a" style="margin: 3px 0 4px 16px; font-size: ${itemFontSize}; line-height: ${itemLineHeight};">
+        <li style="margin-bottom: ${itemMargin};">The facts contained herein are within my own personal knowledge.</li>
+        <li style="margin-bottom: ${itemMargin};">I have read and understood the requirement of local content (LC) and same is specified as percentage calculated in accordance with the definition provided at clause 2 of revised Public Procurement (preference to Make in India) Order 2017.</li>
+        <li style="margin-bottom: ${itemMargin};">“Local content” as per above order means the amount of value added in India which shall be the total value of items procured (excluding net domestic indirect taxes) minus the value of imported content in the item (including all customs duties) as a proportion of the total value in percent.</li>
+        <li style="margin-bottom: ${itemMargin};">I have satisfied myself that the goods/services/works to be delivered in terms of the above-specified bid comply with the local content requirements as specified in the tender for ‘Class-I Local Supplier’ / ‘Class-II Local Supplier’, and as above.</li>
+        <li style="margin-bottom: ${itemMargin};">I understand that a bidder can seek benefit of either Public Procurement Policy for MSEs–Order 2012 or Public Procurement (preference to Make in India) Order 2017 and not both and once the option is declared / selected it is not permitted to be modified subsequently. Accordingly, I seek the benefit from the below declared purchase preference policy only.</li>
+        <li style="margin-bottom: ${itemMargin};">I seek benefits against the following policy only (Select only one Option):</li>
+      </ol>
 
-  // =========================================================================
-  // DOCUMENT 15: DECLARATION CERTIFICATE FOR LOCAL CONTENT (Page 2)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
-    <p style="margin-bottom: 4px;">g) The local content calculated using the definition given above are as under:</p>
-    <table class="data-table">
+      <table style="width: 100%; border-collapse: collapse; margin: 4px 0 6px 0; font-size: ${itemFontSize};">
+        <tr>
+          <td style="width: 32px; vertical-align: middle; padding: 2px 0;">
+            <div style="width: 20px; height: 20px; border: 1.5px solid #000; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: bold;">
+              ${isPppMsme ? '✔' : '&nbsp;'}
+            </div>
+          </td>
+          <td style="vertical-align: middle; padding: 2px 4px;">
+            <strong>1) PPP MSME Order 2012</strong> (applicable for MSE manufacturers)
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 32px; vertical-align: middle; padding: 2px 0;">
+            <div style="width: 20px; height: 20px; border: 1.5px solid #000; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: bold;">
+              ${!isPppMsme ? '✔' : '&nbsp;'}
+            </div>
+          </td>
+          <td style="vertical-align: middle; padding: 2px 4px;">
+            <strong>2) PPP MII 2017</strong> (applicable for Class I suppliers as well as MSE manufacturers)
+          </td>
+        </tr>
+      </table>
+
+      ${!isThemeA ? `<p class="justify" style="margin-top: 6px; font-size: ${itemFontSize}; line-height: ${itemLineHeight};">e) The local content calculated using the definition given above are as under:</p>` : ''}
+    `, {
+      title: 'DECLARATION CERTIFICATE FOR LOCAL CONTENT',
+      docDate: docDate,
+      pageClass: 'page-doc-14-1'
+    });
+  };
+
+  // Doc 15: Declaration Certificate for Local Content (Page 2)
+  const renderDocLocalContentP2 = () => renderer.wrapPage(`
+    ${isThemeA ? '<p style="margin-bottom: 4px;">g) The local content calculated using the definition given above are as under:</p>' : ''}
+    <table class="data-table ${!isThemeA ? 'table-white-header' : ''}" style="margin: 4px 0 8px 0;">
       <thead>
         <tr>
-          <th style="width: 30%;">Tender No</th>
-          <th style="width: 25%;" class="center">Local Content Calculated as above %</th>
-          <th style="width: 45%;">Location of Local Value Addition</th>
+          <th style="width: 30%;"><strong>Tender No</strong></th>
+          <th style="width: 25%;" class="center"><strong>Local Content Calculated as above %</strong></th>
+          <th style="width: 45%;"><strong>Location of Local Value Addition</strong></th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td><strong>${bidNumber}</strong><br/>Dated: ${bidDate}</td>
-          <td class="center" style="font-size: 11pt; font-weight: bold;">${localContentPct}</td>
+          <td class="center" style="font-size: 12pt; font-weight: bold;">${localContentPct}</td>
           <td>${localContentLocation}</td>
         </tr>
       </tbody>
@@ -517,20 +574,18 @@ export function generateHtmlTemplates(data: any): string {
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: isThemeA ? undefined : 'DECLARATION CERTIFICATE FOR LOCAL CONTENT (CONTD.)',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-14-2'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 16: ESCALATION MATRIX (For Service Support)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 16: Escalation Matrix (For Service Support)
+  const renderDocEscalationMatrix = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef('Escalation Matrix for Service Support')}
     <p><strong>${profile.salutation}</strong></p>
     <p>We hereby submit the Escalation Matrix with Telephone Numbers for Service Support for our quoted product as under:</p>
 
-    <table class="data-table">
+    <table class="data-table ${isThemeA ? 'table-me-matrix' : 'table-ht-matrix'}">
       <thead>
         <tr>
           <th style="width: 8%;" class="center">Sr. No</th>
@@ -548,15 +603,15 @@ export function generateHtmlTemplates(data: any): string {
           <td>General Manager</td>
           <td>Administration</td>
           <td>09225126772</td>
-          <td>support@markenworld.com</td>
+          <td><strong>support@markenworld.com</strong></td>
         </tr>
         <tr>
           <td class="center">2.</td>
-          <td>Mr. Shridhar Shingare</td>
+          <td>${isThemeA ? '<strong>Mr. Shreedhar Shingare</strong>' : 'Mr. Shridhar Shingare'}</td>
           <td>Tender Manager</td>
           <td>Institution Business Division</td>
-          <td>09011104332</td>
-          <td>info@markenworld.com</td>
+          <td>${isThemeA ? '<strong>+91 90111 04332</strong>' : '09011104332'}</td>
+          <td><strong>${isThemeA ? 'info@markworld.com' : 'info@markenworld.com'}</strong></td>
         </tr>
         <tr>
           <td class="center">3.</td>
@@ -564,7 +619,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>Production Manager</td>
           <td>Delays of machine design and Technical Error.</td>
           <td>09225102371</td>
-          <td>support@markenworld.com</td>
+          <td><strong>support@markenworld.com</strong></td>
         </tr>
         <tr>
           <td class="center">4.</td>
@@ -572,7 +627,7 @@ export function generateHtmlTemplates(data: any): string {
           <td>Service Head</td>
           <td>Servicing Delay</td>
           <td>08390900347</td>
-          <td>support@markenworld.com</td>
+          <td><strong>support@markenworld.com</strong></td>
         </tr>
       </tbody>
     </table>
@@ -582,30 +637,27 @@ export function generateHtmlTemplates(data: any): string {
   `, {
     title: isThemeA ? 'ESCALATION MATRIX' : 'ESCALATION MATRIX FOR SERVICE SUPPORT',
     subtitle: isThemeA ? '(For Service Support)' : undefined,
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-15'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 17: DETAILS OF AFTER SALES SERVICE STATION (Page 1)
-  // Matching exact client layout: 9 stations for Theme A, 10 for Theme B
-  // =========================================================================
+  // After Sales Service Stations data
   const stationsThemeA = [
-    { city: '(H.O.) Nashik, Maharashtra.', addr: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra', contact: 'Mr. Sachin Shisode,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Delhi.', addr: 'B-50, South Extension, Part -1, New Delhi – 110049.', contact: 'Adarsh Kumar Arora', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Ambala, Haryana.', addr: '5337, Punjabi Mohalla, Ambala Cantt, Ambala, Haryana, 133001', contact: 'Mr. Deepak Pawaiya,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Jaipur, Rajasthan.', addr: 'Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan', contact: 'Mr. Devendra Hire,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Lucknow, Uttar Pradesh.', addr: '14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.', contact: 'Mr. Anil Aher,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Hyderabad, Telangana.', addr: 'P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Lucknow, Uttar Pradesh', contact: 'Mr. Chandu,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Ahmedabad, Gujarat.', addr: 'M/s. Sevamed Solutions Private Limited, Ahmedabad, Gujarat – 382421', contact: 'Mr. Paresh Sohni,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Jammu, Jammu & Kashmir', addr: 'M/s. Facio Marketing Solutions, 1st Floor, GQ Building, Near Rahat Hospital, Bathindi Morh, Sunjwan Road, Jammu - 181152', contact: 'Mr. Zeeshan,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Kolkata, West Bengal.', addr: 'P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal', contact: 'Mr. Nilesh Mehta,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Amritsar, Punjab', addr: 'Kaze Pharmaceuticals Private Limited. 1st Floor Sco 14, Cabin No. 1, Mansa Devi Complex, Sector 5, Swastik Vihar, Panchkula, Haryana', contact: 'Mr. Santosh chaudhari,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Bhubaneshwar, Odisha', addr: 'GITANJALI ASSOCIATES, Cuttack Road, 128, Laxmi Sagar, Bhubaneshwar 715006 Odisha', contact: 'Mr. Mohd Ismile Alimulah', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Kamrup, Assam.', addr: 'J.M. Distributor, Ground Floor, 10, Surana Building, Jail Road, Fancy Bazar, Kamrup Metropolitan, Assam, 781001', contact: 'Mr. Pratik Chaudhari,\nMr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Ernakulam, Kerala', addr: 'ASA Diagnostics Private Limited, Ist Floor, 54/2824-D, Muttathil Lane, Kochi, Ernakulam, Kerala, 682020', contact: 'Mr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Bhopal, Madhya Pradesh', addr: 'Imagers Sales PVT. Ltd. C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Infront of OM Hospital, Bhopal (M.P.) - 462023', contact: 'Mr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' },
-    { city: 'Bangalore Karnataka', addr: 'M/s KK Allianze, No.178/2, Govindarao Street, Seshadripuram, Bangalore-560020', contact: 'Mr. Shridhar Shingare', email: 'info@markenworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n9011104332' }
+    { city: '(H.O.) Nashik, Maharashtra.', addr: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra', contact: 'Mr. Sachin Shisode,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Delhi.', addr: 'B-50, South Extension, Part -1, New Delhi – 110049.', contact: 'Adarsh Kumar Arora', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Ambala, Haryana.', addr: '5337, Punjabi Mohalla, Ambala Cantt, Ambala, Haryana, 133001', contact: 'Mr. Deepak Pawaiya,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Jaipur, Rajasthan.', addr: 'Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan', contact: 'Mr. Devendra Hire,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Lucknow, Uttar Pradesh.', addr: '14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.', contact: 'Mr. Anil Aher,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Hyderabad, Telangana.', addr: 'P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Lucknow, Uttar Pradesh', contact: 'Mr. Chandu,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Ahmedabad, Gujarat.', addr: 'M/s. Sevamed Solutions Private Limited, Ahmedabad, Gujarat – 382421', contact: 'Mr. Paresh Sohni,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Jammu, Jammu & Kashmir', addr: 'M/s. Facio Marketing Solutions, 1st Floor, GQ Building, Near Rahat Hospital, Bathindi Morh, Sunjwan Road, Jammu - 181152', contact: 'Mr. Zeeshan,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Kolkata, West Bengal.', addr: 'P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal', contact: 'Mr. Nilesh Mehta,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Amritsar, Punjab', addr: 'Kaze Pharmaceuticals Private Limited. 1st Floor Sco 14, Cabin No. 1, Mansa Devi Complex, Sector 5, Swastik Vihar, Panchkula, Haryana', contact: 'Mr. Santosh chaudhari,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Bhubaneshwar, Odisha', addr: 'GITANJALI ASSOCIATES, Cuttack Road, 128, Laxmi Sagar, Bhubaneshwar 715006 Odisha', contact: 'Mr. Mohd Ismile Alimulah', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Kamrup, Assam.', addr: 'J.M. Distributor, Ground Floor, 10, Surana Building, Jail Road, Fancy Bazar, Kamrup Metropolitan, Assam, 781001', contact: 'Mr. Pratik Chaudhari,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Ernakulam, Kerala', addr: 'ASA Diagnostics Private Limited, Ist Floor, 54/2824-D, Muttathil Lane, Kochi, Ernakulam, Kerala, 682020', contact: 'Mr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Bhopal, Madhya Pradesh', addr: 'Imagers Sales PVT. Ltd. C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Infront of OM Hospital, Bhopal (M.P.) - 462023', contact: 'Mr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Bangalore Karnataka', addr: 'M/s KK Allianze, No.178/2, Govindarao Street, Seshadripuram, Bangalore-560020', contact: 'Mr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' }
   ];
 
   const stationsThemeB = [
@@ -632,57 +684,66 @@ export function generateHtmlTemplates(data: any): string {
   const p1Stations = stations.slice(0, splitIndex);
   const p2Stations = stations.slice(splitIndex);
 
-  pages.push(renderer.wrapPage(`
-    <table class="data-table" style="font-size: 8.5pt; line-height: 1.15; margin: 4px 0 6px 0;">
+  // Doc 17: Details of After Sales Service Station (Page 1)
+  const renderDocAfterSalesP1 = () => renderer.wrapPage(`
+    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="font-size: 8.8pt; line-height: 1.16; margin: 4px 0 6px 0;">
       <thead>
         <tr>
-          <th style="width: 5%;" class="center">Sr. No.</th>
-          <th style="width: 17%;">City & State</th>
-          <th style="width: 32%;">Full Address with Pin code</th>
-          <th style="width: 16%;">Contact Person Name</th>
-          <th style="width: 30%;">Contact Numbers with STD Code<br/><span style="font-weight: normal; font-size: 8pt;">Email ID / Mobile No.</span></th>
+          <th rowspan="2" style="width: 4%; padding: 3px 2px;" class="center">Sr. No.</th>
+          <th rowspan="2" style="width: 14%; padding: 3px 4px;">City & State</th>
+          <th rowspan="2" style="width: 29%; padding: 3px 4px;">Full Address with Pin code</th>
+          <th rowspan="2" style="width: 15%; padding: 3px 4px;">Contact Person Name</th>
+          <th colspan="2" style="width: 38%; padding: 3px 4px;" class="center">Contact Numbers with STD Code</th>
+        </tr>
+        <tr>
+          <th style="width: 25%; padding: 3px 4px;">Email ID</th>
+          <th style="width: 13%; padding: 3px 3px;">Mobile No.</th>
         </tr>
       </thead>
       <tbody>
         ${p1Stations.map((st, idx) => `
           <tr>
-            <td class="center" style="padding: 2px 3px;"><strong>${idx + 1}</strong></td>
-            <td style="padding: 2px 3px;"><strong>${st.city}</strong></td>
-            <td style="padding: 2px 3px;">${st.addr}</td>
-            <td style="padding: 2px 3px;">${st.contact.replace(/\n/g, '<br/>')}</td>
-            <td style="padding: 2px 3px;">${st.email.replace(/\n/g, '<br/>')}<br/><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></td>
+            <td class="center" style="padding: 2.5px 3px;"><strong>${idx + 1}</strong></td>
+            <td style="padding: 2.5px 4px;"><strong>${st.city}</strong></td>
+            <td style="padding: 2.5px 4px; line-height: 1.15;">${st.addr}</td>
+            <td style="padding: 2.5px 4px;">${st.contact.replace(/\n/g, '<br/>')}</td>
+            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
+            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `, {
     title: 'DETAILS OF AFTER SALES SERVICE STATION',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-16-1'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 18: DETAILS OF AFTER SALES SERVICE STATION (Page 2)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
-    <table class="data-table" style="font-size: 8.5pt; line-height: 1.15; margin: 4px 0 6px 0;">
+  // Doc 18: Details of After Sales Service Station (Page 2)
+  const renderDocAfterSalesP2 = () => renderer.wrapPage(`
+    <table class="data-table ${isThemeA ? 'table-me-stations' : 'table-ht-stations'}" style="font-size: 8.8pt; line-height: 1.16; margin: 4px 0 6px 0;">
       <thead>
         <tr>
-          <th style="width: 5%;" class="center">Sr. No.</th>
-          <th style="width: 17%;">City & State</th>
-          <th style="width: 32%;">Full Address with Pin code</th>
-          <th style="width: 16%;">Contact Person Name</th>
-          <th style="width: 30%;">Contact Numbers with STD Code<br/><span style="font-weight: normal; font-size: 8pt;">Email ID / Mobile No.</span></th>
+          <th rowspan="2" style="width: 4%; padding: 3px 2px;" class="center">Sr. No.</th>
+          <th rowspan="2" style="width: 14%; padding: 3px 4px;">City & State</th>
+          <th rowspan="2" style="width: 29%; padding: 3px 4px;">Full Address with Pin code</th>
+          <th rowspan="2" style="width: 15%; padding: 3px 4px;">Contact Person Name</th>
+          <th colspan="2" style="width: 38%; padding: 3px 4px;" class="center">Contact Numbers with STD Code</th>
+        </tr>
+        <tr>
+          <th style="width: 25%; padding: 3px 4px;">Email ID</th>
+          <th style="width: 13%; padding: 3px 3px;">Mobile No.</th>
         </tr>
       </thead>
       <tbody>
         ${p2Stations.map((st, idx) => `
           <tr>
-            <td class="center" style="padding: 2px 3px;"><strong>${idx + splitIndex + 1}</strong></td>
-            <td style="padding: 2px 3px;"><strong>${st.city}</strong></td>
-            <td style="padding: 2px 3px;">${st.addr}</td>
-            <td style="padding: 2px 3px;">${st.contact.replace(/\n/g, '<br/>')}</td>
-            <td style="padding: 2px 3px;">${st.email.replace(/\n/g, '<br/>')}<br/><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></td>
+            <td class="center" style="padding: 2.5px 3px;"><strong>${idx + splitIndex + 1}</strong></td>
+            <td style="padding: 2.5px 4px;"><strong>${st.city}</strong></td>
+            <td style="padding: 2.5px 4px; line-height: 1.15;">${st.addr}</td>
+            <td style="padding: 2.5px 4px;">${st.contact.replace(/\n/g, '<br/>')}</td>
+            <td style="padding: 2.5px 4px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong><span class="${isThemeA ? 'link-blue' : ''}">${st.email.replace(/\n/g, '<br/>')}</span></strong></div></td>
+            <td style="padding: 2.5px 3px;"><div style="white-space: nowrap; font-size: 8.2pt; line-height: 1.18;"><strong>${st.mob.replace(/\n/g, '<br/>')}</strong></div></td>
           </tr>
         `).join('')}
       </tbody>
@@ -692,12 +753,10 @@ export function generateHtmlTemplates(data: any): string {
     title: isThemeA ? undefined : 'DETAILS OF AFTER SALES SERVICE STATION (CONTD.)',
     docDate: isThemeA ? undefined : docDate,
     pageClass: 'page-doc-16-2'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 19: UNDERTAKING (Regarding Experience and Turnover Exemption)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 19: Experience & Turnover Exemption (Theme A only)
+  const renderDocTurnoverExemption = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef(undefined, 'Reference')}
     <p><strong>${profile.salutation}</strong></p>
@@ -711,14 +770,12 @@ export function generateHtmlTemplates(data: any): string {
   `, {
     title: 'UNDERTAKING',
     subtitle: '(Regarding Experience and Turnover Exemption)',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-17'
-  }));
+  });
 
-  // =========================================================================
-  // DOCUMENT 20: UNDERTAKING (Regarding Earnest Money Deposit (EMD) Exemption)
-  // =========================================================================
-  pages.push(renderer.wrapPage(`
+  // Doc 20: Earnest Money Deposit (EMD) Exemption (Theme A only)
+  const renderDocEmdExemption = () => renderer.wrapPage(`
     ${renderAddressBlock()}
     ${renderSubjectRef(undefined, 'Reference')}
     <p class="justify">We, <strong>${profile.shortName}</strong> a Micro and Small Enterprise (MSEM) & Udyam Registration Number <strong>${udyamNo}</strong>, am submitting this undertaking in connection with our participation in the tender for the "<strong>${productDescription}</strong>"</p>
@@ -726,15 +783,65 @@ export function generateHtmlTemplates(data: any): string {
     <p class="justify">We hereby request your kind consideration for the exemption from the submission of Experience, Turnover, and Earnest Money Deposit (EMD) Criteria for the aforementioned tender. As an MSE, we fall under the ambit of the exemption policies outlined in the orders.</p>
     <p class="justify">To support our request, we have uploaded the necessary documents proving our eligibility for exemption from the Experience and Turnover Criteria. We believe that our MSE status qualifies us for this exemption, in accordance with the established procurement policies.</p>
     <p class="justify">By providing this undertaking, we affirm that the information provided is true and accurate. We understand the importance of compliance with the applicable policies and assure you of our commitment to fulfilling all other requirements and obligations outlined in the tender documents.</p>
-    <p class="justify">Thank you for your understanding and cooperation. We look forward to the opportunity to contribute to and collaborate on this project.</p>
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
     title: 'UNDERTAKING',
     subtitle: '(Regarding Earnest Money Deposit (EMD) Exemption)',
-    docDate: isThemeA ? undefined : docDate,
+    docDate: docDate,
     pageClass: 'page-doc-18'
-  }));
+  });
+
+  // =========================================================================
+  // DOCUMENT ORDER ASSEMBLY
+  // =========================================================================
+  const pages: string[] = [];
+
+  if (isThemeA) {
+    // Theme A (Mark Enterprises): 20 documents in original sequence
+    pages.push(
+      renderDocBidderInfo(),              // Page 1: Bidder Information / Particulars
+      renderDocOemDeclaration(),         // Page 2: OEM Declaration
+      renderDocManufacturerDeclaration(),// Page 3: Manufacturer Declaration
+      renderDocBidForm(),                // Page 4: Bid Form
+      renderDocBidSecurity(),            // Page 5: Bid Security Declaration Form
+      renderDocAcceptanceOfTerms(),      // Page 6: Acceptance of Tender Terms and Conditions
+      renderDocSpareParts(),             // Page 7: Declaration for Availability of Spare Parts
+      renderDocWarrantyThemeA(),         // Page 8: Undertaking for Warranty
+      renderDocPriceDeclaration(),       // Page 9: Price Declaration
+      renderDocDemonstration(),          // Page 10: Declaration for Demonstration
+      renderDocNonBlacklisting(),        // Page 11: Declaration on Non-Blacklisting / Debarring
+      renderDocFinancialStanding(),      // Page 12: Undertaking for Financial Standing
+      renderDocCountryOfOrigin(),        // Page 13: Declaration for Certificate of Country of Origin
+      renderDocLocalContentP1(),         // Page 14: Declaration Certificate for Local Content (Page 1)
+      renderDocLocalContentP2(),         // Page 15: Declaration Certificate for Local Content (Page 2)
+      renderDocEscalationMatrix(),       // Page 16: Escalation Matrix for Service Support
+      renderDocAfterSalesP1(),           // Page 17: Details of After Sales Service Station (Page 1)
+      renderDocAfterSalesP2(),           // Page 18: Details of After Sales Service Station (Page 2)
+      renderDocTurnoverExemption(),      // Page 19: Experience and Turnover Exemption
+      renderDocEmdExemption()            // Page 20: Earnest Money Deposit (EMD) Exemption
+    );
+  } else {
+    // Theme B (Marken Healthtech): Exact 14 documents (16 pages) confirmed from sample doc
+    pages.push(
+      renderDocBidForm(),           // Page 1: Bid Form
+      renderDocBidSecurity(),       // Page 2: Bid Security Declaration Form
+      renderDocBidderInfo(),        // Page 3: Bidder Information
+      renderDocLocalContentP1(),    // Page 4: Declaration Certificate for Local Content (Page 1)
+      renderDocLocalContentP2(),    // Page 5: Declaration Certificate for Local Content (Page 2)
+      renderDocDemonstration(),     // Page 6: Declaration for Demonstration
+      renderDocCountryOfOrigin(),   // Page 7: Declaration for Certificate of Country of Origin
+      renderDocNonBlacklisting(),   // Page 8: Declaration on Non-Blacklisting / Debarring
+      renderDocWarrantyGeneral(),   // Page 9: Undertaking for Warranty (General Scope)
+      renderDocAcceptanceOfTerms(), // Page 10: Acceptance of Tender Terms and Conditions
+      renderDocPriceDeclaration(),  // Page 11: Price Declaration
+      renderDocFinancialStanding(), // Page 12: Undertaking for Financial Standing
+      renderDocWarrantyProduct(),   // Page 13: Undertaking for Warranty (Product-Specific Scope)
+      renderDocAfterSalesP1(),      // Page 14: Details of After Sales Service Station (Page 1)
+      renderDocAfterSalesP2(),      // Page 15: Details of After Sales Service Station (Page 2)
+      renderDocEscalationMatrix()   // Page 16: Escalation Matrix for Service Support
+    );
+  }
 
   // Assemble all pages with base CSS styles
   return `
@@ -744,7 +851,7 @@ export function generateHtmlTemplates(data: any): string {
       <meta charset="UTF-8">
       <title>Generated Bid Documents - ${bidNumber}</title>
       <style>
-        ${renderer.getGlobalStyles()}
+        ${renderer.getGlobalStyles(orientation)}
       </style>
     </head>
     <body>
@@ -759,7 +866,7 @@ export function generateTechnicalSpecificationHtml(
   rawSpecs: { sr: number, parameter: string, value: string, offered?: string, compliance?: string, deviation?: string }[]
 ): string {
   const profile = getCompanyProfile(data.companyKey || data.companyName);
-  const renderer = new DocumentLayoutRenderer(profile);
+  const renderer = new DocumentLayoutRenderer(profile, 'landscape');
 
   const bidNumber = data.bidNumber || data.ref_no || 'GEM/2026/B/8015551';
   const bidDate = data.bidDate || '09-09-2026';
@@ -857,7 +964,7 @@ export function generateTechnicalSpecificationHtml(
       <meta charset="UTF-8">
       <title>Technical Specification Sheet - ${bidNumber}</title>
       <style>
-        ${renderer.getGlobalStyles()}
+        ${renderer.getGlobalStyles('landscape')}
       </style>
     </head>
     <body>

@@ -177,7 +177,7 @@ function generateHtmlTemplates(data) {
         <tr>
           <td style="font-weight: bold;">3.</td>
           <td style="font-weight: normal;">Name of the Manufacturer</td>
-          <td style="font-weight: bold;">M/s. ${data.manufacturerName}</td>
+          <td style="font-weight: bold;"><strong>M/s. Mark Enterprises</strong></td>
         </tr>
         <tr>
           <td style="font-weight: bold;">4.</td>
@@ -187,12 +187,12 @@ function generateHtmlTemplates(data) {
         <tr>
           <td style="font-weight: bold;">5.</td>
           <td style="font-weight: normal;">Name and address of the person to whom all references shall be made regarding this tender inquiry:</td>
-          <td style="font-weight: bold;">Name: Mr. ${data.signatoryName}<br/>Address: ${data.signatoryAddress}</td>
+          <td style="font-weight: bold;"><strong>Mr. Shreedhar Shingare</strong><br/><strong>Address: ${data.signatoryAddress}</strong></td>
         </tr>
         <tr>
           <td style="font-weight: bold;">6.</td>
           <td style="font-weight: normal;">Telephone</td>
-          <td style="font-weight: bold;">${data.companyContact}</td>
+          <td style="font-weight: bold;"><strong>+91 90111 04332</strong></td>
         </tr>
         <tr>
           <td style="font-weight: bold;">7.</td>
@@ -207,12 +207,7 @@ function generateHtmlTemplates(data) {
         <tr>
           <td style="font-weight: bold;">9.</td>
           <td style="font-weight: normal;">Email address</td>
-          <td style="font-weight: bold;">${data.companyEmail}</td>
-        </tr>
-        <tr>
-          <td style="font-weight: bold;">10.</td>
-          <td style="font-weight: normal;">Witness</td>
-          <td style="font-weight: bold;">${data.witnessDetails}</td>
+          <td style="font-weight: bold;"><strong>info@markworld.com</strong></td>
         </tr>
       </tbody>
     </table>
@@ -576,41 +571,41 @@ function generateHtmlTemplates(data) {
           position: relative;
           page-break-after: always;
           font-family: 'Cambria', serif;
-          font-size: 11pt;
+          font-size: 13pt;
           line-height: 1.25;
           color: #000000;
         }
-        .page-doc-1 { font-size: 11pt; }
-        .page-doc-2 { font-size: 14pt; }
-        .page-doc-3 { font-size: 14pt; }
-        .page-doc-4 { font-size: 11pt; }
-        .page-doc-5 { font-size: 12pt; }
-        .page-doc-6 { font-size: 14pt; }
-        .page-doc-7 { font-size: 11pt; }
-        .page-doc-8 { font-size: 12pt; }
-        .page-doc-9 { font-size: 12pt; }
-        .page-doc-10 { font-size: 12pt; }
-        .page-doc-11 { font-size: 12pt; }
-        .page-doc-12 { font-size: 12pt; }
-        .page-doc-13 { font-size: 12pt; }
-        .page-doc-14 { font-size: 11pt; }
-        .page-doc-15 { font-size: 12pt; }
+        .page-doc-1 { font-size: 13pt; }
+        .page-doc-2 { font-size: 16pt; }
+        .page-doc-3 { font-size: 16pt; }
+        .page-doc-4 { font-size: 13pt; }
+        .page-doc-5 { font-size: 14pt; }
+        .page-doc-6 { font-size: 16pt; }
+        .page-doc-7 { font-size: 13pt; }
+        .page-doc-8 { font-size: 14pt; }
+        .page-doc-9 { font-size: 14pt; }
+        .page-doc-10 { font-size: 14pt; }
+        .page-doc-11 { font-size: 14pt; }
+        .page-doc-12 { font-size: 14pt; }
+        .page-doc-13 { font-size: 14pt; }
+        .page-doc-14 { font-size: 13pt; }
+        .page-doc-15 { font-size: 14pt; }
 
-        .page-doc-1 .document-title { font-size: 12pt; }
-        .page-doc-2 .document-title { font-size: 16pt; }
-        .page-doc-3 .document-title { font-size: 16pt; }
-        .page-doc-4 .document-title { font-size: 11pt; }
-        .page-doc-6 .document-title { font-size: 16pt; }
-        .page-doc-8 .document-title { font-size: 12pt; }
-        .page-doc-9 .document-title { font-size: 14pt; }
-        .page-doc-11 .document-title { font-size: 12pt; }
-        .page-doc-12 .document-title { font-size: 14pt; }
-        .page-doc-13 .document-title { font-size: 14pt; }
-        .page-doc-14 .document-title { font-size: 14pt; }
+        .page-doc-1 .document-title { font-size: 14pt; }
+        .page-doc-2 .document-title { font-size: 18pt; }
+        .page-doc-3 .document-title { font-size: 18pt; }
+        .page-doc-4 .document-title { font-size: 13pt; }
+        .page-doc-6 .document-title { font-size: 18pt; }
+        .page-doc-8 .document-title { font-size: 14pt; }
+        .page-doc-9 .document-title { font-size: 16pt; }
+        .page-doc-11 .document-title { font-size: 14pt; }
+        .page-doc-12 .document-title { font-size: 16pt; }
+        .page-doc-13 .document-title { font-size: 16pt; }
+        .page-doc-14 .document-title { font-size: 16pt; }
 
-        .page-doc-2 .address-block { font-size: 12pt; }
-        .page-doc-3 .address-block { font-size: 14pt; }
-        .page-doc-6 .address-block { font-size: 14pt; }
+        .page-doc-2 .address-block { font-size: 14pt; }
+        .page-doc-3 .address-block { font-size: 16pt; }
+        .page-doc-6 .address-block { font-size: 16pt; }
 
         p {
           margin-top: 0;
@@ -747,13 +742,18 @@ function generateHtmlTemplates(data) {
         }
         .service-table td {
           font-family: 'Cambria', serif;
-          font-size: 10pt;
-          line-height: 1.25;
+          font-size: 12pt;
+          padding: 8px 6px;
+          line-height: 1.35;
         }
         .service-table th {
           font-family: 'Cambria-Bold', 'Cambria', serif;
-          font-size: 10pt;
+          font-size: 12pt;
+          padding: 8px 6px;
           font-weight: bold;
+        }
+        .service-table tr {
+          min-height: 32px;
         }
         .escalation-table td {
           font-family: 'Cambria', serif;
@@ -808,24 +808,24 @@ async function runTest() {
   }
 
   const data = {
-    date: "05-06-2026",
+    date: "26-09-2026",
     authorityName: "Director General Medical Services (Army)",
     authorityDept: "Department of Military Affairs, Indian Army Ministry of Defence",
     authorityAddress: "New Delhi – 110023",
     bidNumber: "GEM/2026/B/7431487",
-    bidDate: "01-06-2026",
+    bidDate: "26-09-2026",
     productDescription: "Passive Blood Transportation Box Capacity 8 to 16 bags (MCBX-01), Passive Blood transportation Box Capacity 20 to 30 bags (MCBX-05), Active Blood transportation Box Capacity 20 to 30 bags (MACB-03)",
     companyName: "Mark Enterprises",
     companyAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
-    companyEmail: "info@markenworld.com",
+    companyEmail: "info@markworld.com",
     companyWebsite: "www.markenworld.com",
-    companyContact: "09175559646 / 090111 04332",
+    companyContact: "+91 90111 04332",
     manufacturerName: "M/s. Mark Enterprises",
     manufacturerAddress: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
-    signatoryName: "Korra Praveen Naik",
-    signatoryDesignation: "Partner",
-    signatoryAddress: "1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062",
-    witnessDetails: "Mr. Shreedhar Shingare (Cell No.: 09011104332)",
+    signatoryName: "Mr. Shreedhar Shingare",
+    signatoryDesignation: "Authorized Signatory – Tender manager",
+    signatoryAddress: "Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India",
+    witnessDetails: "",
     localContentPercentage: "100%",
     localContentLocation: "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra",
     preferencePolicy: "PPP MII 2017",

@@ -31,6 +31,44 @@ export function getBase64Image(filePath: string): string {
   return '';
 }
 
+export function formatDate(d?: any): string {
+  if (!d) {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  let s = String(d).trim();
+  s = s.replace(/^Date\s*[:.]\s*/i, '').trim();
+
+  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${day}-${month}-${year}`;
+  }
+
+  const ymd = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymd) {
+    const year = ymd[1];
+    const month = ymd[2].padStart(2, '0');
+    const day = ymd[3].padStart(2, '0');
+    return `${day}-${month}-${year}`;
+  }
+
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+
+  return s;
+}
+
 export interface RenderOptions {
   showSignature?: boolean;
   showStamp?: boolean;
@@ -41,15 +79,18 @@ export interface RenderOptions {
 
 export class DocumentLayoutRenderer {
   private profile: CompanyProfile;
+  private orientation: 'portrait' | 'landscape';
   private logoRoundBase64 = '';
   private logoMarkEnBase64 = '';
   private watermarkBase64 = '';
   private stampBase64 = '';
   private signatureBase64 = '';
+  private stampSigBase64 = '';
   private footerBarBase64 = '';
 
-  constructor(profile: CompanyProfile) {
+  constructor(profile: CompanyProfile, orientation: 'portrait' | 'landscape' = 'portrait') {
     this.profile = profile;
+    this.orientation = orientation;
     this.loadAssets();
   }
 
@@ -102,30 +143,64 @@ export class DocumentLayoutRenderer {
       this.signatureBase64 = getBase64Image(p);
     }
 
+    // Load Combined Stamp & Signature
+    let pStampSig = (assets as any).stampSig ? resolveBrandImagePath((assets as any).stampSig) : '';
+    if (!pStampSig || !fs.existsSync(pStampSig)) {
+      pStampSig = this.profile.theme === 'A'
+        ? resolveBrandImagePath('images/me_stamp_sig.png')
+        : resolveBrandImagePath('images/healthtech_stamp_sig.png');
+    }
+    if (fs.existsSync(pStampSig)) {
+      this.stampSigBase64 = getBase64Image(pStampSig);
+    }
+
     // Load Footer Bar
     if (assets.footerBar) {
-      let p = resolveBrandImagePath(assets.footerBar);
+      let p = '';
+      if (this.orientation === 'landscape' && this.profile.theme === 'B') {
+        const landCandidate = resolveBrandImagePath('assets/brand/marken-healthtech/footer-bar-landscape.png');
+        if (fs.existsSync(landCandidate)) {
+          p = landCandidate;
+        }
+      }
+      if (!p) {
+        p = resolveBrandImagePath(assets.footerBar);
+      }
       if (!fs.existsSync(p)) {
         p = this.profile.theme === 'B'
-          ? resolveBrandImagePath('images/healthtech_footer_bar.png')
+          ? (this.orientation === 'landscape'
+              ? resolveBrandImagePath('images/letterheads/healthtech_landscape_footer.png')
+              : resolveBrandImagePath('images/healthtech_footer_bar.png'))
           : resolveBrandImagePath('images/me_footer_bar.png');
       }
       this.footerBarBase64 = getBase64Image(p);
     }
   }
 
-  public getGlobalStyles(): string {
+  public getStampSigBase64(): string {
+    return this.stampSigBase64;
+  }
+
+  public getStampBase64(): string {
+    return this.stampBase64;
+  }
+
+  public getSignatureBase64(): string {
+    return this.signatureBase64;
+  }
+
+  public getGlobalStyles(orientation?: 'portrait' | 'landscape'): string {
+    const isLandscape = (orientation || this.orientation) === 'landscape';
     const isThemeA = this.profile.theme === 'A';
     const bodyFont = isThemeA ? "'Times New Roman', Times, serif" : "Cambria, Georgia, serif";
-    const bodySize = isThemeA ? "11pt" : "10.5pt";
-    const bodyAlign = isThemeA ? "left" : "justify";
-    const sideMargin = isThemeA ? "14mm" : "18mm";
-    const bottomPadding = isThemeA ? "20mm" : "28mm";
-    const maxBodyHeight = isThemeA ? "245mm" : "238mm";
+    const bodySize = isLandscape ? (isThemeA ? "11pt" : "10pt") : (isThemeA ? "12pt" : "10pt");
+    const bodyAlign = "justify";
+    const sideMargin = isLandscape ? (isThemeA ? "12mm" : "14mm") : (isThemeA ? "10mm" : "17.5mm");
+    const bottomPadding = isLandscape ? (isThemeA ? "14mm" : "42mm") : (isThemeA ? "18mm" : "40mm");
 
     return `
       @page {
-        size: A4 portrait;
+        size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'};
         margin: 0;
       }
 
@@ -142,7 +217,7 @@ export class DocumentLayoutRenderer {
         font-family: ${bodyFont};
         font-size: ${bodySize};
         color: #000000;
-        line-height: 1.32;
+        line-height: ${isLandscape ? (isThemeA ? '1.20' : '1.25') : (isThemeA ? '1.15' : '1.22')};
       }
 
       @media screen {
@@ -156,39 +231,40 @@ export class DocumentLayoutRenderer {
       }
 
       .page {
-        width: 210mm;
-        min-height: 297mm;
-        height: 297mm;
+        width: ${isLandscape ? '297mm' : '210mm'};
+        min-height: ${isLandscape ? '210mm' : '297mm'};
         position: relative;
         background-color: #ffffff;
         page-break-after: always;
-        overflow: hidden;
+        break-after: page;
         padding: 0;
+        box-sizing: border-box;
       }
 
       .page-inner {
         position: relative;
         width: 100%;
-        height: 100%;
+        min-height: 100%;
         padding-left: ${sideMargin};
         padding-right: ${sideMargin};
-        padding-top: 8mm;
+        padding-top: ${isLandscape ? '5mm' : '8mm'};
         padding-bottom: ${bottomPadding};
         display: flex;
         flex-direction: column;
         justify-content: flex-start;
         z-index: 2;
+        box-sizing: border-box;
       }
 
-      /* Watermark Container (Theme B) */
+      /* Watermark Container: Centered emblem, completely transparent background, no full-page dark box */
       .watermark-container {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        width: 115mm;
-        height: 115mm;
-        opacity: 0.08;
+        width: ${isLandscape ? '120mm' : '125mm'};
+        height: ${isLandscape ? '120mm' : '125mm'};
+        opacity: 0.075;
         z-index: 1;
         pointer-events: none;
         display: flex;
@@ -197,8 +273,11 @@ export class DocumentLayoutRenderer {
       }
       .watermark-container img {
         width: 100%;
-        height: auto;
+        height: 100%;
+        object-fit: contain;
+        background: transparent;
         display: block;
+        filter: grayscale(100%);
       }
 
       /* THEME A HEADER */
@@ -266,43 +345,46 @@ export class DocumentLayoutRenderer {
       /* DOCUMENT TITLE */
       .doc-title-container {
         text-align: center;
-        margin: 4px 0 8px 0;
+        margin: ${isThemeA ? '8px 0 6px 0' : '10px 0 6px 0'};
       }
       .doc-title {
-        font-size: 13pt;
+        font-family: ${bodyFont};
+        font-size: 14pt;
         font-weight: bold;
         text-decoration: underline;
         text-transform: uppercase;
         margin: 0;
         padding: 0;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.2px;
       }
       .doc-subtitle {
-        font-size: 11pt;
+        font-family: ${bodyFont};
+        font-size: ${isThemeA ? '14pt' : '10.5pt'};
         font-style: italic;
-        font-weight: bold;
-        margin: 2px 0 0 0;
+        font-weight: ${isThemeA ? 'bold' : 'normal'};
+        margin: 3px 0 0 0;
       }
 
       /* ADDRESS & REFERENCE */
       .address-block {
-        margin-bottom: 8px;
-        font-size: 10.5pt;
-        line-height: 1.28;
+        margin-bottom: ${isThemeA ? '7pt' : '6pt'};
+        font-size: ${bodySize};
+        line-height: ${isThemeA ? '1.15' : '1.20'};
       }
       .address-block strong {
         font-weight: bold;
       }
       .subject-ref-block {
-        margin-bottom: 8px;
-        font-size: 10.5pt;
-        line-height: 1.28;
+        margin-bottom: ${isThemeA ? '7pt' : '6pt'};
+        font-size: ${bodySize};
+        line-height: ${isThemeA ? '1.15' : '1.20'};
       }
       .subject-ref-table {
         width: 100%;
         border-collapse: collapse;
         border: none;
         margin: 2px 0;
+        font-size: ${bodySize};
       }
       .subject-ref-table td {
         border: none;
@@ -312,17 +394,19 @@ export class DocumentLayoutRenderer {
 
       /* CONTENT BODY WITH STRICT FOOTER CLEARANCE */
       .doc-body {
-        max-height: ${maxBodyHeight};
         font-size: ${bodySize};
-        line-height: 1.32;
+        line-height: ${isThemeA ? '1.15' : '1.22'};
         text-align: ${bodyAlign};
-        overflow: hidden;
       }
       .doc-body p {
-        margin: 0 0 5px 0;
+        margin: 0 0 ${isThemeA ? '7pt' : '6pt'} 0;
+        line-height: ${isThemeA ? '1.15' : '1.22'};
       }
       .doc-body p.justify {
         text-align: justify;
+        text-justify: inter-word;
+        margin-bottom: ${isThemeA ? '7pt' : '6pt'};
+        line-height: ${isThemeA ? '1.15' : '1.22'};
       }
       .doc-body p.center {
         text-align: center;
@@ -331,47 +415,70 @@ export class DocumentLayoutRenderer {
         font-weight: bold;
       }
       .doc-body ul, .doc-body ol {
-        margin: 3px 0 6px 16px;
+        margin: 3px 0 6px 18px;
         padding: 0;
+        font-size: ${bodySize};
       }
       .doc-body li {
-        margin-bottom: 3px;
+        margin-bottom: 3.5px;
+        line-height: ${isThemeA ? '1.15' : '1.22'};
       }
       .closing-line {
-        font-weight: bold;
-        font-style: italic;
-        margin: 8px 0 8px 0 !important;
+        font-family: ${bodyFont};
+        font-size: ${bodySize};
+        font-weight: ${isThemeA ? 'bold' : 'normal'};
+        font-style: ${isThemeA ? 'italic' : 'normal'};
+        margin: 8pt 0 6pt 0 !important;
       }
 
-      /* COMPACT DOCUMENT STYLES (For dense single-page documents like BID FORM) */
+      /* COMPACT DOCUMENT STYLES - preserves matching font sizes with clean paragraph gaps */
       .compact-doc .doc-body {
-        font-size: ${isThemeA ? '10pt' : '9.5pt'};
-        line-height: 1.22;
+        font-size: ${bodySize};
+        line-height: ${isThemeA ? '1.15' : '1.20'};
       }
       .compact-doc .doc-body p {
-        margin: 0 0 3px 0;
+        margin: 0 0 ${isThemeA ? '5.5pt' : '4pt'} 0;
+      }
+      .compact-doc .doc-body p.justify {
+        margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
+        line-height: ${isThemeA ? '1.15' : '1.20'};
       }
       .compact-doc .address-block {
-        margin-bottom: 5px;
-        font-size: 10pt;
-        line-height: 1.2;
+        margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
+        font-size: ${bodySize};
+        line-height: ${isThemeA ? '1.15' : '1.18'};
       }
       .compact-doc .subject-ref-block {
-        margin-bottom: 5px;
-        font-size: 10pt;
+        margin-bottom: ${isThemeA ? '5.5pt' : '4pt'};
+        font-size: ${bodySize};
+        line-height: ${isThemeA ? '1.15' : '1.18'};
+      }
+      .compact-doc .doc-title-container {
+        margin: ${isThemeA ? '5px 0 3px 0' : '6px 0 4px 0'};
+      }
+      .compact-doc .closing-line {
+        margin: 6pt 0 4pt 0 !important;
+      }
+      .compact-doc .signature-block {
+        margin-top: 3px;
+      }
+      .compact-doc .signature-block p {
+        margin: 0;
+        line-height: ${isThemeA ? '1.15' : '1.18'};
+        font-size: ${bodySize};
       }
       .compact-doc .sign-stamp-wrap.theme-a-sign-wrap {
-        min-height: 44px;
-        gap: 16px;
+        min-height: 36px;
+        gap: 12px;
         margin: 1px 0 2px 0;
       }
       .compact-doc .sign-img.theme-a-sign {
-        width: 68px;
-        height: 48px;
+        width: 72px !important;
+        height: 46px !important;
       }
       .compact-doc .stamp-img.theme-a-stamp {
-        width: 48px;
-        height: 48px;
+        width: 48px !important;
+        height: 48px !important;
       }
       .compact-doc .sign-stamp-wrap.theme-b-sign-wrap {
         min-height: 36px;
@@ -383,38 +490,177 @@ export class DocumentLayoutRenderer {
         height: 31px;
       }
       .compact-doc .stamp-img.theme-b-stamp {
-        width: 48px;
-        height: 48px;
+        width: 44px;
+        height: 44px;
+      }
+      .compact-doc .stamp-sig-img,
+      .compact-doc .theme-a-stamp-sig,
+      .compact-doc .signature-block img[alt="Signature &amp; Stamp"],
+      .compact-doc .signature-block img[alt="Signature & Stamp"] {
+        width: 120px !important;
+        height: 52px !important;
+        object-fit: contain;
       }
 
       /* TABLES */
       table.data-table {
         width: 100%;
         border-collapse: collapse;
-        border: 1px solid #4F81BD;
+        border: 1px solid #000000;
         margin: 6px 0 8px 0;
-        font-size: 9.5pt;
-        line-height: 1.2;
+        font-size: ${isLandscape ? "12pt" : "11.5pt"};
+        line-height: ${isLandscape ? "1.3" : "1.25"};
         page-break-inside: avoid;
+        background-color: transparent !important;
       }
       table.data-table th {
         background-color: #4F81BD;
         color: #ffffff;
         font-weight: bold;
-        padding: 3px 5px;
-        border: 1px solid #4F81BD;
+        padding: ${isLandscape ? "6px 9px" : "6px 8px"};
+        border: 1px solid #000000;
         text-align: left;
       }
       table.data-table th.center, table.data-table td.center {
         text-align: center;
       }
       table.data-table td {
-        padding: 3px 5px;
-        border: 1px solid #4F81BD;
-        vertical-align: top;
+        padding: ${isLandscape ? "6px 9px" : "6px 8px"};
+        border: 1px solid #000000;
+        vertical-align: middle;
+        background-color: transparent !important;
       }
-      table.data-table tr:nth-child(even) td {
-        background-color: #DCE6F1;
+      /* BIDDER PARTICULARS / INFORMATION (Doc 1) */
+      ${isThemeA ? `
+      table.table-bidder-info {
+        margin: 6px 0 10px 0;
+        border: 1px solid #4F81BD !important;
+      }
+      table.table-bidder-info th {
+        background-color: #4F81BD !important;
+        color: #ffffff !important;
+        border: 1px solid #4F81BD !important;
+      }
+      table.table-bidder-info td {
+        border-top: 1px solid #4F81BD !important;
+        border-bottom: 1px solid #4F81BD !important;
+        border-left: 1px solid #4F81BD !important;
+        border-right: 1px solid #4F81BD !important;
+      }
+      /* In portrait mode: remove middle partition between columns and match Image 3 style */
+      .portrait-mode table.table-bidder-info th:first-child,
+      .portrait-mode table.table-bidder-info td:first-child {
+        border-right: none !important;
+      }
+      .portrait-mode table.table-bidder-info th:last-child,
+      .portrait-mode table.table-bidder-info td:last-child {
+        border-left: none !important;
+      }
+      .portrait-mode table.table-bidder-info td:nth-child(2) {
+        border-right: none !important;
+      }
+      .portrait-mode table.table-bidder-info td:nth-child(3) {
+        border-left: none !important;
+      }
+      ` : `
+      table.table-bidder-info {
+        margin: 6px 0 10px 0;
+        width: 100%;
+        border-collapse: collapse !important;
+        border: 1px solid #000000 !important;
+      }
+      table.table-bidder-info th,
+      table.table-bidder-info td {
+        border: 1px solid #000000 !important;
+      }
+      `}
+      table.table-bidder-info th,
+      table.table-bidder-info td {
+        padding: ${isThemeA ? (isLandscape ? '8px 12px' : '9px 12px') : (isLandscape ? '7px 10px' : '8px 10px')} !important;
+        font-size: ${isThemeA ? '12pt' : '10pt'} !important;
+        line-height: ${isThemeA ? '1.22' : '1.22'} !important;
+      }
+      .portrait-mode table.table-bidder-info th,
+      .portrait-mode table.table-bidder-info td {
+        padding: ${isThemeA ? '9px 12px' : '8px 10px'} !important;
+        font-size: ${isThemeA ? '12pt' : '10pt'} !important;
+        line-height: ${isThemeA ? '1.22' : '1.22'} !important;
+      }
+      /* Clean white tables without blue fill (OEM Declaration & HT Local Content) */
+      table.table-white-header th {
+        background-color: transparent !important;
+        color: #000000 !important;
+        font-weight: bold;
+        font-size: ${isThemeA ? '12pt' : '10pt'};
+      }
+      /* Theme B Escalation Matrix (#C5D9EF header with black text) */
+      table.table-ht-matrix th {
+        background-color: #C5D9EF !important;
+        color: #000000 !important;
+        font-weight: bold;
+        font-size: 10pt !important;
+      }
+      table.table-ht-matrix td {
+        font-size: 9.8pt !important;
+      }
+      /* Theme B Service Stations (#D4DCE3 header with black text) */
+      table.table-ht-stations {
+        width: 100%;
+        border-collapse: collapse !important;
+        border: 1px solid #000000 !important;
+      }
+      table.table-ht-stations th,
+      table.table-ht-stations td {
+        border: 1px solid #000000 !important;
+        padding: 2.5px 4px !important;
+        font-size: 9.2pt !important;
+        line-height: 1.15 !important;
+        vertical-align: middle;
+      }
+      table.table-ht-stations th {
+        background-color: #D4DCE3 !important;
+        color: #000000 !important;
+        font-weight: bold;
+        font-size: 9.5pt !important;
+        padding: 3px 4px !important;
+      }
+      table.table-ht-stations tr {
+        min-height: 0 !important;
+      }
+      /* Theme A Escalation Matrix with #4F81BD / #95B3D7 borders */
+      table.table-me-matrix {
+        border: 1px solid #4F81BD !important;
+      }
+      table.table-me-matrix th {
+        border: 1px solid #4F81BD !important;
+        background-color: #4F81BD !important;
+        color: #ffffff !important;
+        font-size: 12pt !important;
+      }
+      table.table-me-matrix td {
+        border: 1px solid #95B3D7 !important;
+        font-size: 12pt !important;
+      }
+      /* Theme A Service Stations with #4F81BD header */
+      table.table-me-stations th,
+      table.table-me-stations td {
+        padding: 2.5px 4px !important;
+        font-size: 10.5pt !important;
+        line-height: 1.15 !important;
+        vertical-align: middle;
+      }
+      table.table-me-stations th {
+        background-color: #4F81BD !important;
+        color: #ffffff !important;
+        font-weight: bold;
+        font-size: 11pt !important;
+        padding: 3.5px 4px !important;
+      }
+      table.table-me-stations tr {
+        min-height: 0 !important;
+      }
+      .link-blue {
+        color: #0000FF !important;
       }
 
       /* SIGNATURE BLOCK */
@@ -424,46 +670,46 @@ export class DocumentLayoutRenderer {
         break-inside: avoid;
       }
       .signature-block p {
-        margin: 1px 0;
-        line-height: 1.22;
-        font-size: 10pt;
+        margin: 0;
+        line-height: ${isThemeA ? '1.15' : '1.20'};
+        font-size: ${bodySize};
       }
       .sign-stamp-wrap {
         display: flex;
         align-items: center;
         justify-content: flex-start;
-        gap: 20px;
-        margin: 3px 0 4px 0;
+        gap: 16px;
+        margin: 2px 0 3px 0;
       }
       .sign-stamp-wrap.theme-a-sign-wrap {
-        min-height: 56px;
+        min-height: 48px;
       }
       .sign-stamp-wrap.theme-b-sign-wrap {
-        min-height: 46px;
+        min-height: 42px;
       }
       .sign-img {
         object-fit: contain;
         display: inline-block;
       }
       .sign-img.theme-a-sign {
-        width: 82px;
-        height: 58px;
+        width: 78px;
+        height: 52px;
       }
       .sign-img.theme-b-sign {
-        width: 115px;
-        height: 37px;
+        width: 105px;
+        height: 35px;
       }
       .stamp-img {
         object-fit: contain;
         display: inline-block;
       }
       .stamp-img.theme-a-stamp {
-        width: 64px;
-        height: 64px;
+        width: 58px;
+        height: 58px;
       }
       .stamp-img.theme-b-stamp {
-        width: 64px;
-        height: 64px;
+        width: 58px;
+        height: 58px;
       }
 
       /* FOOTERS */
@@ -472,10 +718,16 @@ export class DocumentLayoutRenderer {
         bottom: 0;
         left: 0;
         width: 100%;
-        height: 5mm;
+        height: 5.5mm;
         display: flex;
         overflow: hidden;
         z-index: 10;
+      }
+      .theme-a-footer-bar img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        display: block;
       }
       .theme-a-footer-bar .bar-navy {
         flex: 1;
@@ -507,51 +759,72 @@ export class DocumentLayoutRenderer {
         vertical-align: bottom;
       }
       .theme-b-footer-left {
-        font-size: 7.2pt;
-        line-height: 1.22;
-        color: #00176D;
+        font-size: 7.5pt;
+        line-height: 1.25;
+        color: #001254;
       }
       .theme-b-footer-title {
-        font-size: 9.5pt;
+        font-size: 10pt;
         font-weight: bold;
-        color: #00176D;
-        margin-bottom: 1px;
+        color: #001254;
+        margin-bottom: 1.5px;
+        letter-spacing: 0.2px;
       }
       .theme-b-footer-cin {
-        font-size: 7.5pt;
+        font-size: 7.8pt;
         font-weight: bold;
-        color: #00176D;
-        margin-bottom: 1px;
+        color: #001254;
+        margin-bottom: 1.5px;
       }
       .theme-b-footer-right {
         text-align: right;
-        font-size: 7.5pt;
-        line-height: 1.3;
-        color: #00176D;
+        font-size: 7.8pt;
+        font-weight: 600;
+        line-height: 1.35;
+        color: #001254;
         white-space: nowrap;
       }
+      .theme-b-footer-graphic {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: ${isLandscape ? "39mm" : "89.6pt"};
+        z-index: 10;
+        margin: 0;
+        padding: 0;
+      }
+      .theme-b-footer-graphic img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        object-position: bottom;
+        display: block;
+      }
+
       .theme-b-footer-bar {
         position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
-        height: 5mm;
+        height: 5.5mm;
         display: flex;
         overflow: hidden;
         z-index: 10;
       }
       .theme-b-footer-bar .bar-navy {
         width: 63%;
-        background-color: #00176D;
+        background-color: #001254;
       }
       .theme-b-footer-bar .bar-cyan {
         width: 37%;
-        background-color: #0095D9;
+        background-color: #0090D6;
       }
     `;
   }
 
   public renderHeader(docDate?: string): string {
+    const formattedDate = (this.profile.theme === 'B' ? '' : (docDate ? formatDate(docDate) : ''));
     if (this.profile.theme === 'A') {
       const addr = this.profile.addressLines;
       return `
@@ -572,6 +845,7 @@ export class DocumentLayoutRenderer {
             </tr>
           </table>
           <div class="theme-a-divider"></div>
+          ${formattedDate ? `<div class="theme-a-date-row" style="text-align: right; font-size: 11pt; margin: 2px 0 6px 0;">Date: ${formattedDate}</div>` : ''}
         </div>
         <!-- HEADER_END -->
       `;
@@ -581,7 +855,7 @@ export class DocumentLayoutRenderer {
         <!-- HEADER_START -->
         <div class="theme-b-header">
           ${this.logoMarkEnBase64 ? `<img src="${this.logoMarkEnBase64}" width="160" height="44" class="theme-b-logo" style="width: 44mm; height: 16mm; object-fit: contain;" />` : ''}
-          ${docDate ? `<div class="theme-b-date-row">Date: ${docDate}</div>` : ''}
+          ${formattedDate ? `<div class="theme-b-date-row">Date: ${formattedDate}</div>` : ''}
         </div>
         <!-- HEADER_END -->
       `;
@@ -610,31 +884,15 @@ export class DocumentLayoutRenderer {
     } else {
       return `
         <!-- FOOTER_START -->
-        <div class="theme-b-footer-block">
-          <table class="theme-b-footer-table">
-            <tr>
-              <td class="theme-b-footer-left">
-                <div class="theme-b-footer-title">${this.profile.legalName}</div>
-                ${this.profile.cin ? `<div class="theme-b-footer-cin">CIN No: ${this.profile.cin}</div>` : ''}
-                ${this.profile.registeredOffice ? `<div><strong>Regd. Off &amp; Factory:</strong> ${this.profile.registeredOffice}</div>` : ''}
-                ${this.profile.corporateOffice ? `<div><strong>Corp. Off.:</strong> ${this.profile.corporateOffice}</div>` : ''}
-                ${this.profile.globalSalesOffice ? `<div><strong>Global Sales Off.:</strong> ${this.profile.globalSalesOffice}</div>` : ''}
-              </td>
-              <td class="theme-b-footer-right">
-                <div>&#9742; ${this.profile.phoneDisplay || this.profile.phones[0]}</div>
-                <div>&#9993; ${this.profile.emailDisplay || this.profile.emails[0]}</div>
-                <div>&#127760; ${this.profile.website}</div>
-              </td>
-            </tr>
-          </table>
-          <div class="theme-b-footer-bar">
-            ${this.footerBarBase64 ? `
-              <img src="${this.footerBarBase64}" width="650" height="6" style="width: 100%; height: 100%; object-fit: fill; display: block;" />
-            ` : `
+        <div class="theme-b-footer-graphic">
+          ${this.footerBarBase64 ? `
+            <img src="${this.footerBarBase64}" width="596" height="90" style="width: 100%; height: 100%; object-fit: fill; display: block;" />
+          ` : `
+            <div class="theme-b-footer-bar">
               <div class="bar-navy"></div>
               <div class="bar-cyan"></div>
-            `}
-          </div>
+            </div>
+          `}
         </div>
         <!-- FOOTER_END -->
       `;
@@ -645,7 +903,7 @@ export class DocumentLayoutRenderer {
     if (this.profile.theme === 'B' && this.watermarkBase64) {
       return `
         <div class="watermark-container">
-          <img src="${this.watermarkBase64}" width="420" height="420" style="width: 115mm; height: 115mm; object-fit: contain;" />
+          <img src="${this.watermarkBase64}" alt="Watermark" />
         </div>
       `;
     }
@@ -656,53 +914,105 @@ export class DocumentLayoutRenderer {
     const showSignature = opts.showSignature !== false;
     const showStamp = opts.showStamp !== false;
     const isThemeA = this.profile.theme === 'A';
+    const isLandscape = this.orientation === 'landscape';
+
+    if (isLandscape) {
+      if (isThemeA) {
+        return `
+          <div class="signature-block signature-block-landscape" style="margin-top: 4px;">
+            <p style="margin-bottom: 2px; font-size: 12.5pt;">On behalf of <strong>${this.profile.shortName}</strong></p>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+              <div style="font-size: 11.5pt; line-height: 1.25; min-width: 190px;">
+                <div>Name: <strong>${this.profile.signatoryName}</strong></div>
+                <div>${this.profile.signatoryDesignation}</div>
+                <div>Place: ${extraLines.place || this.profile.place} | Date: ${formatDate(extraLines.date || opts.docDate || '26-09-2026')}</div>
+              </div>
+              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="130" height="66" class="stamp-sig-img" style="width: 130px; height: 66px; object-fit: contain; margin-left: 6px;" />` : `
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="84" height="50" class="sign-img theme-a-sign" style="width: 84px; height: 50px; object-fit: contain;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="54" height="54" class="stamp-img theme-a-stamp" style="width: 54px; height: 54px; object-fit: contain;" />` : ''}
+              `}
+            </div>
+          </div>
+        `;
+      } else {
+        return `
+          <div class="signature-block signature-block-landscape" style="margin-top: 4px;">
+            <p style="margin-bottom: 2px; font-weight: bold; font-size: 10pt;">Yours faithfully,</p>
+            <p style="margin-top: 0; margin-bottom: 3px; font-weight: bold; font-size: 10pt;">For and on behalf of ${this.profile.legalName}</p>
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
+              <div style="font-size: 9.5pt; line-height: 1.25; min-width: 210px;">
+                <div style="font-weight: bold;">${this.profile.signatoryName}</div>
+                <div>${this.profile.signatoryDesignation}</div>
+              </div>
+              ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="135" height="65" class="stamp-sig-img" style="width: 135px; height: 65px; object-fit: contain; margin-left: 6px;" alt="Signature &amp; Stamp" />` : `
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="95" height="46" class="sign-img theme-b-sign" style="width: 95px; height: 46px; object-fit: contain;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="54" height="54" class="stamp-img theme-b-stamp" style="width: 54px; height: 54px; object-fit: contain;" />` : ''}
+              `}
+            </div>
+          </div>
+        `;
+      }
+    }
 
     if (isThemeA) {
       return `
         <div class="signature-block">
-          <p style="margin-bottom: 2px;">On behalf of <strong>${this.profile.shortName}</strong></p>
-          <div class="sign-stamp-wrap theme-a-sign-wrap">
-            ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="82" height="58" class="sign-img theme-a-sign" style="width: 82px; height: 58px;" />` : ''}
-            ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="64" height="64" class="stamp-img theme-a-stamp" style="width: 64px; height: 64px;" />` : ''}
+          <p style="margin-bottom: 2px; font-size: 12pt;">On behalf of <strong>${this.profile.shortName}</strong></p>
+          <div style="margin: 2px 0 3px 0;">
+            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="130" height="56" class="stamp-sig-img theme-a-stamp-sig" style="width: 130px; height: 56px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
+              <div class="sign-stamp-wrap theme-a-sign-wrap">
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="78" height="52" class="sign-img theme-a-sign" style="width: 78px; height: 52px;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="58" height="58" class="stamp-img theme-a-stamp" style="width: 58px; height: 58px;" />` : ''}
+              </div>
+            `}
           </div>
-          <p>Name: <strong>${this.profile.signatoryName}</strong></p>
-          <p>${this.profile.signatoryDesignation}</p>
-          <p>Place: ${extraLines.place || this.profile.place}</p>
-          <p>Date: ${extraLines.date || opts.docDate || new Date().toLocaleDateString('en-GB')}</p>
+          <p style="margin: 0; line-height: 1.15; font-size: 12pt;">Name: ${this.profile.signatoryName}</p>
+          <p style="margin: 0; line-height: 1.15; font-size: 12pt;">${this.profile.signatoryDesignation}</p>
+          <p style="margin: 0; line-height: 1.15; font-size: 12pt;">Place: ${extraLines.place || this.profile.place}</p>
+          <p style="margin: 0; line-height: 1.15; font-size: 12pt;">Date: ${formatDate(extraLines.date || opts.docDate || '26-09-2026')}</p>
         </div>
       `;
     } else {
       // Theme B
       return `
         <div class="signature-block">
-          <p style="margin-bottom: 2px; font-weight: bold;">Yours faithfully,</p>
-          <p style="margin-top: 0; margin-bottom: 4px; font-weight: bold;">For and on behalf of ${this.profile.legalName}</p>
-          <div class="sign-stamp-wrap theme-b-sign-wrap">
-            ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="115" height="37" class="sign-img theme-b-sign" style="width: 115px; height: 37px;" />` : ''}
-            ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="64" height="64" class="stamp-img theme-b-stamp" style="width: 64px; height: 64px;" />` : ''}
+          <p style="margin-bottom: 2px; font-weight: bold; font-size: 10pt;">Yours faithfully,</p>
+          <p style="margin-top: 0; margin-bottom: 3px; font-weight: bold; font-size: 10pt;">For and on behalf of ${this.profile.legalName}</p>
+          <div style="margin: 2px 0 3px 0;">
+            ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="150" height="70" style="width: 150px; height: 70px; object-fit: contain; display: block;" alt="Signature &amp; Stamp" />` : `
+              <div class="sign-stamp-wrap theme-b-sign-wrap">
+                ${showSignature && this.signatureBase64 ? `<img src="${this.signatureBase64}" width="105" height="35" class="sign-img theme-b-sign" style="width: 105px; height: 35px;" />` : ''}
+                ${showStamp && this.stampBase64 ? `<img src="${this.stampBase64}" width="58" height="58" class="stamp-img theme-b-stamp" style="width: 58px; height: 58px;" />` : ''}
+              </div>
+            `}
           </div>
-          <p style="font-weight: bold; margin-bottom: 2px;">${this.profile.signatoryName}</p>
-          <p style="margin-top: 0;">${this.profile.signatoryDesignation}</p>
-          <p style="margin-top: 3px;">Place: ${extraLines.place || this.profile.place}</p>
-          <p>Date: ${extraLines.date || opts.docDate || new Date().toLocaleDateString('en-GB')}</p>
+          <p style="margin: 0; line-height: 1.20; font-size: 10pt;">${this.profile.signatoryName}</p>
+          <p style="margin: 0; line-height: 1.20; font-size: 10pt;">${this.profile.signatoryDesignation}</p>
         </div>
       `;
     }
   }
 
-  public wrapPage(content: string, options: { title?: string; subtitle?: string; docDate?: string; pageClass?: string } = {}): string {
-    const { title, subtitle, docDate, pageClass = '' } = options;
+  public wrapPage(content: string, options: { title?: string; subtitle?: string; docDate?: string; pageClass?: string; dateBelowTitle?: boolean } = {}): string {
+    const { title, subtitle, docDate, pageClass = '', dateBelowTitle = false } = options;
+    const isLandscape = this.orientation === 'landscape';
+    const modeClass = isLandscape ? 'landscape-mode' : 'portrait-mode';
+    const shouldPlaceDateBelow = this.profile.theme !== 'B' && (dateBelowTitle || title === 'BID FORM');
+    const formattedDate = (this.profile.theme === 'B' ? undefined : (docDate ? formatDate(docDate) : undefined));
 
     return `
-      <div class="page ${pageClass}">
+      <div class="page ${modeClass} ${pageClass}">
         ${this.renderWatermark()}
         <div class="page-inner">
-          ${this.renderHeader(docDate)}
+          ${this.renderHeader(shouldPlaceDateBelow ? undefined : docDate)}
           ${title ? `
             <div class="doc-title-container">
               <h2 class="doc-title">${title}</h2>
               ${subtitle ? `<div class="doc-subtitle">${subtitle}</div>` : ''}
             </div>
+          ` : ''}
+          ${shouldPlaceDateBelow && formattedDate ? `
+            <div class="theme-b-date-row" style="text-align: right; margin: 2px 0 8px 0; font-size: 10pt;">Date: ${formattedDate}</div>
           ` : ''}
           <div class="doc-body">
             ${content}
