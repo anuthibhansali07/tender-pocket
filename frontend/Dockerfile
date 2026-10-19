@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-RUN pip3 install --no-cache-dir pypdf || pip3 install --no-cache-dir --break-system-packages pypdf
+RUN pip3 install --no-cache-dir pypdf python-docx || pip3 install --no-cache-dir --break-system-packages pypdf python-docx
 
 # Set working directory
 WORKDIR /app
@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-RUN pip3 install --no-cache-dir pypdf || pip3 install --no-cache-dir --break-system-packages pypdf
+RUN pip3 install --no-cache-dir pypdf python-docx || pip3 install --no-cache-dir --break-system-packages pypdf python-docx
 
 # Set environment to production
 ENV NODE_ENV=production

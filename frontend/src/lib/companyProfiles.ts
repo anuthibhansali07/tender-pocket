@@ -44,6 +44,7 @@ export interface CompanyProfile {
     watermark?: string;
     stamp: string;
     signature: string;
+    stampSig?: string;
     footerBar: string;
   };
 }
@@ -59,14 +60,14 @@ export const COMPANY_PROFILES: Record<'me' | 'healthtech', CompanyProfile> = {
     addressLines: [
       'Shed No. 1, Plot No. 93/2, Street No. 17',
       'MIDC Satpur, Nashik – 422007, Maharashtra, India',
-      'Email ID: info@markenworld.com URL: www.markenworld.com',
-      'Contact No.: 09175559646 / 090111 04332'
+      'Email ID: info@markworld.com URL: www.markenworld.com',
+      'Contact No.: 09175559646 / +91 90111 04332'
     ],
     fullAddress: 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-    phones: ['09175559646', '090111 04332'],
-    phoneDisplay: '09175559646 / 090111 04332',
-    emails: ['info@markenworld.com'],
-    emailDisplay: 'info@markenworld.com',
+    phones: ['09175559646', '+91 90111 04332'],
+    phoneDisplay: '09175559646 / +91 90111 04332',
+    emails: ['info@markworld.com', 'info@markenworld.com'],
+    emailDisplay: 'info@markworld.com',
     website: 'www.markenworld.com',
     manufacturerName: 'M/s. Mark Enterprises',
     manufacturerAddress: 'Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra',
@@ -129,20 +130,21 @@ export const COMPANY_PROFILES: Record<'me' | 'healthtech', CompanyProfile> = {
     localContentPct: '100%',
     preferencePolicy: 'PPP MII 2017',
     brandColors: {
-      primary: '#1F3C88',
-      headerRule: '#1F3C88',
-      barNavy: '#1F1F6E',
-      barCyan: '#0095D9',
+      primary: '#001254',
+      headerRule: '#001254',
+      barNavy: '#001254',
+      barCyan: '#0090D6',
       tableHeader: '#4F81BD',
       tableBorder: '#4F81BD',
       tableAltRow: '#DCE6F1',
-      footerTitle: '#1F3C88'
+      footerTitle: '#001254'
     },
     assetPaths: {
       logoMarkEn: 'assets/brand/marken-healthtech/logo-markEn.png',
       watermark: 'assets/brand/marken-healthtech/watermark.png',
       stamp: 'assets/brand/marken-healthtech/stamp.png',
       signature: 'assets/brand/marken-healthtech/signature.png',
+      stampSig: 'assets/brand/marken-healthtech/stamp_sig.png',
       footerBar: 'assets/brand/marken-healthtech/footer-bar.png'
     }
   }

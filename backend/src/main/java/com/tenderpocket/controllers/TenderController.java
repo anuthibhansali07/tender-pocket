@@ -1297,6 +1297,40 @@ public class TenderController {
             }
         }
 
+        if (body.containsKey("current_stage") || body.containsKey("currentStage")) {
+            String val = (String) (body.containsKey("current_stage") ? body.get("current_stage") : body.get("currentStage"));
+            if (val != null && !val.isBlank()) {
+                tender.setCurrentStage(val.trim());
+                logDetails.add("current stage updated to '" + val + "'");
+            }
+        }
+
+        if (body.containsKey("tpc_purchase_price") || body.containsKey("tpcPurchasePrice")) {
+            Object rawVal = body.containsKey("tpc_purchase_price") ? body.get("tpc_purchase_price") : body.get("tpcPurchasePrice");
+            if (rawVal != null) {
+                try {
+                    double p = Double.parseDouble(rawVal.toString().trim());
+                    if (Double.isFinite(p) && p > 0) {
+                        tender.setTpcPurchasePrice(p);
+                        logDetails.add("TPC purchase price updated to " + p);
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        if (body.containsKey("mis_final_price") || body.containsKey("misFinalPrice")) {
+            Object rawVal = body.containsKey("mis_final_price") ? body.get("mis_final_price") : body.get("misFinalPrice");
+            if (rawVal != null) {
+                try {
+                    double p = Double.parseDouble(rawVal.toString().trim());
+                    if (Double.isFinite(p) && p > 0) {
+                        tender.setMisFinalPrice(p);
+                        logDetails.add("MIS final price updated to " + p);
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         tender.setAiDetailsSummary(null);
         tender.setAiHistorySummary(null);
         tenderRepository.save(tender);

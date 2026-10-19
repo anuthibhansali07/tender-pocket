@@ -4,11 +4,13 @@ import { generateHtmlTemplates, generateTechnicalSpecificationHtml } from '@/lib
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { companyKey = 'me', docType = 'all', sampleData = {} } = body;
+    const { companyKey = 'me', docType = 'all', orientation = 'portrait', sampleData = {} } = body;
+    const effectiveOrientation = docType === 'spec' ? 'landscape' : (sampleData.orientation || orientation);
 
     const data = {
       companyKey,
-      ...sampleData
+      ...sampleData,
+      orientation: effectiveOrientation
     };
 
     let html = '';
