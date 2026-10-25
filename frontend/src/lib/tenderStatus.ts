@@ -1,14 +1,13 @@
 /**
- * Centralized Tender Status and Pipeline Stage Resolution Engine
- * Ensures 100% calculation consistency across all API routes and frontend dashboards:
- * - /api/tenders
- * - /api/tenders/[id]
- * - /api/tenders/stats
- * - /api/analytics
- * - /api/approvals/*
- * - StatusDashboard
- * - Tender Detail Page (/tenders/[id])
- * - Main Dashboard Drawer (/page.tsx)
+ * Centralized Tender Status and Pipeline Stage Resolution Engine (Restructured 7-Step Workflow)
+ *
+ * Step 1: Executive Assignment (Tender assigned to Tender Executive)
+ * Step 2: Technical Specification (Executive generates -> Clearance reviews, edits locally, uploads final spec with All Comply / Deviations)
+ * Step 3: Executive Handover & Document Preparation (Tender returns to Executive -> full template bid package generated)
+ * Step 4: EMD Payment Gateway (Applicability check -> auto-skips if exempt; otherwise Beneficiary Name & confidential receipt submitted)
+ * Step 5: Dual Track (Simultaneous parallel execution: Track A Commercial Pricing + Track B Full Path Document Verification)
+ * Step 6: Final Submission (Submit Tender button unlocks ONLY when BOTH Track A & Track B pass)
+ * Step 7: Outcome (Won / Lost / Commercial Evaluation)
  */
 
 export function getTodayISTString(): string {
@@ -47,7 +46,6 @@ export function resolveStatus(t: any, todayIST: string): string {
     if (t.status === 'Not Participating') {
       return 'Missed Opportunity';
     }
-    // Only unreviewed / unacted bids become Missed Deadline
     if (t.status === 'Issued' || t.status === 'New' || !t.status) {
       return 'Missed Deadline';
     }
@@ -56,7 +54,6 @@ export function resolveStatus(t: any, todayIST: string): string {
   if (t.status === 'Not Participating') return 'Not Participating';
   if (t.status === 'Participating') return 'Participating';
 
-  // Default or 'Issued' / 'New' status
   if (isLapsed(t.publish_date, todayIST)) {
     return 'Lapsed';
   }
@@ -70,18 +67,17 @@ export interface PipelineStep {
 }
 
 export const PIPELINE_STEPS: PipelineStep[] = [
-  { num: 1, name: 'Spec Clearance', short: 'Clearance' },
-  { num: 2, name: 'TPC Pricing', short: 'TPC Quote' },
-  { num: 3, name: 'MIS Pricing', short: 'MIS Price' },
-  { num: 4, name: 'Docs Prep', short: 'Docs Prep' },
-  { num: 5, name: 'Docs Approval', short: 'Verification' },
-  { num: 6, name: 'EMD Payment', short: 'EMD Payment' },
-  { num: 7, name: 'Final Submission', short: 'Final Submission' },
-  { num: 8, name: 'Outcome', short: 'Outcome' }
+  { num: 1, name: 'Executive Assignment', short: 'Assignment' },
+  { num: 2, name: 'Technical Specification', short: 'Tech Spec' },
+  { num: 3, name: 'Bid Document Prep', short: 'Bid Prep' },
+  { num: 4, name: 'EMD Payment Step', short: 'EMD Payment' },
+  { num: 5, name: 'Pricing & Verification', short: 'Dual Track' },
+  { num: 6, name: 'Final Submission', short: 'Submit Tender' },
+  { num: 7, name: 'Outcome', short: 'Outcome' }
 ];
 
 export interface TenderStageDetails {
-  stageNumber: number; // 0 to 8
+  stageNumber: number; // 0 to 7
   stageKey: string;
   stageName: string;
   shortStage: string;
@@ -92,13 +88,21 @@ export interface TenderStageDetails {
   badgeBorder: string;
   needsAction: boolean;
   actionButtonText: string;
-  stepCompleted: boolean[]; // Array of 8 booleans for steps 1..8
-  currentStepIndex: number; // 0..7
-  progressPercent: number; // 0..100 for line fill
+  stepCompleted: boolean[]; // Array of 7 booleans for steps 1..7
+  currentStepIndex: number; // 0..6
+  progressPercent: number; // 0..100
   isWon: boolean;
   isLost: boolean;
   isSubmitted: boolean;
   isDeclined: boolean;
+  // Dual-Track metadata
+  isDualTrackActive?: boolean;
+  isPricingApproved?: boolean;
+  isDocsVerified?: boolean;
+  canFinalSubmit?: boolean;
+  isEmdSkipped?: boolean;
+  pricingRoute?: string;
+  isRoutingPending?: boolean;
 }
 
 export function hasWorkingPathSaved(tender: any): boolean {
@@ -109,13 +113,13 @@ export function hasWorkingPathSaved(tender: any): boolean {
 
 export function areBidDocsGenerated(tender: any): boolean {
   if (!tender) return false;
-  return hasWorkingPathSaved(tender);
+  if (hasWorkingPathSaved(tender)) return true;
+  const docs = `${tender.downloaded_docs || ''} ${tender.downloadedDocs || ''}`;
+  return /bid_documents_/i.test(docs) || /generated bid documents/i.test(docs);
 }
 
 /**
- * Robust, Canonical Stage Resolver
- * Checks milestones strictly in sequential pipeline progression with complete prerequisite verification.
- * Eliminates discrepancies between horizontal cards, stepper badges, and database states.
+ * Robust Canonical Stage Resolver for the Restructured 7-Step Workflow
  */
 export function resolveTenderStageDetails(tender: any, userRole?: string | null): TenderStageDetails {
   if (!tender) {
@@ -124,14 +128,14 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
       stageKey: 'NEW_UNREVIEWED',
       stageName: 'Intake: New Assignment',
       shortStage: 'Decision Needed',
-      actionTitle: 'Action: Review Tender',
-      actionDesc: 'New tender assigned. Review requirements.',
+      actionTitle: 'Action: Assign Tender Executive',
+      actionDesc: 'New tender intake. Assign to a Tender Executive.',
       statusColor: '#f59e0b',
       badgeBg: 'rgba(245, 158, 11, 0.12)',
       badgeBorder: 'rgba(245, 158, 11, 0.3)',
       needsAction: true,
-      actionButtonText: 'Review Bid',
-      stepCompleted: [false, false, false, false, false, false, false, false],
+      actionButtonText: 'Assign Executive',
+      stepCompleted: [false, false, false, false, false, false, false],
       currentStepIndex: 0,
       progressPercent: 0,
       isWon: false,
@@ -143,10 +147,11 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
 
   const role = (userRole || '').trim();
   const isClearanceRole = role === 'Clearance Team' || role === 'Specification Team';
-  const isTpcRole = role === 'TPC Team' || role === 'TPC Pricing Team';
-  const isMisRole = role === 'MIS Team' || role === 'Admin';
+  const isTpcRole = role === 'TPC Team' || role === 'TPC Pricing Team' || role === 'Admin';
+  const isMisRole = role === 'MIS Team';
+  const isExecutiveRole = role === 'Tender Executive' || role === 'Executive';
 
-  // 1. Terminal State: Won
+  // Terminal State: Won
   const isWon = tender.status === 'Won' || 
     tender.status === 'Awarded' || 
     tender.outcome_status === 'Won' || 
@@ -154,7 +159,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
 
   if (isWon) {
     return {
-      stageNumber: 8,
+      stageNumber: 7,
       stageKey: 'WON',
       stageName: 'Won & Awarded',
       shortStage: 'Won / Awarded',
@@ -165,8 +170,8 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
       badgeBorder: 'rgba(16, 185, 129, 0.3)',
       needsAction: false,
       actionButtonText: 'View Award',
-      stepCompleted: [true, true, true, true, true, true, true, true],
-      currentStepIndex: 7,
+      stepCompleted: [true, true, true, true, true, true, true],
+      currentStepIndex: 6,
       progressPercent: 100,
       isWon: true,
       isLost: false,
@@ -175,7 +180,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // 2. Terminal State: Lost
+  // Terminal State: Lost
   const isLost = tender.status === 'Lost' || 
     tender.status === 'Not Awarded' || 
     tender.outcome_status === 'Lost' || 
@@ -183,7 +188,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
 
   if (isLost) {
     return {
-      stageNumber: 8,
+      stageNumber: 7,
       stageKey: 'LOST',
       stageName: 'Lost / Closed',
       shortStage: 'Lost / Closed',
@@ -194,8 +199,8 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
       badgeBorder: 'rgba(239, 68, 68, 0.3)',
       needsAction: false,
       actionButtonText: 'View Details',
-      stepCompleted: [true, true, true, true, true, true, true, true],
-      currentStepIndex: 7,
+      stepCompleted: [true, true, true, true, true, true, true],
+      currentStepIndex: 6,
       progressPercent: 100,
       isWon: false,
       isLost: true,
@@ -204,7 +209,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // 3. Declined (Not Participating)
+  // Declined (Not Participating)
   if (tender.status === 'Not Participating') {
     return {
       stageNumber: 0,
@@ -218,7 +223,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
       badgeBorder: 'rgba(100, 116, 139, 0.3)',
       needsAction: false,
       actionButtonText: 'Re-activate',
-      stepCompleted: [false, false, false, false, false, false, false, false],
+      stepCompleted: [false, false, false, false, false, false, false],
       currentStepIndex: 0,
       progressPercent: 0,
       isWon: false,
@@ -228,40 +233,78 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // 4. Portal Submitted State (historical or verified submission)
+  // Portal Submitted State
   const isSubmittedToPortal = tender.status === 'Submitted' || 
     tender.status === 'Filed' || 
     (tender.submission_status === 'Approved' && (!tender.outcome_status || tender.outcome_status === 'Pending')) ||
     (tender.current_stage === 'WIN_LOSS_PENDING' && tender.submission_status === 'Approved');
 
-  // 5. Strict Sequential Prerequisite Evaluation
-  // Step 1: Spec Clearance
-  const isStep1Done = isSubmittedToPortal || tender.spec_verification_status === 'Approved';
+  // Milestone Progression:
+  // Step 1: Executive Assignment
+  const hasExecutive = Boolean(tender.mis_executive && tender.mis_executive.trim() !== '');
+  const isStep1Done = isSubmittedToPortal || hasExecutive;
 
-  // Step 2: TPC Pricing (Requires Step 1 done)
-  const hasTpcPrice = Boolean(
-    tender.has_tpc_price || 
-    (tender.tpc_purchase_price && Number(tender.tpc_purchase_price) > 0) || 
+  // Step 2: Technical Specification (Generated & Approved by Clearance Team)
+  const isSpecApproved = tender.spec_verification_status === 'Approved' || Boolean(tender.final_tech_spec_filename);
+  const isStep2Done = isSubmittedToPortal || (isStep1Done && isSpecApproved);
+
+  // Step 3: Bid package. Comes after clearance and before EMD.
+  const docsGenerated = areBidDocsGenerated(tender);
+  const isPastStep3 = [
+    'PAYMENT_APPROVAL', 'EMD_PENDING', 'EMD_PAYMENT', 'EMD_PAYMENT_READY',
+    'DUAL_TRACK', 'DUAL_TRACK_ACTIVE', 'TPC_PRICING', 'MIS_PRICING',
+    'DOC_VERIFICATION', 'SUBMISSION_READY', 'SUBMISSION_PENDING',
+    'SUBMITTED', 'WIN_LOSS_PENDING', 'WON', 'LOST'
+  ].includes((tender.current_stage || '').toUpperCase())
+    || ['Pending', 'Approved', 'Exempt'].includes(tender.payment_status)
+    || ['PENDING', 'APPROVED', 'EXEMPT_SKIPPED'].includes(tender.emd_status)
+    || Boolean(tender.emd_beneficiary_name && tender.emd_beneficiary_name.trim() !== '')
+    || Boolean(tender.pricing_status === 'Approved')
+    || Boolean(tender.verification_status === 'Approved');
+
+  const isStep3Done = isSubmittedToPortal || isPastStep3 || (isStep2Done && docsGenerated && tender.verification_status !== 'Rejected');
+
+  // Step 4: EMD Payment Gateway (Check if exempt -> auto-skip; else check approved)
+  const isExplicitlyApplicable = Boolean(
+    tender.emd_applicable === true ||
+    tender.emd_applicable === 1 ||
+    tender.emd_applicable === 'true' ||
+    tender.current_stage === 'PAYMENT_APPROVAL' ||
+    tender.payment_status === 'Pending' ||
+    (tender.emd_beneficiary_name && tender.emd_beneficiary_name.trim() !== '')
+  );
+
+  const isEmdExempt = !isExplicitlyApplicable && Boolean(
+    tender.emd_applicable === false ||
+    tender.emd_applicable === 0 ||
+    tender.emd_applicable === 'false' ||
+    tender.payment_status === 'Exempt' ||
+    tender.emd_status === 'EXEMPT_SKIPPED' ||
+    (tender.emd_raw && /exempt|nil|not applicable/i.test(String(tender.emd_raw)))
+  );
+
+  const isPastStep4 = [
+    'DUAL_TRACK', 'DUAL_TRACK_ACTIVE', 'TPC_PRICING', 'MIS_PRICING',
+    'DOC_VERIFICATION', 'SUBMISSION_READY', 'SUBMISSION_PENDING',
+    'SUBMITTED', 'WIN_LOSS_PENDING', 'WON', 'LOST'
+  ].includes((tender.current_stage || '').toUpperCase())
+    || tender.pricing_status === 'Approved'
+    || tender.verification_status === 'Approved';
+
+  const isEmdApproved = isEmdExempt || tender.payment_status === 'Approved' || tender.emd_status === 'APPROVED' || isPastStep4;
+  const isStep4Done = isSubmittedToPortal || (isStep3Done && isEmdApproved);
+
+  // Step 5: Dual Track (Track A Pricing + Track B Document Verification)
+  const isPricingApproved = Boolean(
+    tender.pricing_status === 'Approved' ||
     (tender.mis_final_price && Number(tender.mis_final_price) > 0)
   );
-  const isStep2Done = isSubmittedToPortal || (isStep1Done && hasTpcPrice);
+  const isDocsVerified = Boolean(tender.verification_status === 'Approved');
+  const isDualTrackComplete = isPricingApproved && isDocsVerified;
+  const isStep5Done = isSubmittedToPortal || (isStep4Done && isDualTrackComplete);
 
-  // Step 3: MIS Pricing (Requires Step 2 done)
-  const hasMisPrice = Boolean(tender.mis_final_price && Number(tender.mis_final_price) > 0);
-  const isStep3Done = isSubmittedToPortal || (isStep2Done && hasMisPrice);
-
-  // Step 4: Docs Prep (Requires Step 3 done)
-  const docsGenerated = areBidDocsGenerated(tender);
-  const isStep4Done = isSubmittedToPortal || (isStep3Done && docsGenerated && tender.verification_status !== 'Rejected');
-
-  // Step 5: Docs Approval / Verification (Requires Step 4 done)
-  const isStep5Done = isSubmittedToPortal || (isStep4Done && tender.verification_status === 'Approved');
-
-  // Step 6: EMD Payment (Requires Step 5 done)
-  const isStep6Done = isSubmittedToPortal || (isStep5Done && tender.payment_status === 'Approved');
-
-  // Step 7: Submission Audit / Filed (Requires Step 6 done)
-  const isStep7Done = isSubmittedToPortal || (isStep6Done && (tender.submission_status === 'Approved' || tender.status === 'Submitted' || tender.status === 'Filed'));
+  // Step 6: Final Submission
+  const isStep6Done = isSubmittedToPortal || (isStep5Done && (tender.submission_status === 'Approved' || tender.status === 'Submitted' || tender.status === 'Filed'));
 
   const stepCompleted = [
     isStep1Done,
@@ -270,117 +313,28 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     isStep4Done,
     isStep5Done,
     isStep6Done,
-    isStep7Done,
     false
   ];
 
-  // Resolve Active Stage in Forward Sequential Progression:
+  // Resolve Active Stage in Sequence:
 
-  // If Step 1 is NOT complete:
+  // If Step 1 is NOT complete (Needs Executive Assignment):
   if (!isStep1Done) {
-    if (tender.spec_verification_status === 'Rejected') {
-      return {
-        stageNumber: 1,
-        stageKey: 'SPEC_REJECTED',
-        stageName: 'Technical Specs Rejected',
-        shortStage: 'Specs Rejected',
-        actionTitle: 'Action: Re-upload Technical Specs',
-        actionDesc: 'Clearance Team rejected technical specification. Upload revised document.',
-        statusColor: '#ef4444',
-        badgeBg: 'rgba(239, 68, 68, 0.15)',
-        badgeBorder: 'rgba(239, 68, 68, 0.35)',
-        needsAction: true,
-        actionButtonText: 'Upload Documents',
-        stepCompleted,
-        currentStepIndex: 0,
-        progressPercent: 0,
-        isWon: false,
-        isLost: false,
-        isSubmitted: false,
-        isDeclined: false
-      };
-    }
-    if (tender.spec_verification_status === 'Pending') {
-      return {
-        stageNumber: 1,
-        stageKey: 'SPEC_CLEARANCE_PENDING',
-        stageName: 'Spec Clearance Pending',
-        shortStage: 'Clearance Pending',
-        actionTitle: 'Awaiting Clearance Team Approval',
-        actionDesc: 'Technical specs submitted. Awaiting Clearance Team verification and sign-off.',
-        statusColor: '#8b5cf6',
-        badgeBg: 'rgba(139, 92, 246, 0.12)',
-        badgeBorder: 'rgba(139, 92, 246, 0.3)',
-        needsAction: isClearanceRole || role === 'Admin',
-        actionButtonText: isClearanceRole ? 'Review Specs' : 'View Status',
-        stepCompleted,
-        currentStepIndex: 0,
-        progressPercent: 0,
-        isWon: false,
-        isLost: false,
-        isSubmitted: false,
-        isDeclined: false
-      };
-    }
-    if (tender.spec_verification_status === 'Generated') {
-      return {
-        stageNumber: 1,
-        stageKey: 'SPEC_GENERATED',
-        stageName: 'Specs Ready for Clearance',
-        shortStage: 'Request Clearance',
-        actionTitle: 'Action: Send for Spec Clearance',
-        actionDesc: 'Technical specification generated. Submit to Clearance Team for verification.',
-        statusColor: '#3b82f6',
-        badgeBg: 'rgba(59, 130, 246, 0.15)',
-        badgeBorder: 'rgba(59, 130, 246, 0.35)',
-        needsAction: true,
-        actionButtonText: 'Submit to Clearance',
-        stepCompleted,
-        currentStepIndex: 0,
-        progressPercent: 0,
-        isWon: false,
-        isLost: false,
-        isSubmitted: false,
-        isDeclined: false
-      };
-    }
-    if (tender.status === 'Participating') {
-      return {
-        stageNumber: 1,
-        stageKey: 'SPEC_NOT_STARTED',
-        stageName: 'Technical Specs Needed',
-        shortStage: 'Upload Specs',
-        actionTitle: 'Action: Upload Tech Spec Document',
-        actionDesc: 'Bid accepted for participation. Upload tender PDF/Doc to generate technical specs.',
-        statusColor: 'var(--primary)',
-        badgeBg: 'rgba(99, 102, 241, 0.15)',
-        badgeBorder: 'rgba(99, 102, 241, 0.35)',
-        needsAction: true,
-        actionButtonText: 'Upload Documents',
-        stepCompleted,
-        currentStepIndex: 0,
-        progressPercent: 0,
-        isWon: false,
-        isLost: false,
-        isSubmitted: false,
-        isDeclined: false
-      };
-    }
     return {
-      stageNumber: 0,
-      stageKey: 'NEW_UNREVIEWED',
-      stageName: 'Intake: New Assignment',
-      shortStage: 'Decision Needed',
-      actionTitle: 'Action: Accept or Decline Bid',
-      actionDesc: 'New tender assigned. Review requirements and decide whether to participate.',
+      stageNumber: 1,
+      stageKey: 'ASSIGNMENT_PENDING',
+      stageName: 'Executive Assignment Needed',
+      shortStage: 'Assign Exec',
+      actionTitle: 'Action: Assign Tender Executive',
+      actionDesc: 'New tender intake. Please assign to an Executive to start specification.',
       statusColor: '#f59e0b',
       badgeBg: 'rgba(245, 158, 11, 0.15)',
       badgeBorder: 'rgba(245, 158, 11, 0.35)',
-      needsAction: true,
-      actionButtonText: 'Review Bid',
+      needsAction: isMisRole,
+      actionButtonText: isMisRole ? 'Assign Executive' : 'View Tender',
       stepCompleted,
       currentStepIndex: 0,
-      progressPercent: 0,
+      progressPercent: 7,
       isWon: false,
       isLost: false,
       isSubmitted: false,
@@ -388,23 +342,45 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // If Step 2 is NOT complete (Awaiting TPC Price):
+  // If Step 2 is NOT complete (Tech Specification in Progress):
   if (!isStep2Done) {
+    if (tender.spec_verification_status === 'Pending') {
+      return {
+        stageNumber: 2,
+        stageKey: 'SPEC_CLEARANCE_PENDING',
+        stageName: 'Spec Clearance Pending',
+        shortStage: 'Clearance Pending',
+        actionTitle: 'Awaiting Clearance Team Review',
+        actionDesc: 'Clearance Team: review, edit locally, upload updated spec & mark All Comply / Deviations.',
+        statusColor: '#8b5cf6',
+        badgeBg: 'rgba(139, 92, 246, 0.12)',
+        badgeBorder: 'rgba(139, 92, 246, 0.3)',
+        needsAction: isClearanceRole,
+        actionButtonText: isClearanceRole ? 'Review & Comply' : 'View Status',
+        stepCompleted,
+        currentStepIndex: 1,
+        progressPercent: 22,
+        isWon: false,
+        isLost: false,
+        isSubmitted: false,
+        isDeclined: false
+      };
+    }
     return {
       stageNumber: 2,
-      stageKey: 'TPC_PRICING',
-      stageName: 'TPC Pricing',
-      shortStage: 'TPC Quote',
-      actionTitle: 'Awaiting TPC Pricing',
-      actionDesc: 'Technical specs approved. Awaiting OEM purchase price from TPC Team.',
-      statusColor: '#ec4899',
-      badgeBg: 'rgba(236, 72, 153, 0.12)',
-      badgeBorder: 'rgba(236, 72, 153, 0.3)',
-      needsAction: isTpcRole || role === 'Admin',
-      actionButtonText: isTpcRole ? 'Set OEM Price' : 'View Status',
+      stageKey: 'SPEC_GENERATION_PENDING',
+      stageName: 'Technical Specs Needed',
+      shortStage: 'Generate Specs',
+      actionTitle: 'Action: Generate Technical Specification',
+      actionDesc: 'Tender assigned. Generate specification sheet and forward to Clearance Team.',
+      statusColor: '#3b82f6',
+      badgeBg: 'rgba(59, 130, 246, 0.15)',
+      badgeBorder: 'rgba(59, 130, 246, 0.35)',
+      needsAction: isExecutiveRole,
+      actionButtonText: 'Generate Specs',
       stepCompleted,
       currentStepIndex: 1,
-      progressPercent: 14,
+      progressPercent: 15,
       isWon: false,
       isLost: false,
       isSubmitted: false,
@@ -412,23 +388,23 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // If Step 3 is NOT complete (Awaiting MIS Price):
+  // If Step 3 is NOT complete (Executive Bid Preparation):
   if (!isStep3Done) {
     return {
       stageNumber: 3,
-      stageKey: 'MIS_PRICING',
-      stageName: 'MIS Pricing',
-      shortStage: 'MIS Pricing',
-      actionTitle: 'Awaiting MIS Team Pricing',
-      actionDesc: 'Manufacturer quote submitted by TPC Team. Awaiting MIS Team provided price.',
-      statusColor: '#f59e0b',
-      badgeBg: 'rgba(245, 158, 11, 0.12)',
-      badgeBorder: 'rgba(245, 158, 11, 0.3)',
-      needsAction: isMisRole,
-      actionButtonText: isMisRole ? 'Set Price' : 'View Quote',
+      stageKey: 'BID_DOCS_PREP',
+      stageName: 'Bid Document Preparation',
+      shortStage: 'Prepare Package',
+      actionTitle: 'Action: Compile Standard Bid Package',
+      actionDesc: 'Technical spec cleared. Executive must prepare standard Annexures & tender forms.',
+      statusColor: '#10b981',
+      badgeBg: 'rgba(16, 185, 129, 0.15)',
+      badgeBorder: 'rgba(16, 185, 129, 0.35)',
+      needsAction: isExecutiveRole,
+      actionButtonText: 'Compile Bid Package',
       stepCompleted,
       currentStepIndex: 2,
-      progressPercent: 28,
+      progressPercent: 35,
       isWon: false,
       isLost: false,
       isSubmitted: false,
@@ -436,24 +412,24 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // If Step 4 is NOT complete (Docs Prep / Revision):
+  // If Step 4 is NOT complete (EMD Payment Step - Applicable Tenders):
   if (!isStep4Done) {
-    if (tender.verification_status === 'Rejected' || tender.current_stage === 'DOCS_REJECTED') {
+    if (tender.payment_status === 'Pending' || tender.current_stage === 'PAYMENT_APPROVAL' || tender.current_stage === 'EMD_PENDING') {
       return {
         stageNumber: 4,
-        stageKey: 'DOCS_REJECTED',
-        stageName: 'Bid Documents Revision',
-        shortStage: 'Docs Rejected',
-        actionTitle: 'Action: Revise Bid Documents',
-        actionDesc: 'MIS Team requested changes to bid documents. Regenerate and resubmit.',
-        statusColor: '#ef4444',
-        badgeBg: 'rgba(239, 68, 68, 0.15)',
-        badgeBorder: 'rgba(239, 68, 68, 0.35)',
-        needsAction: true,
-        actionButtonText: 'Revise Docs',
+        stageKey: 'EMD_APPROVAL_PENDING',
+        stageName: 'EMD Approval Pending',
+        shortStage: 'EMD Approval',
+        actionTitle: 'Awaiting EMD Payment Sign-Off',
+        actionDesc: 'EMD details submitted with Beneficiary Name. Awaiting MIS/Finance verification.',
+        statusColor: '#f59e0b',
+        badgeBg: 'rgba(245, 158, 11, 0.12)',
+        badgeBorder: 'rgba(245, 158, 11, 0.3)',
+        needsAction: isMisRole,
+        actionButtonText: isMisRole ? 'Approve EMD' : 'View EMD',
         stepCompleted,
         currentStepIndex: 3,
-        progressPercent: 43,
+        progressPercent: 50,
         isWon: false,
         isLost: false,
         isSubmitted: false,
@@ -462,19 +438,19 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     }
     return {
       stageNumber: 4,
-      stageKey: 'DOCS_PREP',
-      stageName: 'Bid Documents Preparation',
-      shortStage: 'Generate Docs',
-      actionTitle: 'Action: Generate Bid Documents',
-      actionDesc: 'MIS Provided Price configured. Fill the bid form and generate Annexure docs.',
-      statusColor: '#10b981',
-      badgeBg: 'rgba(16, 185, 129, 0.15)',
-      badgeBorder: 'rgba(16, 185, 129, 0.35)',
-      needsAction: true,
-      actionButtonText: 'Generate Docs',
+      stageKey: 'EMD_PAYMENT_READY',
+      stageName: 'EMD Payment Needed',
+      shortStage: 'Enter EMD',
+      actionTitle: 'Action: Enter Beneficiary Name & Payment Proof',
+      actionDesc: 'Please submit EMD payment details or attach confidential payment receipt.',
+      statusColor: '#ec4899',
+      badgeBg: 'rgba(236, 72, 153, 0.15)',
+      badgeBorder: 'rgba(236, 72, 153, 0.35)',
+      needsAction: isExecutiveRole,
+      actionButtonText: 'Submit EMD',
       stepCompleted,
       currentStepIndex: 3,
-      progressPercent: 43,
+      progressPercent: 45,
       isWon: false,
       isLost: false,
       isSubmitted: false,
@@ -482,48 +458,107 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     };
   }
 
-  // If Step 5 is NOT complete (Awaiting Document Verification):
+  // If Step 5 is NOT complete (Dual Track: Parallel Pricing & Document Verification):
   if (!isStep5Done) {
+    const pricingPending = !isPricingApproved;
+    const docsPending = !isDocsVerified;
+
+    const pricingRoute = tender.pricing_route || tender.pricingRoute;
+    const isTpcRoute = pricingRoute === 'TPC' || tender.current_stage === 'TPC_PRICING' || tender.track_a_pricing_status === 'TPC_PENDING';
+    const isMisRoute = pricingRoute === 'MIS' || tender.current_stage === 'MIS_PRICING' || tender.track_a_pricing_status === 'MIS_PENDING' || Boolean(tender.tpc_purchase_price && Number(tender.tpc_purchase_price) > 0);
+    const isRoutingPending = pricingPending && !isTpcRoute && !isMisRoute && (tender.track_a_pricing_status === 'ROUTING_PENDING' || (!pricingRoute && !tender.tpc_purchase_price));
+
+    let stageKey = 'DUAL_TRACK_ACTIVE';
+    let stageName = 'Dual Track: Pricing & Verification';
+    let shortStage = 'Dual Track';
+    let actionTitle = 'Parallel Clearance in Progress';
+    let actionDesc = 'Track A (Commercial Quote) & Track B (Folder Audit) are running simultaneously.';
+    let needsActionNow = (pricingPending && (isMisRole || isTpcRole)) || (docsPending && isMisRole);
+    let actionButtonText = isMisRole ? 'Review Dual Track' : (isTpcRole ? 'Provide TPC Price' : 'View Clearance');
+
+    if (isRoutingPending) {
+      stageKey = 'PRICING_ROUTING_PENDING';
+      stageName = 'Commercial Pricing Decision';
+      shortStage = 'Route Pricing';
+      actionTitle = 'Action Required: Select Commercial Pricing Route';
+      actionDesc = 'Executive must choose Option 1 (Send tender to TPC Team) or Option 2 (Send tender to MIS Team for pricing).';
+      needsActionNow = isExecutiveRole;
+      actionButtonText = isExecutiveRole ? 'Select Pricing Route' : 'View Tender';
+    } else if (pricingPending && isTpcRoute) {
+      stageKey = 'TPC_PRICING';
+      stageName = 'TPC Commercial Pricing';
+      shortStage = 'TPC Quote';
+      actionTitle = 'Awaiting TPC Commercial Quote';
+      actionDesc = 'Tender is with TPC Team. TPC will add manufacturer purchase price and forward to MIS member of choice.';
+      needsActionNow = isTpcRole || (docsPending && isMisRole);
+      actionButtonText = isTpcRole ? 'Provide TPC Price' : 'View Tender';
+    } else if (pricingPending && isMisRoute) {
+      stageKey = 'MIS_PRICING';
+      stageName = 'MIS Commercial Pricing';
+      shortStage = 'MIS Quote';
+      actionTitle = 'Awaiting MIS Commercial Go-Ahead';
+      actionDesc = tender.tpc_purchase_price
+        ? `TPC transfer price recorded (₹${Number(tender.tpc_purchase_price).toLocaleString('en-IN')}). Awaiting MIS final price or direct forward to Executive.`
+        : 'Tender routed directly to MIS Team for pricing (TPC bypassed). Awaiting MIS quote.';
+      needsActionNow = isMisRole;
+      actionButtonText = isMisRole ? 'Provide Quote Price' : 'View Tender';
+    } else if (!pricingPending && docsPending) {
+      stageKey = 'DOC_VERIFICATION';
+      stageName = 'Folder Document Audit';
+      shortStage = 'Audit Docs';
+      actionTitle = 'Awaiting Document Audit';
+      actionDesc = 'Track A (Commercial Pricing) Approved ✓. Waiting on Track B (Full Folder Audit).';
+      needsActionNow = isMisRole;
+      actionButtonText = isMisRole ? 'Audit Documents' : 'View Clearance';
+    }
+
     return {
       stageNumber: 5,
-      stageKey: 'DOC_VERIFICATION',
-      stageName: 'Bid Documents Verification',
-      shortStage: 'Doc Review',
-      actionTitle: 'Awaiting MIS Document Approval',
-      actionDesc: 'Generated bid documents submitted. Awaiting MIS Team audit & sign-off.',
-      statusColor: '#f59e0b',
-      badgeBg: 'rgba(245, 158, 11, 0.12)',
-      badgeBorder: 'rgba(245, 158, 11, 0.3)',
-      needsAction: isMisRole,
-      actionButtonText: isMisRole ? 'Audit Docs' : 'View Docs',
+      stageKey,
+      stageName,
+      shortStage,
+      actionTitle,
+      actionDesc,
+      statusColor: isRoutingPending ? '#a855f7' : '#8b5cf6',
+      badgeBg: 'rgba(139, 92, 246, 0.15)',
+      badgeBorder: 'rgba(139, 92, 246, 0.35)',
+      needsAction: needsActionNow,
+      actionButtonText,
       stepCompleted,
       currentStepIndex: 4,
-      progressPercent: 57,
+      progressPercent: 68,
       isWon: false,
       isLost: false,
       isSubmitted: false,
-      isDeclined: false
+      isDeclined: false,
+      isDualTrackActive: true,
+      isPricingApproved,
+      isDocsVerified,
+      canFinalSubmit: false,
+      isEmdSkipped: isEmdExempt,
+      pricingRoute: isTpcRoute ? 'TPC' : (isMisRoute ? 'MIS' : undefined),
+      isRoutingPending
     };
   }
 
-  // If Step 6 is NOT complete (Awaiting EMD Payment):
+  // If Step 6 is NOT complete (Ready for Final Submission):
   if (!isStep6Done) {
-    if (tender.payment_status === 'Pending' || tender.current_stage === 'EMD_PENDING') {
+    if (tender.submission_status === 'Pending' || tender.current_stage === 'SUBMISSION_PENDING') {
       return {
         stageNumber: 6,
-        stageKey: 'EMD_PENDING',
-        stageName: 'EMD Payment Approval',
-        shortStage: 'EMD In Progress',
-        actionTitle: 'Awaiting EMD Payment Approval',
-        actionDesc: 'EMD request submitted to MIS Team. Awaiting payment reference and approval.',
+        stageKey: 'SUBMISSION_PENDING',
+        stageName: 'Submission Audit',
+        shortStage: 'Audit Filing',
+        actionTitle: 'Awaiting Filing Verification',
+        actionDesc: 'Tender filed on portal. Awaiting MIS Team audit & filing confirmation.',
         statusColor: '#f59e0b',
         badgeBg: 'rgba(245, 158, 11, 0.12)',
         badgeBorder: 'rgba(245, 158, 11, 0.3)',
         needsAction: isMisRole,
-        actionButtonText: isMisRole ? 'Approve EMD' : 'View EMD',
+        actionButtonText: isMisRole ? 'Audit Filing' : 'View Filing',
         stepCompleted,
         currentStepIndex: 5,
-        progressPercent: 71,
+        progressPercent: 88,
         isWon: false,
         isLost: false,
         isSubmitted: false,
@@ -532,88 +567,46 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     }
     return {
       stageNumber: 6,
-      stageKey: 'EMD_REQ_READY',
-      stageName: 'EMD Payment Prep',
-      shortStage: 'Request EMD',
-      actionTitle: 'Action: Submit EMD Request',
-      actionDesc: 'Bid documents approved by MIS Team. Please submit EMD payment request.',
-      statusColor: '#3b82f6',
-      badgeBg: 'rgba(59, 130, 246, 0.15)',
-      badgeBorder: 'rgba(59, 130, 246, 0.35)',
-      needsAction: true,
-      actionButtonText: 'Pay EMD',
+      stageKey: 'READY_TO_SUBMIT',
+      stageName: 'Ready for Portal Submission',
+      shortStage: 'Submit Tender',
+      actionTitle: 'Action Required: Submit Tender on Portal',
+      actionDesc: 'Dual track passed! Commercial go-ahead and full folder verification are complete.',
+      statusColor: '#10b981',
+      badgeBg: 'rgba(16, 185, 129, 0.18)',
+      badgeBorder: 'rgba(16, 185, 129, 0.4)',
+      needsAction: isExecutiveRole,
+      actionButtonText: 'Submit on Portal',
       stepCompleted,
       currentStepIndex: 5,
-      progressPercent: 71,
+      progressPercent: 85,
       isWon: false,
       isLost: false,
       isSubmitted: false,
-      isDeclined: false
+      isDeclined: false,
+      canFinalSubmit: true,
+      isDualTrackActive: false,
+      isPricingApproved: true,
+      isDocsVerified: true
     };
   }
 
-  // If Step 7 is NOT complete (Portal Submission):
-  if (!isStep7Done) {
-    if (tender.submission_status === 'Pending' || tender.current_stage === 'SUBMISSION_PENDING') {
-      return {
-        stageNumber: 7,
-        stageKey: 'SUBMISSION_PENDING',
-        stageName: 'Submission Audit',
-        shortStage: 'Audit Pending',
-        actionTitle: 'Awaiting Submission Audit',
-        actionDesc: 'Bid filed. Awaiting MIS Team audit to verify submission.',
-        statusColor: '#f59e0b',
-        badgeBg: 'rgba(245, 158, 11, 0.12)',
-        badgeBorder: 'rgba(245, 158, 11, 0.3)',
-        needsAction: isMisRole,
-        actionButtonText: isMisRole ? 'Audit Filing' : 'View Filing',
-        stepCompleted,
-        currentStepIndex: 6,
-        progressPercent: 86,
-        isWon: false,
-        isLost: false,
-        isSubmitted: false,
-        isDeclined: false
-      };
-    }
-    return {
-      stageNumber: 7,
-      stageKey: 'READY_TO_SUBMIT',
-      stageName: 'Final Submission',
-      shortStage: 'Ready to File',
-      actionTitle: 'Action Required: File Bid on Portal',
-      actionDesc: 'EMD Payment confirmed! Please physically/digitally file the bid on portal.',
-      statusColor: '#8b5cf6',
-      badgeBg: 'rgba(139, 92, 246, 0.15)',
-      badgeBorder: 'rgba(139, 92, 246, 0.35)',
-      needsAction: true,
-      actionButtonText: 'File on Portal',
-      stepCompleted,
-      currentStepIndex: 6,
-      progressPercent: 86,
-      isWon: false,
-      isLost: false,
-      isSubmitted: false,
-      isDeclined: false
-    };
-  }
-
-  // Step 8: Submitted / Under Commercial Evaluation
+  // Step 7: Submitted / Under Commercial Evaluation
   return {
-    stageNumber: 8,
+    stageNumber: 7,
     stageKey: 'SUBMITTED',
     stageName: 'Bid Submitted',
     shortStage: 'Under Evaluation',
-    actionTitle: 'Submitted to Portal',
-    actionDesc: 'Bid filed on portal and verified by MIS Team. Awaiting commercial evaluation.',
+    actionTitle: 'Submitted on Portal',
+    actionDesc: 'Bid filed on portal and verified by MIS Team. Awaiting tender outcome.',
     statusColor: '#3b82f6',
     badgeBg: 'rgba(59, 130, 246, 0.12)',
     badgeBorder: 'rgba(59, 130, 246, 0.3)',
     needsAction: false,
     actionButtonText: 'View Submission',
-    stepCompleted: [true, true, true, true, true, true, true, false],
-    currentStepIndex: 7,
-    progressPercent: 86,
+    stepCompleted: [true, true, true, true, true, true, false],
+    currentStepIndex: 6,
+    progressPercent: 90,
     isWon: false,
     isLost: false,
     isSubmitted: true,

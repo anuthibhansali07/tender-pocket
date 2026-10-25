@@ -17,7 +17,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
     @Index(name = "idx_tenders_sector", columnList = "sector"),
     @Index(name = "idx_tenders_scraped_at", columnList = "scraped_at"),
     @Index(name = "idx_tenders_source", columnList = "source"),
-    @Index(name = "idx_tenders_ref_no", columnList = "ref_no")
+    @Index(name = "idx_tenders_ref_no", columnList = "ref_no"),
+    @Index(name = "idx_tenders_due_exec", columnList = "due_date, mis_executive"),
+    @Index(name = "idx_tenders_status_cost", columnList = "status, estimated_cost"),
+    @Index(name = "idx_tenders_sector_cost", columnList = "sector, estimated_cost"),
+    @Index(name = "idx_tenders_auth_cost", columnList = "authority, estimated_cost")
 })
 public class Tender {
 
@@ -157,6 +161,9 @@ public class Tender {
     @Column(name = "mis_final_price")
     private Double misFinalPrice;
 
+    @Column(name = "pricing_route")
+    private String pricingRoute;
+
     @Column(name = "current_stage")
     private String currentStage = "NEW";
 
@@ -216,6 +223,42 @@ public class Tender {
 
     @Column(name = "spec_verification_status")
     private String specVerificationStatus = "None";
+
+    @Column(name = "emd_applicable")
+    private Boolean emdApplicable = true;
+
+    @Column(name = "emd_beneficiary_name")
+    private String emdBeneficiaryName;
+
+    @Column(name = "emd_receipt_doc_path")
+    private String emdReceiptDocPath;
+
+    @Column(name = "emd_receipt_confidential")
+    private Boolean emdReceiptConfidential = true;
+
+    @Column(name = "final_tech_spec_filename")
+    private String finalTechSpecFilename;
+
+    @Column(name = "final_tech_spec_uploaded_by")
+    private String finalTechSpecUploadedBy;
+
+    @Column(name = "final_tech_spec_uploaded_at")
+    private String finalTechSpecUploadedAt;
+
+    @Column(name = "spec_compliance_type")
+    private String specComplianceType;
+
+    @Column(name = "pricing_status")
+    private String pricingStatus = "None";
+
+    @Column(name = "pricing_go_ahead_by")
+    private String pricingGoAheadBy;
+
+    @Column(name = "pricing_go_ahead_at")
+    private String pricingGoAheadAt;
+
+    @Column(name = "can_final_submit")
+    private Boolean canFinalSubmit = false;
 
     public Tender() {}
 
@@ -428,6 +471,45 @@ public class Tender {
     public Double getMisFinalPrice() { return misFinalPrice; }
     public void setMisFinalPrice(Double misFinalPrice) { this.misFinalPrice = misFinalPrice; }
 
+    public String getPricingRoute() { return pricingRoute; }
+    public void setPricingRoute(String pricingRoute) { this.pricingRoute = pricingRoute; }
+
     public String getCurrentStage() { return currentStage; }
     public void setCurrentStage(String currentStage) { this.currentStage = currentStage; }
+
+    public Boolean getEmdApplicable() { return emdApplicable != null && emdApplicable; }
+    public void setEmdApplicable(Boolean emdApplicable) { this.emdApplicable = emdApplicable; }
+
+    public String getEmdBeneficiaryName() { return emdBeneficiaryName; }
+    public void setEmdBeneficiaryName(String emdBeneficiaryName) { this.emdBeneficiaryName = emdBeneficiaryName; }
+
+    public String getEmdReceiptDocPath() { return emdReceiptDocPath; }
+    public void setEmdReceiptDocPath(String emdReceiptDocPath) { this.emdReceiptDocPath = emdReceiptDocPath; }
+
+    public Boolean getEmdReceiptConfidential() { return emdReceiptConfidential != null && emdReceiptConfidential; }
+    public void setEmdReceiptConfidential(Boolean emdReceiptConfidential) { this.emdReceiptConfidential = emdReceiptConfidential; }
+
+    public String getFinalTechSpecFilename() { return finalTechSpecFilename; }
+    public void setFinalTechSpecFilename(String finalTechSpecFilename) { this.finalTechSpecFilename = finalTechSpecFilename; }
+
+    public String getFinalTechSpecUploadedBy() { return finalTechSpecUploadedBy; }
+    public void setFinalTechSpecUploadedBy(String finalTechSpecUploadedBy) { this.finalTechSpecUploadedBy = finalTechSpecUploadedBy; }
+
+    public String getFinalTechSpecUploadedAt() { return finalTechSpecUploadedAt; }
+    public void setFinalTechSpecUploadedAt(String finalTechSpecUploadedAt) { this.finalTechSpecUploadedAt = finalTechSpecUploadedAt; }
+
+    public String getSpecComplianceType() { return specComplianceType; }
+    public void setSpecComplianceType(String specComplianceType) { this.specComplianceType = specComplianceType; }
+
+    public String getPricingStatus() { return pricingStatus; }
+    public void setPricingStatus(String pricingStatus) { this.pricingStatus = pricingStatus; }
+
+    public String getPricingGoAheadBy() { return pricingGoAheadBy; }
+    public void setPricingGoAheadBy(String pricingGoAheadBy) { this.pricingGoAheadBy = pricingGoAheadBy; }
+
+    public String getPricingGoAheadAt() { return pricingGoAheadAt; }
+    public void setPricingGoAheadAt(String pricingGoAheadAt) { this.pricingGoAheadAt = pricingGoAheadAt; }
+
+    public Boolean getCanFinalSubmit() { return canFinalSubmit != null && canFinalSubmit; }
+    public void setCanFinalSubmit(Boolean canFinalSubmit) { this.canFinalSubmit = canFinalSubmit; }
 }

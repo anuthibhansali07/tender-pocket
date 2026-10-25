@@ -52,12 +52,26 @@ public class ApprovalSummaryDto {
             this.stageName = request.getStage() != null ? request.getStage().name() : "";
             this.requestedBy = request.getRequestedBy();
             this.assignedTo = request.getAssignedTo();
+            if (this.stage != null && java.util.List.of(
+                    TenderWorkflowStage.MIS_PRICING,
+                    TenderWorkflowStage.DOC_VERIFICATION,
+                    TenderWorkflowStage.PAYMENT_APPROVAL,
+                    TenderWorkflowStage.SUBMISSION_PENDING,
+                    TenderWorkflowStage.WIN_LOSS_PENDING
+            ).contains(this.stage)) {
+                if (this.assignedTo != null && java.util.List.of("tpc", "tpc team", "clearance", "clearance team", "executive").contains(this.assignedTo.trim().toLowerCase())) {
+                    this.assignedTo = "misteam";
+                }
+            }
             this.status = request.getStatus();
             this.workingPath = request.getWorkingPath();
             this.emdAmount = request.getEmdAmount();
             this.transferMode = request.getTransferMode();
             this.transferRefNo = request.getTransferRefNo();
             this.receiptFileUrl = request.getReceiptFileUrl();
+            if ((this.receiptFileUrl == null || this.receiptFileUrl.isBlank()) && tender != null) {
+                this.receiptFileUrl = tender.getEmdReceiptDocPath();
+            }
             this.lossReasonExecutive = request.getLossReasonExecutive();
             this.lossReasonMis = request.getLossReasonMis();
             this.tpcPurchasePrice = request.getTpcPurchasePrice();

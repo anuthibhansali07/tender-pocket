@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { companyKey = 'me', docType = 'all', orientation = 'portrait', sampleData = {} } = body;
-    const effectiveOrientation = docType === 'spec' ? 'landscape' : (sampleData.orientation || orientation);
+    const effectiveOrientation = docType === 'spec' ? 'portrait' : (sampleData.orientation || orientation);
 
     const data = {
       companyKey,

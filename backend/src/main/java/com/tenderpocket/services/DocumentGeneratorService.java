@@ -2890,7 +2890,7 @@ public class DocumentGeneratorService {
               <meta charset="utf-8" />
               <style>
                 @page {
-                  size: A4 landscape;
+                  size: A4;
                   margin: 0;
                 }
                 body {
@@ -2900,7 +2900,7 @@ public class DocumentGeneratorService {
                 }
                 .page {
                   box-sizing: border-box;
-                  width: 297mm;
+                  width: 210mm;
                   padding: 20px 42.5px 25px 42.5px;
                   position: relative;
                   font-family: 'Cambria', serif;

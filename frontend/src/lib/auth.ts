@@ -10,51 +10,86 @@ export interface AuthInfo {
 }
 
 /**
+ * Extracts raw JWT token string from Request:
+ * 1. Authorization: Bearer <token>
+ * 2. ?token= or ?auth= query parameter
+ * 3. token or auth_token cookie
+ */
+export function getTokenFromRequest(request: Request): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+
+  try {
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get('token') || url.searchParams.get('auth');
+    if (queryToken && queryToken.trim()) {
+      return queryToken.trim();
+    }
+  } catch {
+    // ignore URL parsing error
+  }
+
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) {
+    const cookies = cookieHeader.split(';');
+    for (const cookie of cookies) {
+      const [k, v] = cookie.trim().split('=');
+      if ((k === 'token' || k === 'auth_token') && v) {
+        return decodeURIComponent(v.trim());
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extracts and verifies the authenticated user from a Next.js Request.
  *
  * Priority:
- * 1. Bearer JWT in the Authorization header (signature-verified + expiry-checked)
+ * 1. Bearer JWT in the Authorization header / URL query param / Cookie (signature-verified + expiry-checked)
  * 2. x-user-username + x-user-role headers (set by fetchWithAuth for same-origin requests)
  *
  * Returns null if no valid authentication is found.
  */
 export function getAuthFromRequest(request: Request): AuthInfo | null {
-  // 1. Try JWT Bearer token first
-  const authHeader = request.headers.get('authorization');
-  if (authHeader) {
-    if (!authHeader.startsWith('Bearer ')) return null;
-    const token = authHeader.substring(7);
+  // 1. Try JWT token first (header, query param, or cookie)
+  const token = getTokenFromRequest(request);
+  if (token) {
     const parts = token.split('.');
     if (parts.length === 3) {
       try {
         // JJWT selects HS256/384/512 according to the configured signing-key length.
         const headerObj = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-        if (!['HS256', 'HS384', 'HS512'].includes(headerObj.alg)) return null;
-        const alg = headerObj.alg === 'HS512' ? 'sha512' : headerObj.alg === 'HS384' ? 'sha384' : 'sha256';
+        if (['HS256', 'HS384', 'HS512'].includes(headerObj.alg)) {
+          const alg = headerObj.alg === 'HS512' ? 'sha512' : headerObj.alg === 'HS384' ? 'sha384' : 'sha256';
 
-        const expectedSig = crypto
-          .createHmac(alg, JWT_SECRET)
-          .update(`${parts[0]}.${parts[1]}`)
-          .digest('base64url');
+          const expectedSig = crypto
+            .createHmac(alg, JWT_SECRET)
+            .update(`${parts[0]}.${parts[1]}`)
+            .digest('base64url');
 
-        const supplied = Buffer.from(parts[2]);
-        const expected = Buffer.from(expectedSig);
-        if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          const now = Math.floor(Date.now() / 1000);
-          if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null;
-          if (Number.isFinite(payload.exp) && payload.exp > now
-              && typeof payload.sub === 'string' && payload.sub.trim()
-              && typeof payload.role === 'string' && payload.role.trim()) {
-            return { username: payload.sub, role: payload.role };
-          }
-        } else {
-          // Token signature did not match local JWT_SECRET (e.g. backend token or dev environment).
-          // Read payload sub & role if present before header fallback
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-          if (payload && typeof payload.sub === 'string' && payload.sub.trim()
-              && typeof payload.role === 'string' && payload.role.trim()) {
-            return { username: payload.sub, role: payload.role };
+          const supplied = Buffer.from(parts[2]);
+          const expected = Buffer.from(expectedSig);
+          if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            const now = Math.floor(Date.now() / 1000);
+            if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null;
+            if (Number.isFinite(payload.exp) && payload.exp > now
+                && typeof payload.sub === 'string' && payload.sub.trim()
+                && typeof payload.role === 'string' && payload.role.trim()) {
+              return { username: payload.sub, role: payload.role };
+            }
+          } else {
+            // Token signature did not match local JWT_SECRET (e.g. backend token or dev environment).
+            // Read payload sub & role if present before header fallback
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            if (payload && typeof payload.sub === 'string' && payload.sub.trim()
+                && typeof payload.role === 'string' && payload.role.trim()) {
+              return { username: payload.sub, role: payload.role };
+            }
           }
         }
       } catch {
@@ -89,4 +124,3 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
 
   return null;
 }
-

@@ -155,13 +155,208 @@ public class ApprovalControllerWorkflowTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Approved", tender.getSpecVerificationStatus());
-        assertEquals("TPC_PRICING", tender.getCurrentStage());
+        assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
         assertEquals("APPROVED", request.getStatus());
         verify(tenderRepository).save(tender);
-        // Verify forward TPC_PRICING request is created
-        verify(approvalRepository).save(argThat(r ->
-                r.getStage() == TenderWorkflowStage.TPC_PRICING
-                        && "PENDING".equals(r.getStatus())
+    }
+
+    @Test
+    void testSpecClearanceApprovalWithComplyWithDeviations() {
+        authenticate("clearance", "Clearance Team");
+
+        Tender tender = new Tender();
+        tender.setId("T-SPEC-2");
+        tender.setCurrentStage("SPEC_CLEARANCE");
+        tender.setSpecVerificationStatus("Pending");
+
+        TenderApprovalRequest request = new TenderApprovalRequest("T-SPEC-2", TenderWorkflowStage.SPEC_CLEARANCE, "executive", "clearance", "PENDING");
+        request.setId(31L);
+
+        when(approvalRepository.findById(31L)).thenReturn(Optional.of(request));
+        when(tenderRepository.findById("T-SPEC-2")).thenReturn(Optional.of(tender));
+        when(approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(eq("T-SPEC-2"), eq(TenderWorkflowStage.SPEC_CLEARANCE))).thenReturn(List.of(request));
+
+        Map<String, Object> body = Map.of(
+                "action", "APPROVED",
+                "complianceType", "COMPLY WITH DEVIATIONS",
+                "comment", "Accepted with deviations."
+        );
+
+        ResponseEntity<?> response = approvalController.reviewApproval(31L, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Approved", tender.getSpecVerificationStatus());
+        assertEquals("COMPLY WITH DEVIATIONS", tender.getSpecComplianceType());
+        assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
+        assertEquals("APPROVED", request.getStatus());
+        verify(tenderRepository).save(tender);
+    }
+
+    @Test
+    void testDocVerificationApprovalWhenTenderAtTpcPricing() {
+        authenticate("misteam", "MIS Team");
+
+        Tender tender = new Tender();
+        tender.setId("T-DOC-1");
+        tender.setCurrentStage("TPC_PRICING");
+        tender.setVerificationStatus("Pending");
+
+        TenderApprovalRequest request = new TenderApprovalRequest("T-DOC-1", TenderWorkflowStage.DOC_VERIFICATION, "executive", "misteam", "PENDING");
+        request.setId(40L);
+
+        when(approvalRepository.findById(40L)).thenReturn(Optional.of(request));
+        when(tenderRepository.findById("T-DOC-1")).thenReturn(Optional.of(tender));
+        when(approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(eq("T-DOC-1"), eq(TenderWorkflowStage.DOC_VERIFICATION))).thenReturn(List.of(request));
+
+        Map<String, Object> body = Map.of(
+                "action", "APPROVED",
+                "comment", "13613"
+        );
+
+        ResponseEntity<?> response = approvalController.reviewApproval(40L, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Approved", tender.getVerificationStatus(), "Verification status must be Approved");
+        assertEquals("TPC_PRICING", tender.getCurrentStage(), "Tender stage must remain TPC_PRICING while Track A is still pending");
+        assertEquals("APPROVED", request.getStatus());
+        verify(tenderRepository).save(tender);
+        verify(approvalRepository).save(request);
+    }
+
+    @Test
+    void testDocVerificationApprovalWhenTenderAtMisPricing() {
+        authenticate("misteam", "MIS Team");
+
+        Tender tender = new Tender();
+        tender.setId("T-DOC-2");
+        tender.setCurrentStage("MIS_PRICING");
+        tender.setVerificationStatus("Pending");
+
+        TenderApprovalRequest request = new TenderApprovalRequest("T-DOC-2", TenderWorkflowStage.DOC_VERIFICATION, "executive", "misteam", "PENDING");
+        request.setId(41L);
+
+        when(approvalRepository.findById(41L)).thenReturn(Optional.of(request));
+        when(tenderRepository.findById("T-DOC-2")).thenReturn(Optional.of(tender));
+        when(approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(eq("T-DOC-2"), eq(TenderWorkflowStage.DOC_VERIFICATION))).thenReturn(List.of(request));
+
+        Map<String, Object> body = Map.of(
+                "action", "APPROVED",
+                "comment", "All documents audited and compliant"
+        );
+
+        ResponseEntity<?> response = approvalController.reviewApproval(41L, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Approved", tender.getVerificationStatus());
+        assertEquals("MIS_PRICING", tender.getCurrentStage());
+        assertEquals("APPROVED", request.getStatus());
+        verify(tenderRepository).save(tender);
+    }
+
+    @Test
+    void testDocVerificationApprovalWhenPricingAlreadyApprovedAdvancesToSubmissionReady() {
+        authenticate("misteam", "MIS Team");
+
+        Tender tender = new Tender();
+        tender.setId("T-DOC-3");
+        tender.setCurrentStage("DUAL_TRACK");
+        tender.setPricingStatus("Approved");
+        tender.setMisFinalPrice(250000.0);
+        tender.setVerificationStatus("Pending");
+
+        TenderApprovalRequest request = new TenderApprovalRequest("T-DOC-3", TenderWorkflowStage.DOC_VERIFICATION, "executive", "misteam", "PENDING");
+        request.setId(42L);
+
+        when(approvalRepository.findById(42L)).thenReturn(Optional.of(request));
+        when(tenderRepository.findById("T-DOC-3")).thenReturn(Optional.of(tender));
+        when(approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(eq("T-DOC-3"), eq(TenderWorkflowStage.DOC_VERIFICATION))).thenReturn(List.of(request));
+
+        Map<String, Object> body = Map.of(
+                "action", "APPROVED",
+                "comment", "All documents verified"
+        );
+
+        ResponseEntity<?> response = approvalController.reviewApproval(42L, body);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Approved", tender.getVerificationStatus());
+        assertEquals("SUBMISSION_READY", tender.getCurrentStage());
+        assertTrue(tender.getCanFinalSubmit());
+        assertEquals("APPROVED", request.getStatus());
+    }
+
+    @Test
+    void testCountsForMisTeamReflectsRolePendingRatherThanGlobalAdminPending() {
+        authenticate("misteam", "MIS Team");
+
+        // Global admin status counts (e.g. 80 pending across all teams in DB)
+        when(approvalRepository.countByStatusForAdmin()).thenReturn(List.<Object[]>of(
+                new Object[]{"PENDING", 80L},
+                new Object[]{"APPROVED", 125L},
+                new Object[]{"REJECTED", 1L},
+                new Object[]{"CHANGES_REQUESTED", 1L}
         ));
+
+        // MIS Team queue has 0 pending items
+        when(approvalRepository.countByStageForMisTeam(eq("misteam"), eq("PENDING"), any()))
+                .thenReturn(Collections.emptyList());
+
+        // MIS Team queue has 80 history items
+        when(approvalRepository.countByStageForMisTeam(eq("misteam"), eq("HISTORY"), any()))
+                .thenReturn(List.<Object[]>of(
+                        new Object[]{TenderWorkflowStage.PAYMENT_APPROVAL, 50L},
+                        new Object[]{TenderWorkflowStage.MIS_PRICING, 30L}
+                ));
+
+        ResponseEntity<?> response = approvalController.getPendingCounts("PENDING");
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertNotNull(body);
+        assertTrue((Boolean) body.get("success"));
+
+        Map<?, ?> pendingCounts = (Map<?, ?>) body.get("pendingCounts");
+        assertEquals(0L, pendingCounts.get("TOTAL"));
+
+        Map<?, ?> historyCounts = (Map<?, ?>) body.get("historyCounts");
+        assertEquals(80L, historyCounts.get("TOTAL"));
+
+        Map<?, ?> statusCounts = (Map<?, ?>) body.get("statusCounts");
+        // Crucial assertion: MIS Team must see 0 for PENDING, not global 80!
+        assertEquals(0L, statusCounts.get("PENDING"), "Non-admin statusCounts.PENDING must reflect role queue (0), not global 80");
+        assertEquals(80L, statusCounts.get("HISTORY"));
+        assertEquals(80L, statusCounts.get("TOTAL"));
+    }
+
+    @Test
+    void testCountsForAdminReflectsGlobalTotals() {
+        authenticate("admin", "Admin");
+
+        when(approvalRepository.countByStatusForAdmin()).thenReturn(List.<Object[]>of(
+                new Object[]{"PENDING", 80L},
+                new Object[]{"APPROVED", 125L},
+                new Object[]{"REJECTED", 1L},
+                new Object[]{"CHANGES_REQUESTED", 1L}
+        ));
+
+        when(approvalRepository.countByStageForAdmin(eq("PENDING"))).thenReturn(List.<Object[]>of(
+                new Object[]{TenderWorkflowStage.SPEC_CLEARANCE, 50L},
+                new Object[]{TenderWorkflowStage.TPC_PRICING, 30L}
+        ));
+
+        when(approvalRepository.countByStageForAdmin(eq("HISTORY"))).thenReturn(List.<Object[]>of(
+                new Object[]{TenderWorkflowStage.PAYMENT_APPROVAL, 127L}
+        ));
+
+        ResponseEntity<?> response = approvalController.getPendingCounts("PENDING");
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertNotNull(body);
+
+        Map<?, ?> statusCounts = (Map<?, ?>) body.get("statusCounts");
+        assertEquals(80L, statusCounts.get("PENDING"), "Admin statusCounts.PENDING must reflect global total 80");
+        assertEquals(127L, statusCounts.get("HISTORY"));
+        assertEquals(207L, statusCounts.get("TOTAL"));
     }
 }

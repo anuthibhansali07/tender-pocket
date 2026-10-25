@@ -15,6 +15,33 @@ import HTMLtoDOCX from 'html-to-docx';
 import puppeteer from 'puppeteer';
 
 
+function splitLine(line: string): { left: string, right: string } {
+  const firstCharIdx = line.search(/\S/);
+  if (firstCharIdx === -1) {
+    return { left: '', right: '' };
+  }
+  
+  if (firstCharIdx >= 30) {
+    return { left: '', right: line.trim() };
+  }
+  
+  const remaining = line.substring(firstCharIdx);
+  const gapMatch = remaining.match(/\s{3,}/);
+  if (gapMatch && gapMatch.index !== undefined) {
+    const gapStart = firstCharIdx + gapMatch.index;
+    const gapEnd = gapStart + gapMatch[0].length;
+    
+    if (gapEnd >= 30) {
+      return {
+        left: line.substring(0, gapStart).trim(),
+        right: line.substring(gapEnd).trim()
+      };
+    }
+  }
+  
+  return { left: line.trim(), right: '' };
+}
+
 let hasPdfToText: boolean | null = null;
 function checkPdfToText(): boolean {
   if (hasPdfToText !== null) return hasPdfToText;
@@ -73,61 +100,7 @@ function extractRawTextFromPdf(pdfPath: string): string {
   }
 }
 
-interface ExtractedTenderResult {
-  specs: { sr: number, parameter: string, value: string, compliance?: string, offered?: string, deviation?: string, isAtc?: boolean }[];
-  metadata?: {
-    bidNumber?: string;
-    bidDate?: string;
-    qty?: string;
-    authorityName?: string;
-    authorityDept?: string;
-    authorityAddress?: string;
-    productDescription?: string;
-  };
-}
-
-function extractTenderInfoAndSpecs(id: string): ExtractedTenderResult {
-  // 1. Try high-accuracy PyMuPDF python extractor
-  try {
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    const scriptCandidates = [
-      path.join(process.cwd(), 'scripts', 'extract_tender_specs.py'),
-      path.join(process.cwd(), 'frontend', 'scripts', 'extract_tender_specs.py'),
-      path.resolve(__dirname, '../../../../../../scripts', 'extract_tender_specs.py'),
-      path.resolve(process.cwd(), '..', 'frontend', 'scripts', 'extract_tender_specs.py')
-    ];
-    const scriptPath = scriptCandidates.find(p => fs.existsSync(p));
-    if (scriptPath) {
-      const out = execSync(`"${pythonCmd}" "${scriptPath}" --tender-id "${id}"`, {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 20000
-      });
-      const jsonStart = out.indexOf('{');
-      const jsonEnd = out.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        const parsed = JSON.parse(out.slice(jsonStart, jsonEnd + 1));
-        if (parsed.success && Array.isArray(parsed.specs) && parsed.specs.length > 0) {
-          return {
-            specs: parsed.specs,
-            metadata: {
-              bidNumber: parsed.bidNumber,
-              bidDate: parsed.bidDate,
-              qty: parsed.qty,
-              authorityName: parsed.authorityName,
-              authorityDept: parsed.authorityDept,
-              authorityAddress: parsed.authorityAddress,
-              productDescription: parsed.productDescription
-            }
-          };
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`[extractTenderInfoAndSpecs] Python extraction error for tender ${id}:`, err);
-  }
-
-  // 2. Fallback: Search across candidate directories for the authentic tender PDF
+function extractSpecsFromPdf(id: string): { sr: number, parameter: string, value: string }[] {
   const candidateDirs = [
     path.join(process.cwd(), '..', 'backend', 'public', 'documents', id),
     path.join(process.cwd(), 'backend', 'public', 'documents', id),
@@ -137,46 +110,157 @@ function extractTenderInfoAndSpecs(id: string): ExtractedTenderResult {
 
   let docDir = candidateDirs.find(d => fs.existsSync(d));
   if (!docDir) {
-    return { specs: [] };
+    console.log(`[extractSpecsFromPdf] Document directory not found for tender ${id}`);
+    return [];
   }
 
-  const files = fs.readdirSync(docDir).filter(f => f.toLowerCase().endsWith('.pdf') && !f.startsWith('Bid_Documents_') && !f.startsWith('Technical_Specification_Sheet_'));
-  const allSpecs: { sr: number, parameter: string, value: string, compliance: string, offered: string, deviation: string, isAtc: boolean }[] = [];
+  // Find all PDF files in the directory
+  const files = fs.readdirSync(docDir).filter(f => f.toLowerCase().endsWith('.pdf'));
+  
+  const allSpecs: { parameter: string, value: string }[] = [];
   const seen = new Set<string>();
 
   for (const file of files) {
+    // Skip generated files to avoid feedback loop
+    if (file.startsWith('Bid_Documents_') || file.startsWith('Technical_Specification_Sheet_')) {
+      continue;
+    }
+    
     const pdfPath = path.join(docDir, file);
+    console.log(`[extractSpecsFromPdf] Processing PDF file: ${file} for tender ${id}`);
+
     try {
       const text = extractRawTextFromPdf(pdfPath);
       if (!text || text.trim().length < 50) continue;
 
-      const lines = text.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || /^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
-        if (trimmed.includes('Technical Specifications') || trimmed.includes('Consignee') || trimmed.includes('View File')) continue;
-        const parts = line.split(/\s{3,}/).map(p => p.trim()).filter(Boolean);
-        if (parts.length >= 2) {
-          const p = parts[0];
-          const v = parts.slice(1).join(' ');
-          if (p.length > 2 && v.length > 0 && !seen.has(p.toLowerCase())) {
-            seen.add(p.toLowerCase());
-            allSpecs.push({
-              sr: allSpecs.length + 1,
-              parameter: p,
-              value: v,
-              compliance: 'Yes',
-              offered: v,
-              deviation: 'No Deviation',
-              isAtc: false
-            });
+      const isGemBid = text.includes('Technical Specifications') || text.includes('As per GeM') || text.includes('Allowed Values') || text.includes('Specification Name');
+      const specs: { parameter: string, value: string }[] = [];
+
+      if (isGemBid) {
+        // Parse standard GeM Bid PDF layout using block-based parsing
+        const startIdx = text.indexOf('Technical Specifications');
+        const endIdx = text.indexOf('Consignees/Reporting Officer');
+        const searchRangeText = (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx)
+          ? text.slice(startIdx, endIdx)
+          : text;
+
+        const lines = searchRangeText.split('\n');
+        const blocks: { left: string[], right: string[] }[] = [];
+        let currentBlock: { left: string[], right: string[] } | null = null;
+
+        for (let line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            if (currentBlock) {
+              blocks.push(currentBlock);
+              currentBlock = null;
+            }
+            continue;
+          }
+
+          if (/^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
+          if (trimmed.includes('Technical Specifications') || trimmed.includes('As per GeM') || trimmed.includes('Allowed Values') || trimmed.includes('Specification Parameter')) continue;
+          if (trimmed.startsWith('ववरण/Specification') || trimmed.startsWith('विश का नाम') || trimmed.startsWith('बड के िलए')) continue;
+
+          const { left, right } = splitLine(line);
+          if (!currentBlock) {
+            currentBlock = { left: [], right: [] };
+          }
+          if (left) currentBlock.left.push(left);
+          if (right) currentBlock.right.push(right);
+        }
+        if (currentBlock) {
+          blocks.push(currentBlock);
+        }
+
+        // Merge lines in each block and push to specs
+        for (const block of blocks) {
+          const p = block.left.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+          const v = block.right.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+          if (p && v) {
+            specs.push({ parameter: p, value: v });
           }
         }
+      } else {
+        // Parse general/custom specification or BOQ PDF layout
+        const lines = text.split('\n');
+        let currentParam = '';
+        let currentValue = '';
+
+        for (let line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || /^\d+\s*\/\s*\d+$/.test(trimmed)) continue;
+          if (trimmed.includes('SECTION') || trimmed.includes('KEYSPECIFICATIONS') || trimmed.includes('Item Title') || trimmed.includes('Item Description')) continue;
+
+          const startCol = line.search(/\S/);
+          const parts = line.split(/\s{3,}/).map(p => p.trim()).filter(Boolean);
+
+          if (parts.length >= 3 && /^\d+$/.test(parts[0])) {
+            if (currentParam) specs.push({ parameter: currentParam, value: currentValue });
+            currentParam = parts[1];
+            currentValue = parts[2];
+          } else {
+            if (parts.length >= 2) {
+              const leftColText = parts[0];
+              const rightColText = parts.slice(1).join(' ');
+              if (currentParam) currentParam += ' ' + leftColText;
+              else currentParam = leftColText;
+              if (currentValue) currentValue += ' ' + rightColText;
+              else currentValue = rightColText;
+            } else if (parts.length === 1) {
+              if (startCol < 25) {
+                if (currentParam) currentParam += ' ' + parts[0];
+                else currentParam = parts[0];
+              } else {
+                if (currentValue) currentValue += ' ' + parts[0];
+                else currentValue = parts[0];
+              }
+            }
+          }
+        }
+        if (currentParam) specs.push({ parameter: currentParam, value: currentValue });
       }
-    } catch (_) {}
+
+      // Clean, filter, and add to merged array
+      for (const s of specs) {
+        const p = s.parameter.replace(/\s+/g, ' ').trim();
+        const v = s.value.replace(/\s+/g, ' ').trim();
+
+        // Filter out Hindi/Devanagari characters or translation artifacts
+        if (/[\u0900-\u097F]/.test(p) || /[\u0900-\u097F]/.test(v)) continue;
+
+        // Filter out pricing floor policy, buyer-defined addons, and non-technical metadata
+        const lowerP = p.toLowerCase();
+        const lowerV = v.toLowerCase();
+        if (lowerP.includes('floor price') || lowerP.includes('addon') || lowerP.includes('defined by buyer')) continue;
+        if (lowerP.includes('े ता') || lowerP.includes('िनधा रत') || lowerP.includes('यूनतम')) continue;
+
+        if (p.includes('Speciﬁcation') || p.includes('Specification') || p.includes('विश') || p.includes('ववरण') || p.includes('का नाम') || p.includes('अनुमत मू य')) continue;
+        if (p === 'PRODUCT' || p === 'INFORMATION' || p === 'MATTRESS' || p === 'WARRANTY' || p === 'CERTIFICATIONS') continue;
+        if (p.includes('MATERIAL AND') || p.includes('DIMENSIONS PARAMETERS')) continue;
+        if (p.includes('Additional Specification Parameters') || p.includes('परे षती') || p.includes('Technical Specifications') || p.includes('Disclaimer') || p.includes('अ वीकरण')) continue;
+        if (p === 'Name' || p === 'Name Technical Specifications' || p === 'Bid Requirement (Allowed Values)') continue;
+        if (p === 'sections' || p === 'syringe pump' || p === 'tolerance (mm)') continue;
+        if (v === 'Specification' || v === 'Name' || v === 'Allowed Values' || v === 'Bid Requirement') continue;
+        if (p.length < 3 || v.length < 3) continue;
+
+        const key = p.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          allSpecs.push({ parameter: p, value: v });
+        }
+      }
+    } catch (error) {
+      console.error(`[extractSpecsFromPdf] Error processing file ${file}:`, error);
+    }
   }
 
-  return { specs: allSpecs };
+  // Format with sequential serial numbers
+  return allSpecs.map((s, idx) => ({
+    sr: idx + 1,
+    parameter: s.parameter,
+    value: s.value
+  }));
 }
 
 // Helper to launch Puppeteer and print HTML content to PDF in Portrait or Landscape mode
@@ -210,7 +294,6 @@ async function generatePdfFile(htmlContent: string, outputPath: string, isLandsc
 function generateDocxWithPython(
   payload: any,
   docFilePath: string,
-  specDocFilePath: string,
   orientation: string = 'portrait'
 ): boolean {
   const tempJsonPath = path.join(os.tmpdir(), `bid_data_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
@@ -229,16 +312,14 @@ function generateDocxWithPython(
     }
 
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    // Clean up destination files first so stale files from prior runs don't cause false positives
     try { if (fs.existsSync(docFilePath)) fs.unlinkSync(docFilePath); } catch (_) {}
-    try { if (fs.existsSync(specDocFilePath)) fs.unlinkSync(specDocFilePath); } catch (_) {}
 
-    execSync(`"${pythonCmd}" "${scriptPath}" --input "${tempJsonPath}" --output-bid "${docFilePath}" --output-spec "${specDocFilePath}" --orientation "${orientation}"`, {
+    execSync(`"${pythonCmd}" "${scriptPath}" --input "${tempJsonPath}" --output-bid "${docFilePath}" --orientation "${orientation}"`, {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    if (fs.existsSync(docFilePath) && fs.existsSync(specDocFilePath)) {
+    if (fs.existsSync(docFilePath)) {
       console.log(`[generateDocxWithPython] Successfully generated high-fidelity Word documents: ${docFilePath}`);
       return true;
     }
@@ -332,11 +413,10 @@ export async function POST(
 
     // Merge body with tender metadata fallbacks
     const specStatus = tender.spec_verification_status || tender.specVerificationStatus;
-    const misFinalPrice = tender.mis_final_price ?? tender.misFinalPrice;
-    if (specStatus !== 'Approved' || misFinalPrice === undefined || misFinalPrice === null || !Number.isFinite(Number(misFinalPrice)) || Number(misFinalPrice) <= 0) {
+    if (specStatus !== 'Approved') {
       return NextResponse.json({
         success: false,
-        error: 'Specification clearance and finalized MIS pricing are required before generating bid documents.'
+        error: 'Specification clearance is required before the bid package. Commercial pricing happens later, after EMD.'
       }, { status: 409 });
     }
 
@@ -378,18 +458,15 @@ export async function POST(
       place: 'Nashik'
     };
 
-    // Extract authentic technical specifications & tender metadata from tender PDF
-    const { specs, metadata } = extractTenderInfoAndSpecs(id);
-
-    const effectiveBidNumber = body.bidNumber || tender.ref_no || tender.refNo || metadata?.bidNumber || id;
-    const rawBidDate = body.bidDate || metadata?.bidDate || tender.publish_date || tender.publishDate || new Date().toISOString();
+    const effectiveBidNumber = body.bidNumber || tender.ref_no || tender.refNo || id;
+    const rawBidDate = body.bidDate || tender.publish_date || tender.publishDate || new Date().toISOString();
     const effectiveBidDate = formatDate(rawBidDate);
     const effectiveDate = formatDate(body.date || rawBidDate);
-    const effectiveQty = body.qty || tender.bid_qty || tender.bidQty || metadata?.qty || '-';
-    const effectiveAuthority = body.authorityName || tender.authority || metadata?.authorityName || 'The Competent Authority';
-    const effectiveDept = body.authorityDept || metadata?.authorityDept || '';
-    const effectiveAddress = body.authorityAddress || tender.location || metadata?.authorityAddress || '';
-    const effectiveProdDesc = body.productDescription || tender.product_name_as_per_tender || tender.productNameAsPerTender || metadata?.productDescription || tender.title || 'Equipment / Goods';
+    const effectiveQty = body.qty || tender.bid_qty || tender.bidQty || '-';
+    const effectiveAuthority = body.authorityName || tender.authority || 'The Competent Authority';
+    const effectiveDept = body.authorityDept || '';
+    const effectiveAddress = body.authorityAddress || tender.location || '';
+    const effectiveProdDesc = body.productDescription || tender.product_name_as_per_tender || tender.productNameAsPerTender || tender.title || 'Equipment / Goods';
     const effectiveProdName = body.productName || tender.product_name_as_per_marken || tender.productNameAsPerMarken || effectiveProdDesc;
 
     const templateData = {
@@ -423,39 +500,23 @@ export async function POST(
       fs.mkdirSync(docDir, { recursive: true });
     }
 
-    const finalSpecs = (specs && specs.length > 0) ? specs : [
-      {
-        sr: 1,
-        parameter: effectiveProdDesc,
-        value: `As per Bid Document / Tender Requirement${effectiveQty !== '-' ? ` (Qty: ${effectiveQty})` : ''}`,
-        compliance: 'Yes',
-        offered: `Fully compliant with all technical specifications and tender requirements for ${effectiveProdDesc}`,
-        deviation: 'No Deviation',
-        isAtc: false
-      }
-    ];
-
-    const enrichedTemplateData = {
-      ...templateData,
-      specs: finalSpecs
-    };
-
     // 1. Generate and save PDF using Puppeteer
     const pdfFileName = `Bid_Documents_${id}.pdf`;
     const pdfFilePath = path.join(docDir, pdfFileName);
     const pdfDownloadPath = localDocumentUrl(id, pdfFileName);
-    const htmlContent = generateHtmlTemplates(enrichedTemplateData);
+    const htmlContent = generateHtmlTemplates(templateData);
     await generatePdfFile(htmlContent, pdfFilePath, isLandscape);
 
-    // 2. Generate and save Technical Specification Sheet PDF (ALWAYS LANDSCAPE)
+    // 2. Generate and save Technical Specification Sheet PDF in Portrait mode (initial stage)
+    const specs = extractSpecsFromPdf(id);
+    const specHtml = generateTechnicalSpecificationHtml(templateData, specs);
+
     const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
     const specPdfFilePath = path.join(docDir, specPdfFileName);
     const specPdfDownloadPath = localDocumentUrl(id, specPdfFileName);
-    const specHtml = generateTechnicalSpecificationHtml(enrichedTemplateData, finalSpecs);
-    // Technical Specification Sheet MUST ALWAYS be generated in landscape mode!
-    await generatePdfFile(specHtml, specPdfFilePath, true);
+    await generatePdfFile(specHtml, specPdfFilePath, false);
 
-    // 3. Generate Word documents (.docx) using high-fidelity Python letterhead generator
+    // 3. Generate Word documents (.docx)
     const docFileName = `Bid_Documents_${id}.docx`;
     const docFilePath = path.join(docDir, docFileName);
     const docDownloadPath = localDocumentUrl(id, docFileName);
@@ -464,14 +525,14 @@ export async function POST(
     const specDocFilePath = path.join(docDir, specDocFileName);
     const specDocDownloadPath = localDocumentUrl(id, specDocFileName);
 
-    const pythonSuccess = generateDocxWithPython(enrichedTemplateData, docFilePath, specDocFilePath, orientation);
+    const isHealthtech = companyKey === 'healthtech';
+    const docxHeaderHtml = getDocxHeaderHtml(companyKey);
+    const docxFooterHtml = getDocxFooterHtml(companyKey);
+
+    const pythonSuccess = generateDocxWithPython(templateData, docFilePath, orientation);
 
     if (!pythonSuccess) {
       console.log(`[API Generate Bid Docs] Python generator bypassed/failed. Executing HTMLtoDOCX fallback.`);
-      const isHealthtech = companyKey === 'healthtech';
-      const docxHeaderHtml = getDocxHeaderHtml(companyKey);
-      const docxFooterHtml = getDocxFooterHtml(companyKey);
-
       const bidDocxOptions = {
         table: { row: { cantSplit: true } },
         header: true,
@@ -496,35 +557,35 @@ export async function POST(
         }
       };
 
-      const specDocxOptions = {
-        table: { row: { cantSplit: true } },
-        header: true,
-        footer: true,
-        orientation: 'landscape' as const,
-        pageSize: {
-          width: 16838,
-          height: 11906
-        },
-        font: 'Cambria',
-        fontSize: 22,
-        margins: {
-          top: 600,
-          bottom: 600,
-          left: 650,
-          right: 650,
-          header: 280,
-          footer: 280
-        }
-      };
-
       const docxRaw = await HTMLtoDOCX(cleanHtmlForDocx(htmlContent, companyKey), docxHeaderHtml, bidDocxOptions, docxFooterHtml);
       const docxBuffer = await sanitizeDocxBuffer(docxRaw);
       fs.writeFileSync(docFilePath, docxBuffer);
-
-      const specDocxRaw = await HTMLtoDOCX(cleanHtmlForDocx(specHtml, companyKey), docxHeaderHtml, specDocxOptions, docxFooterHtml);
-      const specDocxBuffer = await sanitizeDocxBuffer(specDocxRaw);
-      fs.writeFileSync(specDocFilePath, specDocxBuffer);
     }
+
+    // Generate Technical Specification Sheet Word file (.docx) in Portrait mode (initial stage)
+    const specDocxOptions = {
+      table: { row: { cantSplit: true } },
+      header: true,
+      footer: true,
+      orientation: 'portrait' as const,
+      pageSize: {
+        width: 11906,
+        height: 16838
+      },
+      font: 'Cambria',
+      fontSize: 22,
+      margins: {
+        top: 600,
+        bottom: 600,
+        left: 650,
+        right: 650,
+        header: 280,
+        footer: 280
+      }
+    };
+    const specDocxRaw = await HTMLtoDOCX(cleanHtmlForDocx(specHtml, companyKey), docxHeaderHtml, specDocxOptions, docxFooterHtml);
+    const specDocxBuffer = await sanitizeDocxBuffer(specDocxRaw);
+    fs.writeFileSync(specDocFilePath, specDocxBuffer);
 
     // 4. Update database downloaded_docs metadata
     const bidDocsMeta = {
@@ -576,99 +637,94 @@ export async function POST(
     currentDocs.push(specDocsMeta);
     currentDocs.push(specPdfMeta);
 
-    // Update downloaded_docs metadata and advance stage to DOC_VERIFICATION in SQLite if available
+    const emdValue = tender.emd ?? tender.emdAmount;
+    const emdExempt = tender.emd_applicable === false || tender.emdApplicable === false
+      || (emdValue != null && Number(emdValue) === 0)
+      || tender.payment_status === 'Exempt' || tender.paymentStatus === 'Exempt'
+      || tender.emd_status === 'EXEMPT_SKIPPED';
+    const nextStage = emdExempt ? 'DUAL_TRACK' : 'EMD_PAYMENT';
+    const nextPayment = emdExempt ? 'Exempt' : (tender.payment_status || tender.paymentStatus || 'None');
+
+    // Bid package is step 3. EMD is step 4. Document verification waits until after EMD.
     try {
       const updateStmt = db.prepare(`
         UPDATE tenders 
         SET downloaded_docs = ?, 
-            current_stage = 'DOC_VERIFICATION', 
-            verification_status = 'Pending',
-            payment_status = 'None',
-            submission_status = 'None'
+            current_stage = ?,
+            payment_status = CASE WHEN ? = 'Exempt' THEN 'Exempt' ELSE payment_status END
         WHERE id = ?
       `);
-      updateStmt.run(JSON.stringify(currentDocs), id);
+      updateStmt.run(JSON.stringify(currentDocs), nextStage, nextPayment, id);
     } catch (_) {}
-
-    const now = new Date().toISOString();
-    const assignedMis = tender.assigned_mis_member || tender.assignedMisMember || 'misteam';
-
-    try {
-      // Cancel/remove any premature downstream approval requests
-      db.prepare("DELETE FROM tender_approval_requests WHERE tender_id = ? AND stage IN ('PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING') AND status = 'PENDING'").run(id);
-
-      const existingDocReq = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").get(id);
-      if (existingDocReq) {
-        db.prepare("UPDATE tender_approval_requests SET requested_by = ?, assigned_to = ?, working_path = ?, updated_at = ? WHERE id = ?")
-          .run(username, assignedMis, docDownloadPath, now, (existingDocReq as any).id);
-      } else {
-        db.prepare(`
-          INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, working_path, status, created_at, updated_at)
-          VALUES (?, 'DOC_VERIFICATION', ?, ?, ?, 'PENDING', ?, ?)
-        `).run(id, username, assignedMis, docDownloadPath, now, now);
-      }
-    } catch (dbErr) {
-      console.error('[API Generate Bid Docs] Error creating approval request:', dbErr);
-    }
 
     // Attempt notifying Spring Boot backend if available
     if (backendUrl) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         const authH = request.headers.get('authorization');
         if (authH) headers['authorization'] = authH;
+        const roleH = request.headers.get('x-user-role');
+        if (roleH) headers['x-user-role'] = roleH;
+        else if (userRole) headers['x-user-role'] = userRole;
+        const userH = request.headers.get('x-user-username');
+        if (userH) headers['x-user-username'] = userH;
+        else if (username) headers['x-user-username'] = username;
 
         const docsJsonStr = JSON.stringify(currentDocs);
+        const isAlreadyApproved = tender.payment_status === 'Approved' || tender.paymentStatus === 'Approved';
+        const paymentStatusToPatch = isAlreadyApproved ? undefined : (emdExempt ? 'Exempt' : undefined);
 
-        fetch(`${backendUrl}/api/tenders/${id}/doc-verification-request`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            assignedMisExecutive: assignedMis,
-            workingPath: docDownloadPath,
-            downloadedDocs: docsJsonStr,
-            downloaded_docs: docsJsonStr,
-            comment: 'Bid document package generated. Submitted for MIS verification & approval.'
-          }),
-          signal: controller.signal,
-          cache: 'no-store'
-        }).catch(() => {});
+        const patchPayload: Record<string, any> = {
+          downloadedDocs: docsJsonStr,
+          downloaded_docs: docsJsonStr,
+          current_stage: nextStage,
+          currentStage: nextStage
+        };
+        if (paymentStatusToPatch) {
+          patchPayload.payment_status = paymentStatusToPatch;
+          patchPayload.paymentStatus = paymentStatusToPatch;
+        }
 
-        fetch(`${backendUrl}/api/tenders/${id}`, {
+        const patchRes = await fetch(`${backendUrl}/api/tenders/${id}`, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify({
-            downloadedDocs: docsJsonStr,
-            downloaded_docs: docsJsonStr,
-            current_stage: 'DOC_VERIFICATION',
-            verification_status: 'Pending'
-          }),
+          body: JSON.stringify(patchPayload),
           signal: controller.signal,
           cache: 'no-store'
-        }).catch(() => {});
+        });
 
+        if (!patchRes.ok) {
+          const errText = await patchRes.text().catch(() => '');
+          console.error(`[generate-bid-docs] Backend PATCH returned ${patchRes.status}: ${errText}`);
+        } else {
+          console.log(`[generate-bid-docs] Backend successfully updated tender ${id} with bid docs`);
+        }
+      } catch (patchErr) {
+        console.error('[generate-bid-docs] Failed to notify backend:', patchErr);
+      } finally {
         clearTimeout(timeout);
-      } catch (_) {}
+      }
     }
 
     // Log the activity to activity_log
     try {
-      addActivityLog(username || 'executive', userRole || 'Tender Executive', 'Generated Bid Documents', id, 'Generated Word & PDF bid document package and Technical Specification Sheet. Submitted to MIS Team for approval.');
+      addActivityLog(username || 'executive', userRole || 'Tender Executive', 'Generated Bid Documents', id, 'Generated the bid package. Next step is EMD, or dual track when EMD is exempt.');
     } catch (_) {}
-
-    console.log(`[API Generate Bid Docs] Compiled Word (.docx) and PDF (.pdf) successfully for Tender ${id}. Advanced stage to DOC_VERIFICATION.`);
 
     return NextResponse.json({
       success: true,
-      message: 'Bid Documents generated successfully and forwarded to MIS Team for approval.',
+      message: emdExempt
+        ? 'Bid package generated. EMD is exempt, so pricing and document verification are now open.'
+        : 'Bid package generated. Enter EMD payment details next. Pricing starts after EMD.',
       downloadUrl: docDownloadPath,
       pdfDownloadUrl: pdfDownloadPath,
       specDownloadUrl: specDocDownloadPath,
       specPdfDownloadUrl: specPdfDownloadPath,
-      currentStage: 'DOC_VERIFICATION',
-      verificationStatus: 'Pending',
+      currentStage: nextStage,
+      paymentStatus: nextPayment,
+      downloadedDocs: JSON.stringify(currentDocs),
       orientation,
       status: tender.status
     });

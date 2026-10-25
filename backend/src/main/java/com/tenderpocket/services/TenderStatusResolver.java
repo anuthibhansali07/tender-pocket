@@ -70,12 +70,10 @@ public final class TenderStatusResolver {
      * @param todayIST today's date in Asia/Kolkata, as an ISO string, used for the due-date
      *                 comparison so that "overdue" follows the client's working day.
      */
-    public static String resolve(Tender t, String todayIST) {
-        String stored = t.getStatus();
-
-        boolean hasPassedDueDate = t.getDueDate() != null
-                && !t.getDueDate().isBlank()
-                && t.getDueDate().split(" ")[0].compareTo(todayIST) < 0;
+    public static String resolve(String stored, String dueDate, String assignedAt, String scrapedAt, String publishDate, String misExecutive, String todayIST) {
+        boolean hasPassedDueDate = dueDate != null
+                && !dueDate.isBlank()
+                && dueDate.split(" ")[0].compareTo(todayIST) < 0;
 
         if (eq(stored, "Awarded") || eq(stored, "Won")) return "Won";
         if (eq(stored, "Not Awarded") || eq(stored, "Lost")) return "Lost";
@@ -96,27 +94,29 @@ public final class TenderStatusResolver {
         }
         if (eq(stored, "Participating")) return "Participating";
 
-        // "Lapsed" means nobody has picked the tender up, measured from when it was assigned or,
-        // failing that, when it arrived. Deriving it from publish_date instead - as the dashboard
-        // did - marks a tender neglected the moment it is imported, because GeM bids are routinely
-        // published more than three days before they are scraped.
-        String refDate = t.getAssignedAt() != null
-                ? t.getAssignedAt()
-                : (t.getScrapedAt() != null ? t.getScrapedAt() : t.getPublishDate());
+        String refDate = assignedAt != null
+                ? assignedAt
+                : (scrapedAt != null ? scrapedAt : publishDate);
         LocalDate ref = parseFlexibleDate(refDate);
-        boolean unassigned = t.getMisExecutive() == null || t.getMisExecutive().isBlank();
+        boolean unassigned = misExecutive == null || misExecutive.isBlank();
         if (ref != null && unassigned
                 && ChronoUnit.DAYS.between(ref, LocalDate.now()) >= LAPSE_AFTER_DAYS) {
             return "Lapsed";
         }
 
-        // GeMScraperService stores "Issued" on every new tender. That is an internal marker, not
-        // a status the UI offers: returning it verbatim meant a scraped tender matched neither the
-        // "New" nor the "Lapsed" filter, and the tender list came back empty for every status
-        // while the dashboard counted the same rows as New.
         if (stored == null || stored.isBlank() || eq(stored, "Issued")) return "New";
 
         return stored;
+    }
+
+    public static String resolve(Tender t, String todayIST) {
+        if (t == null) return "New";
+        return resolve(t.getStatus(), t.getDueDate(), t.getAssignedAt(), t.getScrapedAt(), t.getPublishDate(), t.getMisExecutive(), todayIST);
+    }
+
+    public static String resolve(com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection p, String todayIST) {
+        if (p == null) return "New";
+        return resolve(p.getStatus(), p.getDueDate(), p.getAssignedAt(), p.getScrapedAt(), p.getPublishDate(), p.getMisExecutive(), todayIST);
     }
 
     private static boolean eq(String value, String expected) {

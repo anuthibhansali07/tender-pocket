@@ -25,8 +25,19 @@ cd "$SCRIPT_DIR"
 # ------------------------------------------------------------------------------
 # 1. Environment & API Keys Configuration
 # ------------------------------------------------------------------------------
-# Gemini API Key (defaults to user's configured key; can be overridden via env)
-export GEMINI_API_KEY="${GEMINI_API_KEY:-AQ.Ab8RN6JAg7GjqfAmSZPQSgm7ZmmwmShprAuab3lPAN7o-elDBQ}"
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+fi
+
+# Gemini API Key (loaded from .env or environment)
+export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+
+# Azure OpenAI Configuration (loaded from .env or environment)
+export AZURE_OPENAI_API_KEY="${AZURE_OPENAI_API_KEY:-}"
+export AZURE_OPENAI_ENDPOINT="${AZURE_OPENAI_ENDPOINT:-https://tenderpocket.services.ai.azure.com/api/projects/proj-default/openai/v1}"
 
 # PostgreSQL Database Configuration
 export DATABASE_URL="${DATABASE_URL:-jdbc:postgresql://localhost:5432/tender_pocket?sslmode=disable}"

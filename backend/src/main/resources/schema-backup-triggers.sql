@@ -152,3 +152,9 @@ WHERE NOT EXISTS (SELECT 1 FROM db_change_log WHERE table_name = 'tender_workflo
 INSERT INTO db_change_log (table_name, operation, record_pk, row_data, created_at)
 SELECT 'email_notification_logs', 'INSERT', id::TEXT, to_jsonb(e), CURRENT_TIMESTAMP FROM email_notification_logs e
 WHERE NOT EXISTS (SELECT 1 FROM db_change_log WHERE table_name = 'email_notification_logs');
+
+-- Phase 3: Analytical Performance Composite Indexes
+CREATE INDEX IF NOT EXISTS idx_tenders_due_exec ON tenders(due_date, mis_executive);
+CREATE INDEX IF NOT EXISTS idx_tenders_status_cost ON tenders(status, estimated_cost);
+CREATE INDEX IF NOT EXISTS idx_tenders_sector_cost ON tenders(sector, estimated_cost);
+CREATE INDEX IF NOT EXISTS idx_tenders_auth_cost ON tenders(authority, estimated_cost);

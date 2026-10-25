@@ -3,7 +3,7 @@
 import React from 'react';
 import { Tender } from '@/lib/db';
 import { PIPELINE_STEPS, resolveTenderStageDetails } from '@/lib/tenderStatus';
-import { AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Clock, CheckCircle2, ShieldCheck, Calculator, Lock } from 'lucide-react';
 
 interface WorkflowPipelineStepperProps {
   tender: Tender;
@@ -29,23 +29,38 @@ export default function WorkflowPipelineStepper({
           <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Current Stage: <strong style={{ color: stage.statusColor }}>{stage.stageName}</strong>
           </span>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '700',
-            padding: '2px 8px',
-            borderRadius: '10px',
-            backgroundColor: stage.badgeBg,
-            color: stage.statusColor,
-            border: `1px solid ${stage.badgeBorder}`
-          }}>
-            {stage.shortStage}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {stage.isEmdSkipped && (
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '600',
+                padding: '2px 6px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.3)'
+              }}>
+                EMD Exempt
+              </span>
+            )}
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              backgroundColor: stage.badgeBg,
+              color: stage.statusColor,
+              border: `1px solid ${stage.badgeBorder}`
+            }}>
+              {stage.shortStage}
+            </span>
+          </div>
         </div>
       )}
 
       {/* Stepper track */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', padding: '0 6px', margin: '4px 0' }}>
-        {/* Inactive base line connecting 1 to 8 */}
+        {/* Inactive base line connecting 1 to 7 */}
         <div style={{
           position: 'absolute',
           top: '12px',
@@ -71,6 +86,8 @@ export default function WorkflowPipelineStepper({
         {PIPELINE_STEPS.map((step, idx) => {
           const isDone = stage.stepCompleted[idx];
           const isCurrent = stage.currentStepIndex === idx && !stage.isWon && !stage.isLost;
+          const isDualTrackStep = step.num === 5;
+          const isSubmitStep = step.num === 6;
 
           return (
             <div key={step.num} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, minWidth: '44px' }}>
@@ -89,7 +106,7 @@ export default function WorkflowPipelineStepper({
                 boxShadow: isCurrent ? '0 0 10px rgba(99, 102, 241, 0.45)' : undefined,
                 transition: 'all 0.2s ease'
               }}>
-                {isDone ? '✓' : step.num}
+                {isDone ? '✓' : isSubmitStep && !stage.canFinalSubmit && !isDone ? <Lock size={11} /> : step.num}
               </div>
               <span style={{
                 fontSize: '9.5px',
@@ -106,6 +123,43 @@ export default function WorkflowPipelineStepper({
         })}
       </div>
 
+      {/* Dual Track Split Pill Indicator (When in Step 5 or Step 6) */}
+      {(stage.currentStepIndex === 4 || stage.currentStepIndex === 5) && !stage.isWon && !stage.isLost && (
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '6px 12px',
+          borderRadius: '8px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid var(--border-color)',
+          fontSize: '11px'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: stage.isPricingApproved ? '#10b981' : 'var(--text-muted)',
+            fontWeight: stage.isPricingApproved ? '700' : '500'
+          }}>
+            <Calculator size={13} />
+            <span>Track A: Commercial Quote {stage.isPricingApproved ? '✓' : '(Pending)'}</span>
+          </div>
+          <span style={{ color: 'var(--border-color)' }}>•</span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: stage.isDocsVerified ? '#10b981' : 'var(--text-muted)',
+            fontWeight: stage.isDocsVerified ? '700' : '500'
+          }}>
+            <ShieldCheck size={13} />
+            <span>Track B: Folder Audit {stage.isDocsVerified ? '✓' : '(Pending)'}</span>
+          </div>
+        </div>
+      )}
+
       {/* Action / Blocker Callout Banner */}
       {showActionBanner && (
         <div style={{
@@ -118,41 +172,44 @@ export default function WorkflowPipelineStepper({
           borderRadius: '10px',
           background: stage.badgeBg,
           border: `1px solid ${stage.badgeBorder}`,
-          marginTop: '6px'
+          marginTop: '2px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 280px' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'var(--bg-card)',
-              color: stage.statusColor,
-              flexShrink: 0
-            }}>
-              {stage.needsAction ? <AlertCircle size={18} /> : stage.isWon ? <CheckCircle2 size={18} /> : <Clock size={18} />}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '220px', flex: 1 }}>
+            {stage.isWon ? (
+              <CheckCircle2 size={18} color={stage.statusColor} />
+            ) : stage.needsAction ? (
+              <AlertCircle size={18} color={stage.statusColor} />
+            ) : (
+              <Clock size={18} color={stage.statusColor} />
+            )}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: stage.statusColor }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
                 {stage.actionTitle}
               </span>
-              <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.4' }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
                 {stage.actionDesc}
               </span>
             </div>
           </div>
 
-          {onActionClick && (
+          {onActionClick && stage.actionButtonText && (
             <button
               onClick={onActionClick}
-              className="btn btn-primary"
               style={{
-                fontSize: '12px',
-                padding: '6px 14px',
-                backgroundColor: stage.needsAction ? 'var(--primary)' : undefined
+                backgroundColor: stage.statusColor,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '7px 14px',
+                fontSize: '11.5px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: `0 2px 8px ${stage.badgeBorder}`,
+                transition: 'opacity 0.2s ease',
+                whiteSpace: 'nowrap'
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
             >
               {stage.actionButtonText}
             </button>

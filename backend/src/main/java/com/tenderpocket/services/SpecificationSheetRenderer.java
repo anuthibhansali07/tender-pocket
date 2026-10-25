@@ -28,7 +28,7 @@ final class SpecificationSheetRenderer {
         if (combined) products = List.of(SpecificationSheetContent.combined(products));
         StringBuilder out = new StringBuilder("""
             <!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-            @page { size:A4 landscape; margin:25mm 8mm 10mm;
+            @page { size:A4 portrait; margin:29mm 8mm 10mm;
               @top-center { content:element(letterhead); }
               @bottom-center { content:"Page " counter(page); font-family:Cambria; font-size:9pt; } }
             body { font-family:Cambria,serif; font-size:11pt; line-height:1.05; color:#000; }
@@ -106,8 +106,7 @@ final class SpecificationSheetRenderer {
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             CTSectPr section = doc.getDocument().getBody().addNewSectPr();
             CTPageSz size = section.addNewPgSz();
-            size.setW(BigInteger.valueOf(16838)); size.setH(BigInteger.valueOf(11906));
-            size.setOrient(STPageOrientation.LANDSCAPE);
+            size.setW(BigInteger.valueOf(11906)); size.setH(BigInteger.valueOf(16838));
             CTPageMar margin = section.addNewPgMar();
             margin.setTop(BigInteger.valueOf(1644)); margin.setBottom(BigInteger.valueOf(567));
             margin.setLeft(BigInteger.valueOf(454)); margin.setRight(BigInteger.valueOf(454));
@@ -224,7 +223,7 @@ final class SpecificationSheetRenderer {
                 sheet.createFreezePane(0, headerIndex + 1);
                 sheet.setRepeatingRows(new CellRangeAddress(headerIndex, headerIndex, -1, -1));
                 sheet.getPrintSetup().setPaperSize(PrintSetup.A4_PAPERSIZE);
-                sheet.getPrintSetup().setLandscape(true);
+                sheet.getPrintSetup().setLandscape(false);
                 sheet.setFitToPage(true);
                 sheet.getPrintSetup().setFitWidth((short) 1);
                 sheet.getPrintSetup().setFitHeight((short) 0);

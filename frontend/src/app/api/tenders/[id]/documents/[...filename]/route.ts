@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import axios from 'axios';
 import { downloadAndSaveTenderDocuments } from '@/lib/scraper';
-import { getAuthFromRequest } from '@/lib/auth';
+import { getAuthFromRequest, getTokenFromRequest } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -38,24 +38,92 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const filenameSegments = rawSegments.map(p => path.basename(p));
     const filenameStr = filenameSegments.join('/');
 
-    const docsDir = path.resolve(process.cwd(), 'public', 'documents');
-    let targetPath = path.resolve(docsDir, safeId, ...filenameSegments);
+    // Enforce strict confidentiality on EMD payment receipt/proof
+    // Visible only to: that particular executive, his MIS team, and Admin
+    const isEmdReceipt = filenameStr.toLowerCase().includes('emd_receipt') || filenameStr.toLowerCase().includes('receipt');
+    if (isEmdReceipt) {
+      let tenderRow: any = null;
+      try {
+        const dbMod = await import('@/lib/db');
+        tenderRow = dbMod.default.prepare("SELECT * FROM tenders WHERE id = ?").get(safeId);
+      } catch (_) {}
 
-    if (!targetPath.startsWith(docsDir + path.sep)) {
-      return Response.json({ success: false, error: 'Invalid document path.' }, { status: 400 });
+      const role = auth.role;
+      const username = (auth.username || '').trim().toLowerCase();
+      const isAdmin = role === 'Admin';
+      const isParticularExec = role === 'Tender Executive' && (
+        username === String(tenderRow?.mis_executive || '').trim().toLowerCase() ||
+        username === String(tenderRow?.assigned_to || '').trim().toLowerCase() ||
+        username === String(tenderRow?.created_by || '').trim().toLowerCase() ||
+        !tenderRow?.mis_executive
+      );
+      const isHisMisTeam = (role === 'MIS Team' || role === 'MIS Executive') && (
+        username === String(tenderRow?.assigned_mis_member || '').trim().toLowerCase() ||
+        username === String(tenderRow?.assigned_mis_member_emd || '').trim().toLowerCase() ||
+        !tenderRow?.assigned_mis_member ||
+        role === 'MIS Team'
+      );
+
+      if (!isAdmin && !isParticularExec && !isHisMisTeam) {
+        return Response.json(
+          { success: false, error: 'Confidential Document: Access to EMD payment receipt is restricted to the assigned Executive, his MIS Team, and Admin.' },
+          { status: 403 }
+        );
+      }
     }
 
-    // If file does not exist on local disk in frontend, query backend (S3 presigned URL 302 or backend stream)
-    if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+    // Check candidate directories on local disk (frontend, backend, root public)
+    const candidateDirs = [
+      path.resolve(process.cwd(), 'public', 'documents'),
+      path.resolve(process.cwd(), '..', 'backend', 'public', 'documents'),
+      path.resolve(process.cwd(), 'backend', 'public', 'documents'),
+      path.resolve(process.cwd(), '..', 'public', 'documents'),
+      path.resolve(process.cwd(), '..', 'frontend', 'public', 'documents'),
+    ];
+
+    let foundLocalPath: string | null = null;
+    let foundMtime = -1;
+    const consider = (candidate: string) => {
+      if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) return;
+      const mtime = fs.statSync(candidate).mtimeMs;
+      if (mtime >= foundMtime) {
+        foundLocalPath = candidate;
+        foundMtime = mtime;
+      }
+    };
+    for (const dir of candidateDirs) {
+      if (!fs.existsSync(dir)) continue;
+      consider(path.resolve(dir, safeId, ...filenameSegments));
+      // Also try case-insensitive filename match in tender dir
+      const tenderDir = path.resolve(dir, safeId);
+      if (fs.existsSync(tenderDir) && fs.statSync(tenderDir).isDirectory()) {
+        try {
+          const files = fs.readdirSync(tenderDir);
+          const baseNameOnly = path.basename(filenameStr).toLowerCase();
+          const match = files.find(f => f.toLowerCase() === baseNameOnly);
+          if (match) consider(path.resolve(tenderDir, match));
+        } catch {
+          // ignore directory read error
+        }
+      }
+    }
+
+    let targetPath = foundLocalPath || path.resolve(process.cwd(), 'public', 'documents', safeId, ...filenameSegments);
+
+    // If file does not exist on local disk in candidate folders, query backend (S3 presigned URL 302 or backend stream)
+    if (!foundLocalPath) {
       const backendBaseUrl = process.env.BACKEND_URL || 'http://localhost:8090';
       try {
         const headers: Record<string, string> = {
           'x-user-role': auth.role,
           'x-user-username': auth.username,
         };
-        const authHeader = request.headers.get('authorization');
-        if (authHeader) {
-          headers['authorization'] = authHeader;
+        const rawToken = getTokenFromRequest(request);
+        if (rawToken) {
+          headers['authorization'] = `Bearer ${rawToken}`;
+        } else {
+          const authHeader = request.headers.get('authorization');
+          if (authHeader) headers['authorization'] = authHeader;
         }
 
         const backendRes = await fetch(`${backendBaseUrl}/documents/${encodeURIComponent(safeId)}/${encodeURIComponent(filenameStr)}`, {
@@ -131,16 +199,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
       }
 
-      // 3. Case-insensitive or fuzzy match within safeId directory
-      if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
-        const searchDir = path.resolve(docsDir, safeId);
-        const baseNameOnly = path.basename(filenameStr).toLowerCase();
-        if (fs.existsSync(searchDir)) {
-          const files = fs.readdirSync(searchDir);
-          const matched = files.find(f => f.toLowerCase() === baseNameOnly);
-          if (matched) {
-            targetPath = path.resolve(searchDir, matched);
-          }
+      // 3. Re-check candidate folders after scraper/GeM attempt
+      for (const dir of candidateDirs) {
+        if (!fs.existsSync(dir)) continue;
+        const testPath = path.resolve(dir, safeId, ...filenameSegments);
+        if (fs.existsSync(testPath) && fs.statSync(testPath).isFile()) {
+          targetPath = testPath;
+          break;
+        }
+        const tenderDir = path.resolve(dir, safeId);
+        if (fs.existsSync(tenderDir) && fs.statSync(tenderDir).isDirectory()) {
+          try {
+            const files = fs.readdirSync(tenderDir);
+            const baseNameOnly = path.basename(filenameStr).toLowerCase();
+            const match = files.find(f => f.toLowerCase() === baseNameOnly);
+            if (match) {
+              const matchedPath = path.resolve(tenderDir, match);
+              if (fs.existsSync(matchedPath) && fs.statSync(matchedPath).isFile()) {
+                targetPath = matchedPath;
+                break;
+              }
+            }
+          } catch {}
         }
       }
     }
