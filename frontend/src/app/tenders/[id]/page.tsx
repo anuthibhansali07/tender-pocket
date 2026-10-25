@@ -176,6 +176,15 @@ export default function TenderDetailPage() {
     } catch (_) {}
   };
 
+  const [isParticipatingSubmitting, setIsParticipatingSubmitting] = useState(false);
+  const [isTechSpecDragOver, setIsTechSpecDragOver] = useState(false);
+
+  // Offered Product Model Catalogue State (Evidence-based Column 4)
+  const [availableModels, setAvailableModels] = useState<Array<{ id: number; model_number: string; make: string; product_category: string; verified_specs?: number }>>([]);
+  const [selectedModelId, setSelectedModelId] = useState<number | ''>('');
+  const [scheduleModels, setScheduleModels] = useState<Record<string, number>>({});
+
+
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
   const [savingSpecs, setSavingSpecs] = useState(false);
@@ -380,6 +389,7 @@ export default function TenderDetailPage() {
       fetchTenderDetails();
       fetchComments(id);
       fetchMisTeamMembers();
+      fetchOfferedModels(id);
 
       // Poll updates every 1.5 seconds for near-instant live sync
       const syncInterval = setInterval(() => {
@@ -618,6 +628,30 @@ export default function TenderDetailPage() {
       showToast('Network error while granting clearance. Please try again.', 'error');
     } finally {
       setSubmittingApproveClearance(false);
+    }
+  };
+
+  const fetchOfferedModels = async (tenderId: string) => {
+    try {
+      const [modelsRes, tenderModelsRes] = await Promise.all([
+        fetchWithAuth('/api/products/models?status=VERIFIED'),
+        fetchWithAuth(`/api/tenders/${tenderId}/offered-models`)
+      ]);
+      if (modelsRes.ok) {
+        const mData = await modelsRes.json();
+        if (mData.success && Array.isArray(mData.models)) {
+          setAvailableModels(mData.models);
+        }
+      }
+      if (tenderModelsRes.ok) {
+        const tData = await tenderModelsRes.json();
+        if (tData.success && tData.data) {
+          if (tData.data.selected_model_id) setSelectedModelId(tData.data.selected_model_id);
+          if (tData.data.schedule_models) setScheduleModels(tData.data.schedule_models);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch offered models:', e);
     }
   };
 
@@ -1122,8 +1156,18 @@ export default function TenderDetailPage() {
     }
   };
 
+  const isValidTechSpecFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+           name.endsWith('.txt') || name.endsWith('.xlsx') || name.endsWith('.xls');
+  };
+
   const handleTechSpecUpload = async (fileToUpload: File) => {
-    if (!selectedTender || techSpecUploadInFlight.current) return;
+    if (!selectedTender || !fileToUpload || techSpecUploadInFlight.current) return;
+    if (!isValidTechSpecFile(fileToUpload)) {
+      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+      return;
+    }
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
@@ -1153,6 +1197,12 @@ export default function TenderDetailPage() {
     try {
       const formData = new FormData();
       formData.append('file', fileToUpload);
+      if (selectedModelId) {
+        formData.append('selected_model_id', String(selectedModelId));
+      }
+      if (scheduleModels && Object.keys(scheduleModels).length > 0) {
+        formData.append('schedule_models', JSON.stringify(scheduleModels));
+      }
       const response = await fetchWithAuth(`/api/tenders/${tenderId}/upload-tech-spec`, {
         method: 'POST', body: formData,
       });
@@ -1245,20 +1295,8 @@ export default function TenderDetailPage() {
     try {
       setNotesSaving(true);
       const updatedFields: any = {
-        notes: tenderNotes,
-        mis_executive: misExecutive || null,
-        bid_qty: bidQty === '' ? null : Number(bidQty),
-        quoted_qty: quotedQty === '' ? null : Number(quotedQty)
+        notes: tenderNotes
       };
-
-      // If assignment has changed, set assigned_by and assigned_at
-      if (misExecutive !== selectedTender.mis_executive) {
-        updatedFields.assigned_by = misExecutive ? currentUser?.username : null;
-        updatedFields.assigned_at = misExecutive ? new Date().toISOString() : null;
-        if (misExecutive && (selectedTender.status === 'New' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Issued')) {
-          updatedFields.status = 'Participating';
-        }
-      }
 
       const response = await fetchWithAuth(`/api/tenders/${id}`, {
         method: 'PATCH',
@@ -1267,16 +1305,110 @@ export default function TenderDetailPage() {
       });
       const data = await response.json();
       if (data.success) {
-        showToast('Changes saved successfully', 'success');
+        showToast('Notes saved successfully', 'success');
         setSelectedTender(prev => prev ? { ...prev, ...updatedFields } : null);
         fetchTenderDetails();
       } else {
-        showToast(data.error || 'Failed to save changes', 'error');
+        showToast(data.error || 'Failed to save notes', 'error');
       }
     } catch (e) {
-      showToast('Communication error saving changes', 'error');
+      showToast('Communication error saving notes', 'error');
     } finally {
       setNotesSaving(false);
+    }
+  };
+
+  const handleAssignAndParticipate = async () => {
+    if (!id || !selectedTender || isParticipatingSubmitting) return;
+
+    // 1. Validate that an eligible executive has been selected
+    const trimmedExec = (misExecutive || '').trim();
+    if (!trimmedExec) {
+      showToast('Please select an executive to assign.', 'error');
+      return;
+    }
+    if (executivesList.length > 0 && !executivesList.includes(trimmedExec)) {
+      showToast('Selected executive is not in the eligible executives list.', 'error');
+      return;
+    }
+
+    // 2. Validate Bid Quantity
+    const bidQtyErr = validateSpecQuantity(bidQty);
+    if (bidQtyErr) {
+      showToast(`Bid Quantity: ${bidQtyErr}`, 'error');
+      return;
+    }
+
+    // 3. Validate Quoted Quantity
+    const quotedQtyErr = validateSpecQuantity(quotedQty);
+    if (quotedQtyErr) {
+      showToast(`Quoted Quantity: ${quotedQtyErr}`, 'error');
+      return;
+    }
+
+    try {
+      setIsParticipatingSubmitting(true);
+      const updatedFields: any = {
+        status: 'Participating',
+        mis_executive: trimmedExec,
+        bid_qty: bidQty === '' || bidQty === null ? null : Number(bidQty),
+        quoted_qty: quotedQty === '' || quotedQty === null ? null : Number(quotedQty),
+        assigned_by: currentUser?.username || 'MIS Team',
+        assigned_at: new Date().toISOString()
+      };
+
+      const response = await fetchWithAuth(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        showToast('Tender assigned and marked as Participating!', 'success');
+        setSelectedTender(prev => prev ? { 
+          ...prev, 
+          ...updatedFields,
+          current_stage: prev.current_stage === 'NEW' || !prev.current_stage ? 'SPEC_CLEARANCE' : prev.current_stage 
+        } : null);
+        await fetchTenderDetails();
+      } else {
+        showToast(data.error || 'Failed to assign and participate.', 'error');
+      }
+    } catch (e) {
+      showToast('Communication error while updating participation.', 'error');
+    } finally {
+      setIsParticipatingSubmitting(false);
+    }
+  };
+
+  const handleNotParticipating = async () => {
+    if (!id || !selectedTender || isParticipatingSubmitting) return;
+
+    try {
+      setIsParticipatingSubmitting(true);
+      const updatedFields = {
+        status: 'Not Participating'
+      };
+
+      const response = await fetchWithAuth(`/api/tenders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        showToast('Tender marked as Not Participating.', 'success');
+        setSelectedTender(prev => prev ? { ...prev, status: 'Not Participating' } : null);
+        await fetchTenderDetails();
+      } else {
+        showToast(data.error || 'Failed to update status.', 'error');
+      }
+    } catch (e) {
+      showToast('Communication error while updating status.', 'error');
+    } finally {
+      setIsParticipatingSubmitting(false);
     }
   };
 
@@ -1512,50 +1644,25 @@ export default function TenderDetailPage() {
                 {/* Right Column: Assignment & Notes */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   
-                  {/* Executive & Quantity Assignment */}
-                  <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Executive & Quantities Assignment</h3>
-                      {(currentUser?.role === 'MIS Team') && (
-                        <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '11px' }} onClick={saveNotes} disabled={notesSaving}>
-                          {notesSaving ? 'Saving...' : 'Save Assignment'}
-                        </button>
-                      )}
-                    </div>
+                  {/* Executive & Quantity Assignment - Viewable only for non-MIS roles; for MIS Team, assignment is unified in the Participation Decision Pending section */}
+                  {!isMisRole && (
+                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>Executive & Quantities Assignment</h3>
+                      </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            MIS Executive
-                          </label>
-                          {selectedTender.mis_executive && selectedTender.assigned_by && (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                              Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
-                            </span>
-                          )}
-                        </div>
-                        {currentUser?.role === 'MIS Team' ? (
-                          <select
-                            value={misExecutive}
-                            onChange={(e) => setMisExecutive(e.target.value)}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              outline: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            <option value="">-- Unassigned --</option>
-                            {executivesList.map(exec => (
-                              <option key={exec} value={exec}>{exec}</option>
-                            ))}
-                          </select>
-                        ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              MIS Executive
+                            </label>
+                            {selectedTender.mis_executive && selectedTender.assigned_by && (
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="text"
                             disabled
@@ -1570,57 +1677,55 @@ export default function TenderDetailPage() {
                               cursor: 'not-allowed'
                             }}
                           />
-                        )}
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Bid Quantity
-                          </label>
-                          <input
-                            id="bid-qty-input"
-                            type="number"
-                            placeholder="Bid Qty"
-                            value={bidQty}
-                            disabled={currentUser?.role !== 'MIS Team'}
-                            onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
-                            }}
-                          />
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                            Quoted Quantity
-                          </label>
-                          <input
-                            id="quoted-qty-input"
-                            type="number"
-                            placeholder="Quoted Qty"
-                            value={quotedQty}
-                            disabled={currentUser?.role !== 'MIS Team'}
-                            onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid var(--border-color)',
-                              background: 'var(--bg-app)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              opacity: currentUser?.role !== 'MIS Team' ? 0.7 : 1
-                            }}
-                          />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Bid Quantity
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Bid Qty"
+                              value={bidQty}
+                              disabled
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-app)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                opacity: 0.7,
+                                cursor: 'not-allowed'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Quoted Quantity
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Quoted Qty"
+                              value={quotedQty}
+                              disabled
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-app)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                opacity: 0.7,
+                                cursor: 'not-allowed'
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Internal Bidding Notes */}
                   <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
@@ -2441,34 +2546,175 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              {/* Participation Decision Banner for New / Unreviewed Tenders - Exclusive to MIS Team */}
+              {/* Participation Decision Section - Exclusive to MIS Team */}
               {isMisRole && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                <div 
+                  id="participation-decision-section"
+                  style={{ 
+                    background: 'var(--bg-card)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: '12px', 
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px'
+                  }}
+                >
+                  {/* Header & Supporting Text */}
                   <div>
-                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {selectedTender.status === 'Not Participating' ? 'Tender Marked as Not Participating' : 'Participation Decision Pending'}
-                    </h4>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      {selectedTender.status === 'Not Participating' ? 'You declined this tender. Click below to reactivate and participate.' : 'Review this tender requirement and accept participation to activate technical specs and documentation.'}
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      Participation Decision Pending
+                    </h3>
+                    <p style={{ margin: '6px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                      Review this tender, assign it to an executive, and decide whether to participate.
                     </p>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      className="btn btn-primary"
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px' }}
-                      onClick={() => updateTenderField({ status: 'Participating' })}
-                    >
-                      <CheckCircle2 size={16} /> Accept & Participate
-                    </button>
-                    {selectedTender.status !== 'Not Participating' && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 16px', color: 'var(--accent-red)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
-                        onClick={() => updateTenderField({ status: 'Not Participating' })}
+
+                  {/* Form Controls Grid: Assign to, Bid Quantity, Quoted Quantity */}
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+                    gap: '16px', 
+                    alignItems: 'flex-start' 
+                  }}>
+                    {/* 1. Assign to: */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label 
+                          htmlFor="assign-to-select" 
+                          style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                        >
+                          Assign to:
+                        </label>
+                        {selectedTender.mis_executive && selectedTender.assigned_by && (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            Assigned by {selectedTender.assigned_by} {selectedTender.assigned_at ? `on ${new Date(selectedTender.assigned_at).toLocaleDateString()}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <select
+                        id="assign-to-select"
+                        value={misExecutive}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setMisExecutive(e.target.value)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer',
+                          width: '100%'
+                        }}
                       >
-                        <XCircle size={16} /> Decline / Not Participating
-                      </button>
-                    )}
+                        <option value="">-- Unassigned --</option>
+                        {executivesList.map(exec => (
+                          <option key={exec} value={exec}>{exec}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. Bid Quantity */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label 
+                        htmlFor="bid-qty-input" 
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                      >
+                        Bid Quantity
+                      </label>
+                      <input
+                        id="bid-qty-input"
+                        type="number"
+                        placeholder="Bid Qty"
+                        value={bidQty}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setBidQty(e.target.value === '' ? '' : Number(e.target.value))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          width: '100%',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'text'
+                        }}
+                      />
+                    </div>
+
+                    {/* 3. Quoted Quantity */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label 
+                        htmlFor="quoted-qty-input" 
+                        style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}
+                      >
+                        Quoted Quantity
+                      </label>
+                      <input
+                        id="quoted-qty-input"
+                        type="number"
+                        placeholder="Quoted Qty"
+                        value={quotedQty}
+                        disabled={isParticipatingSubmitting}
+                        onChange={(e) => setQuotedQty(e.target.value === '' ? '' : Number(e.target.value))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-app)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          outline: 'none',
+                          width: '100%',
+                          cursor: isParticipatingSubmitting ? 'not-allowed' : 'text'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', paddingTop: '4px' }}>
+                    <button
+                      id="btn-assign-participate"
+                      className="btn btn-primary"
+                      disabled={isParticipatingSubmitting}
+                      onClick={handleAssignAndParticipate}
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        fontSize: '12.5px', 
+                        padding: '8px 16px',
+                        fontWeight: '600',
+                        opacity: isParticipatingSubmitting ? 0.7 : 1,
+                        cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <CheckCircle2 size={16} /> Assign & Participate
+                    </button>
+                    <button
+                      id="btn-not-participating"
+                      className="btn btn-secondary"
+                      disabled={isParticipatingSubmitting}
+                      onClick={handleNotParticipating}
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        fontSize: '12.5px', 
+                        padding: '8px 16px', 
+                        color: 'var(--accent-red)', 
+                        borderColor: 'rgba(239, 68, 68, 0.3)',
+                        fontWeight: '600',
+                        opacity: isParticipatingSubmitting ? 0.7 : 1,
+                        cursor: isParticipatingSubmitting ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <XCircle size={16} /> Not Participating
+                    </button>
                   </div>
                 </div>
               )}
@@ -2565,7 +2811,47 @@ export default function TenderDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                         {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                           /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(99, 102, 241, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                          <div 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsTechSpecDragOver(false);
+                              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                const droppedFile = e.dataTransfer.files[0];
+                                if (!isValidTechSpecFile(droppedFile)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                  return;
+                                }
+                                const inputEl = document.getElementById('tech-spec-file-input-detail') as HTMLInputElement;
+                                if (inputEl) {
+                                  const dt = new DataTransfer();
+                                  dt.items.add(droppedFile);
+                                  inputEl.files = dt.files;
+                                }
+                                handleTechSpecUpload(droppedFile);
+                              }
+                            }}
+                            style={{ 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              gap: '10px', 
+                              background: isTechSpecDragOver ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)', 
+                              padding: '12px', 
+                              borderRadius: '8px', 
+                              border: isTechSpecDragOver ? '2px dashed var(--primary)' : '1px solid rgba(99, 102, 241, 0.2)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
                             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase' }}>
                               Step 1: Upload Document to Generate Technical Specification
                             </span>
@@ -2573,14 +2859,63 @@ export default function TenderDetailPage() {
                               Upload the tender document or specification file to process and generate the technical specification parameters.
                             </p>
 
+                            {/* Offered Product Model Selection for Evidence Matching */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', padding: '10px', background: 'rgba(249, 115, 22, 0.05)', borderRadius: '8px', border: '1px solid rgba(249, 115, 22, 0.2)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontSize: '10.5px', color: '#f97316', fontWeight: '700', textTransform: 'uppercase' }}>
+                                  Offered Product Model (Column 4 Evidence Link)
+                                </label>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                  {availableModels.length} verified models
+                                </span>
+                              </div>
+                              <select
+                                value={selectedModelId}
+                                onChange={async (e) => {
+                                  const val = e.target.value ? Number(e.target.value) : '';
+                                  setSelectedModelId(val);
+                                  try {
+                                    await fetchWithAuth(`/api/tenders/${id}/offered-models`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ selected_model_id: val || null, schedule_models: scheduleModels }),
+                                    });
+                                  } catch (ignored) {}
+                                }}
+                                disabled={uploadingTechSpec}
+                                style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px 8px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                              >
+                                <option value="">-- No Model Selected (Column 4 will remain blank) --</option>
+                                {availableModels.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.model_number} ({m.make}) — {m.product_category} [{m.verified_specs || 0} verified specs]
+                                  </option>
+                                ))}
+                              </select>
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                                {selectedModelId
+                                  ? 'Verified specifications from this model’s manufacturer datasheet will be matched and cited in Column 4.'
+                                  : 'Strict evidence rule: Without an offered model, Column 4 strictly remains empty to avoid fabricating specifications.'}
+                              </span>
+                            </div>
+
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT)</label>
+                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT / XLS / XLSX)</label>
                               <input 
                                 type="file" 
                                 id="tech-spec-file-input-detail"
                                 disabled={uploadingTechSpec}
-                                accept=".pdf,.docx,.doc,.txt"
+                                accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
                                 style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const file = e.target.files[0];
+                                    if (!isValidTechSpecFile(file)) {
+                                      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                      e.target.value = '';
+                                    }
+                                  }
+                                }}
                               />
                             </div>
 
@@ -2593,6 +2928,10 @@ export default function TenderDetailPage() {
                                 const fileToUpload = inputEl?.files?.[0];
                                 if (!fileToUpload) {
                                   showToast('Please select a specification document to upload first.', 'error');
+                                  return;
+                                }
+                                if (!isValidTechSpecFile(fileToUpload)) {
+                                  showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
                                   return;
                                 }
                                 await handleTechSpecUpload(fileToUpload);

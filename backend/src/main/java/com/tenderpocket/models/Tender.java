@@ -260,6 +260,13 @@ public class Tender {
     @Column(name = "can_final_submit")
     private Boolean canFinalSubmit = false;
 
+    @Column(name = "selected_model_id")
+    private Long selectedModelId;
+
+    @Column(name = "schedule_product_models", columnDefinition = "TEXT")
+    private String scheduleProductModels;
+
+
     public Tender() {}
 
     // Additional Getters and Setters
@@ -512,4 +519,11 @@ public class Tender {
 
     public Boolean getCanFinalSubmit() { return canFinalSubmit != null && canFinalSubmit; }
     public void setCanFinalSubmit(Boolean canFinalSubmit) { this.canFinalSubmit = canFinalSubmit; }
+
+    public Long getSelectedModelId() { return selectedModelId; }
+    public void setSelectedModelId(Long selectedModelId) { this.selectedModelId = selectedModelId; }
+
+    public String getScheduleProductModels() { return scheduleProductModels; }
+    public void setScheduleProductModels(String scheduleProductModels) { this.scheduleProductModels = scheduleProductModels; }
+
 }
