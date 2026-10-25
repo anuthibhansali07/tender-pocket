@@ -11,6 +11,7 @@ import os
 import sys
 import gzip
 import json
+import re
 import smtplib
 import subprocess
 from datetime import datetime
@@ -229,6 +230,15 @@ def restore_dump_file(backup_file, target_db):
     validate_safety_guardrails(target_db, SOURCE_DB)
     with gzip.open(backup_file, "rb") as gz_in:
         decompressed_sql = gz_in.read()
+
+    # Filter out configuration parameters introduced in newer PostgreSQL versions (e.g. PG17 transaction_timeout)
+    # when restoring to earlier server versions (e.g. PostgreSQL 16) with -v ON_ERROR_STOP=1
+    if b"transaction_timeout" in decompressed_sql:
+        decompressed_sql = re.sub(
+            rb"(?m)^\s*SET\s+transaction_timeout\s*=.*?;",
+            b"-- [cross-version-compat] SET transaction_timeout ignored;",
+            decompressed_sql
+        )
 
     if os.getenv("USE_DIRECT_PSQL") == "1":
         host = os.getenv("POSTGRES_HOST", "localhost")
