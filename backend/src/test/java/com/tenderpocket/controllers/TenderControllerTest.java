@@ -441,6 +441,62 @@ public class TenderControllerTest {
     }
 
     @Test
+    void testTenderSerializationIncludesBothTenderTypeKeys() throws Exception {
+        Tender t = new Tender();
+        t.setId("T-TYPE-1");
+        t.setTenderType("GeM");
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(t);
+        com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
+
+        assertTrue(node.has("tenderType"), "Serialized JSON must have tenderType (camelCase)");
+        assertTrue(node.has("tender_type"), "Serialized JSON must have tender_type (snake_case)");
+        assertEquals("GeM", node.get("tenderType").asText());
+        assertEquals("GeM", node.get("tender_type").asText());
+
+        // Deserialization with camelCase
+        Tender deserializedCamel = mapper.readValue("{\"tenderType\":\"Non GeM\"}", Tender.class);
+        assertEquals("Non GeM", deserializedCamel.getTenderType());
+
+        // Deserialization with snake_case
+        Tender deserializedSnake = mapper.readValue("{\"tender_type\":\"Unverified\"}", Tender.class);
+        assertEquals("Unverified", deserializedSnake.getTenderType());
+
+        // Deserialization with both keys present
+        Tender deserializedBoth = mapper.readValue("{\"tenderType\":\"GeM\",\"tender_type\":\"GeM\"}", Tender.class);
+        assertEquals("GeM", deserializedBoth.getTenderType());
+    }
+
+    @Test
+    void testPatchTenderTypeAcceptsUnverifiedAndValidEnums() {
+        authenticate("admin", "Admin");
+
+        // Test Unverified is accepted
+        ResponseEntity<?> resUnverified = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Unverified"));
+        assertEquals(HttpStatus.OK, resUnverified.getStatusCode());
+        assertEquals("Unverified", tender1.getTenderType());
+
+        // Test Non GeM is accepted
+        ResponseEntity<?> resNonGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Non GeM"));
+        assertEquals(HttpStatus.OK, resNonGem.getStatusCode());
+        assertEquals("Non GeM", tender1.getTenderType());
+
+        // Test GeM is accepted
+        ResponseEntity<?> resGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "GeM"));
+        assertEquals(HttpStatus.OK, resGem.getStatusCode());
+        assertEquals("GeM", tender1.getTenderType());
+
+        // Test invalid value is rejected with 400 Bad Request
+        ResponseEntity<?> resInvalid = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "InvalidType"));
+        assertEquals(HttpStatus.BAD_REQUEST, resInvalid.getStatusCode());
+        Map<?, ?> body = (Map<?, ?>) resInvalid.getBody();
+        Map<?, ?> errors = (Map<?, ?>) body.get("errors");
+        assertNotNull(errors);
+        assertTrue(errors.containsKey("tender_type"));
+    }
+
+    @Test
     void testUnauthorizedTenderDetailAccess() {
         authenticate("exec1", "Tender Executive");
 
@@ -498,6 +554,120 @@ public class TenderControllerTest {
         assertEquals(3, tender1.getQuotedQty());
         assertEquals("Assigned via MIS Team dashboard", tender1.getNotes());
         verify(tenderRepository, atLeastOnce()).save(tender1);
+    }
+
+    @Test
+    void testAssignAndParticipateSavesAssigneeQuantitiesAndSetsParticipating() {
+        authenticate("misteam", "MIS Team");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Participating");
+        body.put("mis_executive", "exec_specialist");
+        body.put("bid_qty", 25);
+        body.put("quoted_qty", 20);
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+        assertEquals("Participating", tender3.getStatus());
+        assertEquals("exec_specialist", tender3.getMisExecutive());
+        assertEquals(25, tender3.getBidQty());
+        assertEquals(20, tender3.getQuotedQty());
+        assertEquals("SPEC_CLEARANCE", tender3.getCurrentStage());
+        verify(tenderRepository, atLeastOnce()).save(tender3);
+    }
+
+    @Test
+    void testParticipatingRejectedWhenAssigneeIsMissing() {
+        authenticate("misteam", "MIS Team");
+
+        // T3 has no misExecutive assigned
+        assertNull(tender3.getMisExecutive());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Participating");
+        body.put("bid_qty", 10);
+        body.put("quoted_qty", 10);
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertFalse((Boolean) respBody.get("success"));
+        assertTrue(respBody.get("error").toString().contains("Executive assignment is required to participate"));
+        // Ensure tender status was NOT partially updated
+        assertNotEquals("Participating", tender3.getStatus());
+    }
+
+    @Test
+    void testParticipatingRejectedWhenQuantityIsInvalid() {
+        authenticate("misteam", "MIS Team");
+
+        // 1. Negative quantity rejected
+        Map<String, Object> bodyNegative = new HashMap<>();
+        bodyNegative.put("status", "Participating");
+        bodyNegative.put("mis_executive", "exec_valid");
+        bodyNegative.put("bid_qty", -5);
+
+        ResponseEntity<?> respNegative = tenderController.updateTender("MIS Team", "misteam", "T3", bodyNegative);
+        assertEquals(HttpStatus.BAD_REQUEST, respNegative.getStatusCode());
+        Map<?, ?> respBodyNeg = (Map<?, ?>) respNegative.getBody();
+        assertFalse((Boolean) respBodyNeg.get("success"));
+        assertTrue(respBodyNeg.get("error").toString().contains("Quantity cannot be negative"));
+
+        // 2. Decimal / non-integer quantity rejected
+        Map<String, Object> bodyDecimal = new HashMap<>();
+        bodyDecimal.put("status", "Participating");
+        bodyDecimal.put("mis_executive", "exec_valid");
+        bodyDecimal.put("quoted_qty", "12.75");
+
+        ResponseEntity<?> respDecimal = tenderController.updateTender("MIS Team", "misteam", "T3", bodyDecimal);
+        assertEquals(HttpStatus.BAD_REQUEST, respDecimal.getStatusCode());
+        Map<?, ?> respBodyDec = (Map<?, ?>) respDecimal.getBody();
+        assertFalse((Boolean) respBodyDec.get("success"));
+        assertTrue(respBodyDec.get("error").toString().contains("Quantity must be an integer"));
+    }
+
+    @Test
+    void testNotParticipatingSavesStatusWithoutAssigningExecutiveOrAdvancingStage() {
+        authenticate("misteam", "MIS Team");
+
+        assertNull(tender3.getMisExecutive());
+        assertEquals("NEW", tender3.getCurrentStage());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", "Not Participating");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T3", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        Map<?, ?> respBody = (Map<?, ?>) response.getBody();
+        assertTrue((Boolean) respBody.get("success"));
+        assertEquals("Not Participating", tender3.getStatus());
+        assertNull(tender3.getMisExecutive());
+        assertEquals("NEW", tender3.getCurrentStage());
+    }
+
+    @Test
+    void testUnauthorizedRolesCannotPerformParticipationDecisionOrAssignment() {
+        // Tender Executive cannot set Participating
+        authenticate("exec1", "Tender Executive");
+        Map<String, Object> bodyExec = new HashMap<>();
+        bodyExec.put("status", "Participating");
+        bodyExec.put("mis_executive", "exec1");
+
+        ResponseEntity<?> respExec = tenderController.updateTender("Tender Executive", "exec1", "T3", bodyExec);
+        assertEquals(HttpStatus.FORBIDDEN, respExec.getStatusCode());
+
+        // Clearance Team cannot set Not Participating
+        authenticate("spec1", "Clearance Team");
+        Map<String, Object> bodySpec = new HashMap<>();
+        bodySpec.put("status", "Not Participating");
+
+        ResponseEntity<?> respSpec = tenderController.updateTender("Clearance Team", "spec1", "T3", bodySpec);
+        assertEquals(HttpStatus.FORBIDDEN, respSpec.getStatusCode());
     }
 
     @Test
@@ -996,6 +1166,89 @@ public class TenderControllerTest {
         assertEquals("Original Authority", tender1.getAuthority());
         assertEquals("2026-10-20", tender1.getOpeningDate());
         assertEquals(1000.0, tender1.getDocumentFee());
+    }
+
+    @Test
+    void testCreateTenderClassifiesGemFromOfficialBidNo() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T1");
+        newTender.setTitle("Supply of Centrifuges");
+        newTender.setOriginalUrl("https://example.com/details");
+        newTender.setRefNo("GEM/2026/B/7570015");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T1")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("GeM", newTender.getTenderType(), "Valid GeM bid number must cause classification as GeM");
+        assertNull(newTender.getSource(), "Ingestion source must not default to GeM when not supplied");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderClassifiesNonGemFromOfficialPortalUrl() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T2");
+        newTender.setTitle("Hospital Furniture Tender");
+        newTender.setOriginalUrl("https://eprocure.gov.in/epublish/app?component=view");
+        newTender.setRefNo("2026_AIIMS_810792_1");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T2")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Non GeM", newTender.getTenderType(), "Verified government portal URL must cause classification as Non GeM");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderRemainsUnverifiedWhenEvidenceIsInsufficient() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T3");
+        newTender.setTitle("Procurement of General Items");
+        newTender.setOriginalUrl("https://aggregator.example.com/tender/view?id=123");
+        newTender.setRefNo("UNKNOWN_REF_999");
+        newTender.setTenderType(null); // Missing classification
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T3")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Unverified", newTender.getTenderType(), "Missing or insufficient evidence must remain Unverified; must NOT default to GeM");
+        verify(tenderRepository).save(newTender);
+    }
+
+    @Test
+    void testCreateTenderPreservesExplicitIngestionSourceAndTenderType() {
+        authenticate("exec", "Executive");
+        Tender newTender = new Tender();
+        newTender.setId("NEW_T4");
+        newTender.setTitle("Specific Tender");
+        newTender.setOriginalUrl("https://example.com/view");
+        newTender.setRefNo("REF_123");
+        newTender.setSource("Tender247");
+        newTender.setTenderType("Custom");
+        newTender.setStatus("Issued");
+        newTender.setCurrentStage("SPEC_CLEARANCE");
+
+        when(tenderRepository.existsById("NEW_T4")).thenReturn(false);
+
+        ResponseEntity<?> response = tenderController.createTender("Executive", newTender);
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("Custom", newTender.getTenderType(), "Explicit tenderType must be preserved");
+        assertEquals("Tender247", newTender.getSource(), "Explicit source must be preserved");
+        verify(tenderRepository).save(newTender);
     }
 }
 

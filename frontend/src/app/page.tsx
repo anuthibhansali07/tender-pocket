@@ -69,11 +69,13 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import ProductCatalogue from '@/app/components/ProductCatalogue';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment } from '@/lib/workflowAuthorization';
+import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 
-type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'catalogue';
 
 interface Toast {
   message: string;
@@ -321,6 +323,7 @@ export default function Dashboard() {
   // Email Import States
   const [emailText, setEmailText] = useState('');
   const [isDragActive, setIsDragActive] = useState(false);
+  const [isTechSpecDragOver, setIsTechSpecDragOver] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedEmlString, setUploadedEmlString] = useState('');
 
@@ -1206,8 +1209,18 @@ export default function Dashboard() {
     }
   };
 
+  const isValidTechSpecFile = (file: File) => {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
+           name.endsWith('.txt') || name.endsWith('.xlsx') || name.endsWith('.xls');
+  };
+
   const handleTechSpecUpload = async (fileToUpload: File) => {
     if (!selectedTender || !fileToUpload || techSpecUploadInFlight.current) return;
+    if (!isValidTechSpecFile(fileToUpload)) {
+      showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+      return;
+    }
     const tenderId = selectedTender.id;
     techSpecUploadInFlight.current = true;
     setUploadingTechSpec(true);
@@ -1713,7 +1726,7 @@ export default function Dashboard() {
         t.authority || 'N/A',
         t.place || 'N/A',
         t.state || 'N/A',
-        t.tender_type || 'Non GeM',
+        getClassificationLabel(t.tender_type || t.tenderType),
         t.ref_no || '', // TENDER ID is the ref_no (procurement reference number)
         t.original_url,
         t.publish_date || 'N/A',
@@ -2237,6 +2250,14 @@ export default function Dashboard() {
           )}
 
           <button 
+            className={`menu-item ${activeTab === 'catalogue' ? 'active' : ''}`}
+            onClick={() => setActiveTab('catalogue')}
+          >
+            <Shield size={18} />
+            <span>Product Catalogue</span>
+          </button>
+
+          <button 
             className={`menu-item ${activeTab === 'analytics' ? 'active' : ''}`}
             onClick={() => setActiveTab('analytics')}
           >
@@ -2336,6 +2357,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Team Management'}
               {activeTab === 'work-summary' && 'Work Summary'}
               {activeTab === 'approvals' && 'Approvals Center'}
+              {activeTab === 'catalogue' && 'Product Model Catalogue'}
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
@@ -2347,6 +2369,7 @@ export default function Dashboard() {
               {activeTab === 'team' && 'Create and manage account profiles for MIS Team and MIS Executives.'}
               {activeTab === 'work-summary' && 'Executive workload statistics and active assignment mappings.'}
               {activeTab === 'approvals' && 'Review, approve, and action pending workflow requests from your team.'}
+              {activeTab === 'catalogue' && 'Upload manufacturer datasheets, verify authoritative specifications, and manage product models.'}
             </p>
           </div>
 
@@ -2740,17 +2763,38 @@ export default function Dashboard() {
                               <div className="tender-meta-row">
                                 <span className="tender-id-badge">{tender.id}</span>
                                 <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
-                                <span style={{
-                                  fontSize: '10px',
-                                  fontWeight: '600',
-                                  padding: '2px 6px',
-                                  borderRadius: '6px',
-                                  backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                                  color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                                  border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
-                                }}>
-                                  {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
-                                </span>
+                                {(() => {
+                                  const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
+                                  const sourceLabel = getSourceBadgeLabel(tender.source);
+                                  return (
+                                    <>
+                                      <span style={{
+                                        fontSize: '10px',
+                                        fontWeight: '600',
+                                        padding: '2px 6px',
+                                        borderRadius: '6px',
+                                        backgroundColor: classification.bgColor,
+                                        color: classification.color,
+                                        border: `1px solid ${classification.borderColor}`
+                                      }}>
+                                        {classification.label}
+                                      </span>
+                                      {sourceLabel && (
+                                        <span style={{
+                                          fontSize: '10px',
+                                          fontWeight: '500',
+                                          padding: '2px 6px',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                                          color: 'var(--text-muted, #6b7280)',
+                                          border: '1px solid rgba(107, 114, 128, 0.2)'
+                                        }}>
+                                          {sourceLabel}
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
                               </div>
                               <h4 className="tender-title" title={tender.title}>{tender.product_name_as_per_tender || tender.title}</h4>
@@ -3032,17 +3076,38 @@ export default function Dashboard() {
                             ) : (
                               <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
                             )}
-                            <span style={{
-                              fontSize: '10px',
-                              fontWeight: '600',
-                              padding: '2px 6px',
-                              borderRadius: '6px',
-                              backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                              color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                              border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
-                            }}>
-                              {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
-                            </span>
+                             {(() => {
+                               const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
+                               const sourceLabel = getSourceBadgeLabel(tender.source);
+                               return (
+                                 <>
+                                   <span style={{
+                                     fontSize: '10px',
+                                     fontWeight: '600',
+                                     padding: '2px 6px',
+                                     borderRadius: '6px',
+                                     backgroundColor: classification.bgColor,
+                                     color: classification.color,
+                                     border: `1px solid ${classification.borderColor}`
+                                   }}>
+                                     {classification.label}
+                                   </span>
+                                   {sourceLabel && (
+                                     <span style={{
+                                       fontSize: '10px',
+                                       fontWeight: '500',
+                                       padding: '2px 6px',
+                                       borderRadius: '6px',
+                                       backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                                       color: 'var(--text-muted, #6b7280)',
+                                       border: '1px solid rgba(107, 114, 128, 0.2)'
+                                     }}>
+                                       {sourceLabel}
+                                     </span>
+                                   )}
+                                 </>
+                               );
+                             })()}
                             {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
                             {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ref: {tender.ref_no}</span>}
                           </div>
@@ -4272,6 +4337,13 @@ export default function Dashboard() {
               />
             )}
 
+            {/* TAB: PRODUCT CATALOGUE */}
+            {activeTab === 'catalogue' && (
+              <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+                <ProductCatalogue currentUser={currentUser} />
+              </div>
+            )}
+
             {/* TAB: WORK SUMMARY */}
 
             {activeTab === 'work-summary' && (currentUser?.role === 'Admin' || currentUser?.role === 'MIS Team') && (
@@ -5435,8 +5507,8 @@ export default function Dashboard() {
                     { label: 'Estimated Value', value: selectedTender.estimated_cost_raw || (selectedTender.estimated_cost ? `₹ ${selectedTender.estimated_cost.toLocaleString('en-IN')}` : 'N/A'), icon: DollarSign, highlight: true },
                     { label: 'Earnest Money Deposit (EMD)', value: selectedTender.emd_raw || 'N/A', icon: DollarSign },
                     { label: 'Tender Document Fee', value: selectedTender.document_fee_raw || 'N/A', icon: Tag },
-                    { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type || 'GeM', icon: FileText, color: selectedTender.tender_type === 'GeM' ? '#10b981' : '#3b82f6' },
-                    { label: 'Source Portal', value: selectedTender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : '#3b82f6' },
+                    { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
+                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
                     { label: 'Source ID', value: selectedTender.source_id || 'N/A', icon: Tag },
                     { label: 'Location / Region', value: selectedTender.location || 'N/A', icon: MapPin },
                     { label: 'Place', value: selectedTender.place || 'N/A', icon: MapPin },
@@ -5897,7 +5969,47 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                       {(!selectedTender.has_tech_spec && selectedTender.spec_verification_status !== 'Pending' && selectedTender.spec_verification_status !== 'Generated') ? (
                         /* PHASE 1: UPLOAD DOCUMENT TO GENERATE TECHNICAL SPECIFICATION */
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(99, 102, 241, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                        <div 
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsTechSpecDragOver(true);
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsTechSpecDragOver(false);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsTechSpecDragOver(false);
+                            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                              const droppedFile = e.dataTransfer.files[0];
+                              if (!isValidTechSpecFile(droppedFile)) {
+                                showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                return;
+                              }
+                              const inputEl = document.getElementById('tech-spec-file-input-main') as HTMLInputElement;
+                              if (inputEl) {
+                                const dt = new DataTransfer();
+                                dt.items.add(droppedFile);
+                                inputEl.files = dt.files;
+                              }
+                              handleTechSpecUpload(droppedFile);
+                            }
+                          }}
+                          style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            gap: '10px', 
+                            background: isTechSpecDragOver ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)', 
+                            padding: '12px', 
+                            borderRadius: '8px', 
+                            border: isTechSpecDragOver ? '2px dashed var(--primary)' : '1px solid rgba(99, 102, 241, 0.2)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
                           <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase' }}>
                             Step 1: Upload Document to Generate Technical Specification
                           </span>
@@ -5906,13 +6018,22 @@ export default function Dashboard() {
                           </p>
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT)</label>
+                            <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Select Specification Document (PDF / DOCX / TXT / XLS / XLSX)</label>
                             <input 
                               type="file" 
                               id="tech-spec-file-input-main"
                               disabled={uploadingTechSpec}
-                              accept=".pdf,.docx,.doc,.txt"
+                              accept=".pdf,.docx,.doc,.txt,.xlsx,.xls"
                               style={{ fontSize: '12px', color: 'var(--text-primary)', padding: '6px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  const file = e.target.files[0];
+                                  if (!isValidTechSpecFile(file)) {
+                                    showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
+                                    e.target.value = '';
+                                  }
+                                }
+                              }}
                             />
                           </div>
 
@@ -5925,6 +6046,10 @@ export default function Dashboard() {
                               const fileToUpload = inputEl?.files?.[0];
                               if (!fileToUpload) {
                                 showToast('Please select a specification document to upload first.', 'error');
+                                return;
+                              }
+                              if (!isValidTechSpecFile(fileToUpload)) {
+                                showToast('Unsupported file format. Supported formats are PDF, DOCX, TXT, XLSX, and XLS.', 'error');
                                 return;
                               }
                               await handleTechSpecUpload(fileToUpload);

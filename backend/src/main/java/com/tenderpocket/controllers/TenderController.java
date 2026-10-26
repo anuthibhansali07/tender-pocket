@@ -14,6 +14,7 @@ import com.tenderpocket.services.DocumentGeneratorService;
 import com.tenderpocket.services.ComplianceProgressService;
 import com.tenderpocket.services.ComplianceConversionMetrics;
 import com.tenderpocket.services.AISpecificationIntelligenceService;
+import com.tenderpocket.utils.TenderClassifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -73,6 +74,13 @@ public class TenderController {
     @Autowired
     private com.tenderpocket.services.EmailNotificationService emailNotificationService;
 
+    @Autowired(required = false)
+    private com.tenderpocket.services.ProductCatalogueService productCatalogueService;
+
+    public void setProductCatalogueService(com.tenderpocket.services.ProductCatalogueService productCatalogueService) {
+        this.productCatalogueService = productCatalogueService;
+    }
+
     @Value("${aws.s3.enabled:false}")
     private boolean awsS3Enabled;
 
@@ -129,8 +137,10 @@ public class TenderController {
     private String resolveContentTypeByExtension(String fileName) {
         String lower = fileName.toLowerCase();
         if (lower.endsWith(".pdf")) return "application/pdf";
-        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".docx") || lower.endsWith(".doc")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (lower.endsWith(".txt")) return "text/plain";
         if (lower.endsWith(".zip")) return "application/zip";
         return "application/octet-stream";
     }
@@ -706,6 +716,20 @@ public class TenderController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Tender already exists. Use its update endpoint."));
         }
+
+        // Evidence-based platform classification:
+        // Reuses TenderClassifier to deduce platform from refNo, originalUrl, sector/website, and title.
+        // Missing or insufficient evidence remains "Unverified"; never defaults to GeM.
+        if (tender.getTenderType() == null || tender.getTenderType().isBlank()) {
+            String classified = TenderClassifier.classify(
+                    tender.getRefNo(),
+                    tender.getOriginalUrl(),
+                    tender.getSector(),
+                    tender.getTitle()
+            );
+            tender.setTenderType(classified);
+        }
+
         tender.setScrapedAt(new Date().toString());
         tenderRepository.save(tender);
 
@@ -853,8 +877,8 @@ public class TenderController {
             Object val = body.containsKey("tender_type") ? body.get("tender_type") : body.get("tenderType");
             if (val != null && !val.toString().trim().isEmpty()) {
                 String s = val.toString().trim();
-                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom")) {
-                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', or 'Custom'.");
+                if (!s.equalsIgnoreCase("GeM") && !s.equalsIgnoreCase("Non GeM") && !s.equalsIgnoreCase("Custom") && !s.equalsIgnoreCase("Unverified")) {
+                    fieldErrors.put("tender_type", "Tender type must be 'GeM', 'Non GeM', 'Custom', or 'Unverified'.");
                 }
             }
         }
@@ -877,6 +901,23 @@ public class TenderController {
             }
         }
 
+        // 8. Participation decision validation: Participating requires an assigned executive
+        if (body.containsKey("status") && "Participating".equalsIgnoreCase(String.valueOf(body.get("status")))) {
+            String targetExec = null;
+            if (body.containsKey("mis_executive")) {
+                Object rawExec = body.get("mis_executive");
+                if (rawExec != null && !rawExec.toString().trim().isEmpty()) {
+                    targetExec = rawExec.toString().trim();
+                }
+            } else if (tender.getMisExecutive() != null && !tender.getMisExecutive().trim().isEmpty()) {
+                targetExec = tender.getMisExecutive().trim();
+            }
+
+            if (targetExec == null) {
+                fieldErrors.put("mis_executive", "Executive assignment is required to participate in this tender.");
+            }
+        }
+
         // If any validation errors exist, REJECT IMMEDIATELY without updating tender
         if (!fieldErrors.isEmpty()) {
             Map<String, Object> errResp = new LinkedHashMap<>();
@@ -894,7 +935,12 @@ public class TenderController {
             tender.setStatus(newStatus);
             logDetails.add("status changed from '" + oldStatus + "' to '" + newStatus + "'");
 
-            if ("Awarded".equalsIgnoreCase(newStatus) || "Won".equalsIgnoreCase(newStatus)) {
+            if ("Participating".equalsIgnoreCase(newStatus)) {
+                if (tender.getCurrentStage() == null || "NEW".equalsIgnoreCase(tender.getCurrentStage()) || "INTAKE".equalsIgnoreCase(tender.getCurrentStage())) {
+                    tender.setCurrentStage("SPEC_CLEARANCE");
+                    logDetails.add("workflow stage auto-advanced to 'SPEC_CLEARANCE'");
+                }
+            } else if ("Awarded".equalsIgnoreCase(newStatus) || "Won".equalsIgnoreCase(newStatus)) {
                 tender.setCurrentStage("WON");
                 tender.setOutcomeStatus("Won");
                 List<TenderApprovalRequest> pending = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.WIN_LOSS_PENDING);
@@ -1106,20 +1152,27 @@ public class TenderController {
         }
 
         if (body.containsKey("mis_executive")) {
-            String newExec = (String) body.get("mis_executive");
-            String currentStatus = tender.getStatus();
-            tender.setMisExecutive(newExec);
-            tender.setAssignedBy(newExec != null && !newExec.trim().isEmpty() ? username : null);
-            tender.setAssignedAt(newExec != null && !newExec.trim().isEmpty() ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
+            String requestedStatus = body.containsKey("status") ? String.valueOf(body.get("status")) : tender.getStatus();
+            boolean isMarkingNotParticipating = "Not Participating".equalsIgnoreCase(requestedStatus);
+            if (!isMarkingNotParticipating) {
+                String newExec = (String) body.get("mis_executive");
+                String currentStatus = tender.getStatus();
+                tender.setMisExecutive(newExec);
+                tender.setAssignedBy(newExec != null && !newExec.trim().isEmpty() ? username : null);
+                tender.setAssignedAt(newExec != null && !newExec.trim().isEmpty() ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) : null);
 
-            // Auto-participate if currently New, Issued, or Lapsed
-            if (newExec != null && !newExec.trim().isEmpty()) {
-                if (currentStatus == null || "Issued".equalsIgnoreCase(currentStatus) || "New".equalsIgnoreCase(currentStatus) || "Lapsed".equalsIgnoreCase(currentStatus) || "Lapsed (Unreviewed)".equalsIgnoreCase(currentStatus)) {
-                    tender.setStatus("Participating");
-                    logDetails.add("status auto-changed to 'Participating' on executive assignment");
+                // Auto-participate if currently New, Issued, or Lapsed
+                if (newExec != null && !newExec.trim().isEmpty()) {
+                    if (currentStatus == null || "Issued".equalsIgnoreCase(currentStatus) || "New".equalsIgnoreCase(currentStatus) || "Lapsed".equalsIgnoreCase(currentStatus) || "Lapsed (Unreviewed)".equalsIgnoreCase(currentStatus)) {
+                        tender.setStatus("Participating");
+                        if (tender.getCurrentStage() == null || "NEW".equalsIgnoreCase(tender.getCurrentStage()) || "INTAKE".equalsIgnoreCase(tender.getCurrentStage())) {
+                            tender.setCurrentStage("SPEC_CLEARANCE");
+                        }
+                        logDetails.add("status auto-changed to 'Participating' on executive assignment");
+                    }
                 }
+                logDetails.add(newExec != null && !newExec.trim().isEmpty() ? "assigned to executive '" + newExec + "'" : "unassigned executive");
             }
-            logDetails.add(newExec != null && !newExec.trim().isEmpty() ? "assigned to executive '" + newExec + "'" : "unassigned executive");
         }
 
         if (body.containsKey("working_path") || body.containsKey("workingPath")) {
@@ -1536,6 +1589,15 @@ public class TenderController {
         return ResponseEntity.ok(complianceProgressService.snapshot(id));
     }
 
+    public ResponseEntity<?> uploadTechSpec(
+            String userRole, String username, String id,
+            org.springframework.web.multipart.MultipartFile file,
+            String offeredModel, String offeredModelLegacy, String offeredMake,
+            String scheduleNo, String productDescription) {
+        return uploadTechSpec(userRole, username, id, file, offeredModel, offeredModelLegacy,
+                offeredMake, scheduleNo, productDescription, null, null, null, null);
+    }
+
     @PostMapping("/{id}/upload-tech-spec")
     public ResponseEntity<?> uploadTechSpec(
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
@@ -1546,7 +1608,11 @@ public class TenderController {
             @RequestParam(value = "offered_model", required = false) String offeredModelLegacy,
             @RequestParam(value = "offeredMake", required = false) String offeredMake,
             @RequestParam(value = "scheduleNo", required = false) String scheduleNo,
-            @RequestParam(value = "productDescription", required = false) String productDescription) {
+            @RequestParam(value = "productDescription", required = false) String productDescription,
+            @RequestParam(value = "selected_model_id", required = false) Long selectedModelId,
+            @RequestParam(value = "selectedModelId", required = false) Long selectedModelIdCamel,
+            @RequestParam(value = "schedule_models", required = false) String scheduleModelsJson,
+            @RequestParam(value = "scheduleModels", required = false) String scheduleModelsJsonCamel) {
 
         if (!WorkflowPermissions.allowed(UPLOAD_SPEC)) return WorkflowPermissions.denied();
         userRole = WorkflowPermissions.role();
@@ -1554,6 +1620,10 @@ public class TenderController {
         if (offeredModel == null || offeredModel.trim().isEmpty()) {
             offeredModel = offeredModelLegacy;
         }
+
+        Long effectiveSelectedModelId = selectedModelId != null ? selectedModelId : selectedModelIdCamel;
+        String effectiveScheduleModels = (scheduleModelsJson != null && !scheduleModelsJson.isBlank())
+                ? scheduleModelsJson : scheduleModelsJsonCamel;
 
         Optional<Tender> opt = tenderRepository.findById(id);
         Tender tender;
@@ -1575,17 +1645,80 @@ public class TenderController {
         if (file.isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
         }
+        if (file.getSize() > 50 * 1024 * 1024) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "File exceeds the maximum allowed size of 50MB."));
+        }
 
-        complianceProgressService.start(id,
-                file.getOriginalFilename() != null ? file.getOriginalFilename() : "document");
+        String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
+        String lowerFilename = originalFilename.toLowerCase(Locale.ROOT);
+        String ext = "";
+        int dotIdx = lowerFilename.lastIndexOf('.');
+        if (dotIdx >= 0) {
+            ext = lowerFilename.substring(dotIdx);
+        }
+        if (!Set.of(".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls").contains(ext)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "success", false,
+                    "error", "Unsupported file format: " + (ext.isEmpty() ? "unknown" : ext) + ". Supported formats are PDF, DOCX, TXT, XLSX, and XLS."
+            ));
+        }
+
+        byte[] uploadedBytes;
+        try {
+            uploadedBytes = file.getBytes();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Could not read uploaded file: " + e.getMessage()));
+        }
+
+        if (uploadedBytes == null || uploadedBytes.length == 0) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "Uploaded file is empty"));
+        }
+        if (uploadedBytes.length > 50 * 1024 * 1024) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("success", false, "error", "File exceeds the maximum allowed size of 50MB."));
+        }
+
+        // Validate actual file formats / magic bytes where practical
+        if (ext.equals(".xlsx")) {
+            boolean isZip = uploadedBytes.length >= 4 && uploadedBytes[0] == 0x50 && uploadedBytes[1] == 0x4B && uploadedBytes[2] == 0x03 && uploadedBytes[3] == 0x04;
+            boolean isOle2 = uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0;
+            if (!isZip && !isOle2) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file."
+                ));
+            }
+        } else if (ext.equals(".xls")) {
+            boolean isOle2 = uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0;
+            if (!isOle2) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The uploaded file is not a valid Excel workbook. Please verify the file is a genuine .xlsx or .xls file."
+                ));
+            }
+        } else if (ext.equals(".txt")) {
+            if (uploadedBytes.length >= 4 && uploadedBytes[0] == 0x50 && uploadedBytes[1] == 0x4B && uploadedBytes[2] == 0x03 && uploadedBytes[3] == 0x04) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The file appears to be an Excel workbook renamed with a .txt extension. Please upload it as an .xlsx or .xls file."
+                ));
+            }
+            if (uploadedBytes.length >= 8 && (uploadedBytes[0] & 0xFF) == 0xD0 && (uploadedBytes[1] & 0xFF) == 0xCF
+                    && (uploadedBytes[2] & 0xFF) == 0x11 && (uploadedBytes[3] & 0xFF) == 0xE0) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "success", false,
+                        "error", "The file appears to be an Excel workbook renamed with a .txt extension. Please upload it as an .xlsx or .xls file."
+                ));
+            }
+        }
+
+        complianceProgressService.start(id, originalFilename);
         ComplianceConversionMetrics conversionMetrics = complianceProgressService.metricsFor(id);
 
         try {
             Path docDir = Paths.get(uploadDir, id);
             Files.createDirectories(docDir);
-
-            byte[] uploadedBytes = file.getBytes();
-            String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "specification.pdf";
 
             System.out.println("================================================================================");
             System.out.println("⚡ [TECH SPEC LOG] Upload Received for Tender ID: " + id);
@@ -1594,15 +1727,22 @@ public class TenderController {
             System.out.println("================================================================================");
             System.out.flush();
 
-            // 1. Save uploaded input file as specification.pdf
-            String inputDownloadUrl = "/documents/" + id + "/specification.pdf";
-            persistDocument(id, "specification.pdf", uploadedBytes, "application/pdf");
+            String savedFilename = "specification" + (ext.isEmpty() ? ".pdf" : ext);
+            String inputContentType = resolveContentTypeByExtension(savedFilename);
+            String inputDownloadUrl = "/documents/" + id + "/" + savedFilename;
+            persistDocument(id, savedFilename, uploadedBytes, inputContentType);
             complianceProgressService.update(id, "UPLOADED",
                     "Upload saved. Inspecting " + originalFilename + ".", 3, 0, 0, 0);
 
             // Save offeredModel on Tender entity if passed
             if (offeredModel != null && !offeredModel.trim().isEmpty()) {
                 tender.setOfferedModel(offeredModel.trim());
+            }
+            if (effectiveSelectedModelId != null) {
+                tender.setSelectedModelId(effectiveSelectedModelId);
+            }
+            if (effectiveScheduleModels != null && !effectiveScheduleModels.isBlank()) {
+                tender.setScheduleProductModels(effectiveScheduleModels);
             }
 
             // 2. Build data map for header & reference details
@@ -1634,8 +1774,18 @@ public class TenderController {
             data.put("companyEmail", "info@markenworld.com");
             data.put("companyWebsite", "www.markenworld.com");
             data.put("companyContact", "09175559646 / 090111 04332");
-            data.put("signatoryName", "Korra Praveen Naik");
-            data.put("signatoryDesignation", "Partner");
+            data.put("signatoryName", "Shreedhar Shingare");
+            data.put("signatoryDesignation", "Authorized Signatory (Tender manager)");
+            data.put("signatoryAddress", "Nashik Maharashtra.");
+            if (tender.getAuthority() != null && !tender.getAuthority().trim().isEmpty()) {
+                data.put("recipientName", tender.getAuthority().trim());
+            }
+            if (tender.getLocation() != null && !tender.getLocation().trim().isEmpty()) {
+                data.put("recipientAddress", tender.getLocation().trim());
+            }
+            if (tender.getBidQty() != null && tender.getBidQty() > 0) {
+                data.put("qty", String.format(Locale.ROOT, "%02d", tender.getBidQty()));
+            }
 
             // 3. Parse product compliance clauses from specification.pdf (with OCR fallback & tender context)
             List<String[]> extractedClauses = documentGeneratorService.parseSpecificationClauses(
@@ -1644,10 +1794,17 @@ public class TenderController {
                             complianceProgressService.update(id, stage, message, percent,
                                     completed, total, clauses), conversionMetrics);
 
+            // 4. Evidence Matching: Match clauses against verified product specifications from catalogue
+            if (productCatalogueService != null && extractedClauses != null && !extractedClauses.isEmpty() && !AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
+                complianceProgressService.update(id, "MATCHING_EVIDENCE",
+                        "Matching requirements against verified product specifications.", 79, 0, 0, extractedClauses.size());
+                extractedClauses = productCatalogueService.matchTenderClausesWithEvidence(tender, extractedClauses);
+            }
+
             if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
                 String message = "No products found with applicable compliance requirements.";
                 tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(),
-                        List.of(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+                        List.of(Map.of("name", "Uploaded Input (" + originalFilename + ")", "filename", savedFilename,
                                 "local_path", inputDownloadUrl, "created_date", LocalDate.now().toString()))));
                 tenderRepository.save(tender);
                 complianceProgressService.completeNoProducts(id, message);
@@ -1681,7 +1838,7 @@ public class TenderController {
 
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = new ArrayList<>();
-            newDocs.add(Map.of("name", "Uploaded Input (specification.pdf)", "filename", "specification.pdf",
+            newDocs.add(Map.of("name", "Uploaded Input (" + originalFilename + ")", "filename", savedFilename,
                     "local_path", inputDownloadUrl, "created_date", createdDate));
             List<com.tenderpocket.services.SpecificationSheetContent.Product> sheets =
                     com.tenderpocket.services.SpecificationSheetContent.fromSourceRequirements(extractedClauses).stream()
@@ -1742,7 +1899,7 @@ public class TenderController {
             ActivityLog log = new ActivityLog(
                     username, userRole, "Uploaded Technical Specification & Generated Documents", id,
                     new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                    "Uploaded specification.pdf and generated Technical Specification Sheet PDF, DOCX & XLSX outputs with " + extractedClauses.size() + " extracted clauses."
+                    "Uploaded " + originalFilename + " and generated Technical Specification Sheet PDF, DOCX & XLSX outputs with " + extractedClauses.size() + " extracted clauses."
             );
             activityLogRepository.save(log);
 
@@ -1763,13 +1920,20 @@ public class TenderController {
 
             return ResponseEntity.ok(response);
 
+        } catch (IllegalArgumentException e) {
+            complianceProgressService.fail(id, e.getMessage());
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("success", false);
+            failure.put("error", e.getMessage());
+            failure.put("metrics", conversionMetrics != null ? conversionMetrics.snapshot() : Map.of());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(failure);
         } catch (Exception e) {
             e.printStackTrace();
             complianceProgressService.fail(id, "Compliance creation failed: " + e.getMessage());
             Map<String, Object> failure = new LinkedHashMap<>();
             failure.put("success", false);
             failure.put("error", "Failed to upload technical specification: " + e.getMessage());
-            failure.put("metrics", conversionMetrics.snapshot());
+            failure.put("metrics", conversionMetrics != null ? conversionMetrics.snapshot() : Map.of());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(failure);
         }
     }

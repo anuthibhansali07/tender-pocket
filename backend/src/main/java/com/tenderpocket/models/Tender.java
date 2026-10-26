@@ -217,6 +217,12 @@ public class Tender {
     @Column(name = "spec_verification_status")
     private String specVerificationStatus = "None";
 
+    @Column(name = "selected_model_id")
+    private Long selectedModelId;
+
+    @Column(name = "schedule_product_models", columnDefinition = "TEXT")
+    private String scheduleProductModels;
+
     public Tender() {}
 
     // Additional Getters and Setters
@@ -362,8 +368,14 @@ public class Tender {
     public String getState() { return state; }
     public void setState(String state) { this.state = state; }
 
+    @JsonProperty("tenderType")
     public String getTenderType() { return tenderType; }
+    @JsonProperty("tender_type")
+    public String getTenderTypeSnakeCase() { return tenderType; }
+    @JsonProperty("tenderType")
     public void setTenderType(String tenderType) { this.tenderType = tenderType; }
+    @JsonProperty("tender_type")
+    public void setTenderTypeSnakeCase(String tenderType) { this.tenderType = tenderType; }
 
     public String getPublishDate() { return publishDate; }
     public void setPublishDate(String publishDate) { this.publishDate = publishDate; }
@@ -430,4 +442,10 @@ public class Tender {
 
     public String getCurrentStage() { return currentStage; }
     public void setCurrentStage(String currentStage) { this.currentStage = currentStage; }
+
+    public Long getSelectedModelId() { return selectedModelId; }
+    public void setSelectedModelId(Long selectedModelId) { this.selectedModelId = selectedModelId; }
+
+    public String getScheduleProductModels() { return scheduleProductModels; }
+    public void setScheduleProductModels(String scheduleProductModels) { this.scheduleProductModels = scheduleProductModels; }
 }
