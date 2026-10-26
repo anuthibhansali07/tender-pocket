@@ -5,6 +5,8 @@ import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
 import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -59,12 +61,22 @@ public class DocumentGeneratorService {
         try (XWPFDocument document = new XWPFDocument();
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             
-            // Set margins: Top: 1960, Bottom: 800, Left: 850, Right: 850 dxa
+            boolean isLandscape = data != null && "landscape".equalsIgnoreCase(data.get("orientation"));
             CTSectPr sectPr = document.getDocument().getBody().addNewSectPr();
+            CTPageSz pageSz = sectPr.addNewPgSz();
+            if (isLandscape) {
+                pageSz.setW(BigInteger.valueOf(16838L));
+                pageSz.setH(BigInteger.valueOf(11906L));
+                pageSz.setOrient(STPageOrientation.LANDSCAPE);
+            } else {
+                pageSz.setW(BigInteger.valueOf(11906L));
+                pageSz.setH(BigInteger.valueOf(16838L));
+                pageSz.setOrient(STPageOrientation.PORTRAIT);
+            }
             CTPageMar pageMar = sectPr.addNewPgMar();
             pageMar.setLeft(BigInteger.valueOf(850L));
             pageMar.setRight(BigInteger.valueOf(850L));
-            pageMar.setTop(BigInteger.valueOf(1960L));
+            pageMar.setTop(BigInteger.valueOf(isLandscape ? 1200L : 1960L));
             pageMar.setBottom(BigInteger.valueOf(800L));
 
             // Generate DOCX pages for all 15 documents
@@ -445,19 +457,26 @@ public class DocumentGeneratorService {
         XWPFTable table = doc.createTable();
         table.setWidth("100%");
         
-        String[][] tableData = {
-            {"Sr. No.", "Particulars", "Details"},
-            {"1.", "Name of the Bidder", "M/s. " + data.getOrDefault("companyName", "")},
-            {"2.", "Address of the Bidder", data.getOrDefault("companyAddress", "")},
-            {"3.", "Name of the Manufacturer", "M/s. " + data.getOrDefault("manufacturerName", "")},
-            {"4.", "Address of the Manufacturer", data.getOrDefault("manufacturerAddress", "")},
-            {"5.", "Name and address of the person to whom all references shall be made regarding this tender inquiry:", "Name: Mr. " + data.getOrDefault("signatoryName", "") + "\nAddress: " + data.getOrDefault("signatoryAddress", "")},
-            {"6.", "Telephone", data.getOrDefault("companyContact", "")},
-            {"7.", "Telex", "NA"},
-            {"8.", "Fax", "NA"},
-            {"9.", "Email address", data.getOrDefault("companyEmail", "")},
-            {"10.", "Witness", data.getOrDefault("witnessDetails", "")}
-        };
+        boolean isMe = "me".equalsIgnoreCase(String.valueOf(data.get("companyKey"))) || 
+                       String.valueOf(data.getOrDefault("companyName", "")).toLowerCase().contains("mark enterprises");
+        String witness = String.valueOf(data.getOrDefault("witnessDetails", "")).trim();
+        boolean includeWitness = !isMe && !witness.isEmpty();
+
+        List<String[]> rows = new ArrayList<>();
+        rows.add(new String[]{"Sr. No.", "Particulars", "Details"});
+        rows.add(new String[]{"1.", "Name of the Bidder", isMe ? "M/s. Mark Enterprises" : ("M/s. " + data.getOrDefault("companyName", ""))});
+        rows.add(new String[]{"2.", "Address of the Bidder", data.getOrDefault("companyAddress", "")});
+        rows.add(new String[]{"3.", "Name of the Manufacturer", isMe ? "M/s. Mark Enterprises" : ("M/s. " + data.getOrDefault("manufacturerName", ""))});
+        rows.add(new String[]{"4.", "Address of the Manufacturer", data.getOrDefault("manufacturerAddress", "")});
+        rows.add(new String[]{"5.", "Name and address of the person to whom all references shall be made regarding this tender inquiry:", "Name: Mr. " + data.getOrDefault("signatoryName", "Shreedhar Shingare").toString().replaceFirst("^Mr\\.\\s*", "") + "\nAddress: " + data.getOrDefault("signatoryAddress", "")});
+        rows.add(new String[]{"6.", "Telephone", isMe ? "+91 90111 04332" : data.getOrDefault("companyContact", "")});
+        rows.add(new String[]{"7.", "Telex", "NA"});
+        rows.add(new String[]{"8.", "Fax", "NA"});
+        rows.add(new String[]{"9.", "Email address", isMe ? "info@markworld.com" : data.getOrDefault("companyEmail", "")});
+        if (includeWitness) {
+            rows.add(new String[]{"10.", "Witness", data.getOrDefault("witnessDetails", "")});
+        }
+        String[][] tableData = rows.toArray(new String[0][]);
 
         for (int i = 0; i < tableData.length; i++) {
             XWPFTableRow row = (i == 0) ? table.getRow(0) : table.createRow();
@@ -866,21 +885,26 @@ public class DocumentGeneratorService {
             "<p>Thanking you and assuring you of our best services at all the times.</p>" + sigBlock
         ));
 
+        boolean isMeDoc = "me".equalsIgnoreCase(String.valueOf(data.get("companyKey"))) || 
+                          String.valueOf(data.getOrDefault("companyName", "")).toLowerCase().contains("mark enterprises");
+        String witnessDoc = String.valueOf(data.getOrDefault("witnessDetails", "")).trim();
+        boolean includeWitnessDoc = !isMeDoc && !witnessDoc.isEmpty();
+
         // 3. BIDDER PARTICULARS
         docsHtml.append(wrapPage(false, "page-doc-3", data, logoBase64, partnerBase64, addr1, addr2, "BIDDER PARTICULARS",
             "<table class=\"bordered-table bidder-particulars-table\">" +
             "  <thead><tr><th width=\"8%\">Sr. No.</th><th width=\"37%\">Particulars</th><th width=\"55%\">Details</th></tr></thead>" +
             "  <tbody>" +
-            "    <tr><td style=\"font-weight: bold;\">1.</td><td>Name of the Bidder</td><td style=\"font-weight: bold;\">M/s. " + data.getOrDefault("companyName", "") + "</td></tr>" +
+            "    <tr><td style=\"font-weight: bold;\">1.</td><td>Name of the Bidder</td><td style=\"font-weight: bold;\">" + (isMeDoc ? "M/s. Mark Enterprises" : ("M/s. " + data.getOrDefault("companyName", ""))) + "</td></tr>" +
             "    <tr><td style=\"font-weight: bold;\">2.</td><td>Address of the Bidder</td><td style=\"font-weight: bold;\">" + data.getOrDefault("companyAddress", "") + "</td></tr>" +
-            "    <tr><td style=\"font-weight: bold;\">3.</td><td>Name of the Manufacturer</td><td style=\"font-weight: bold;\">M/s. " + data.getOrDefault("manufacturerName", "") + "</td></tr>" +
+            "    <tr><td style=\"font-weight: bold;\">3.</td><td>Name of the Manufacturer</td><td style=\"font-weight: bold;\">" + (isMeDoc ? "<strong>M/s. Mark Enterprises</strong>" : ("M/s. " + data.getOrDefault("manufacturerName", ""))) + "</td></tr>" +
             "    <tr><td style=\"font-weight: bold;\">4.</td><td>Address of the Manufacturer</td><td style=\"font-weight: bold;\">" + data.getOrDefault("manufacturerAddress", "") + "</td></tr>" +
-            "    <tr><td style=\"font-weight: bold;\">5.</td><td>Name and address of representative:</td><td style=\"font-weight: bold;\">Name: Mr. " + data.getOrDefault("signatoryName", "") + "<br/>Address: " + data.getOrDefault("signatoryAddress", "") + "</td></tr>" +
-            "    <tr><td style=\"font-weight: bold;\">6.</td><td>Telephone</td><td style=\"font-weight: bold;\">" + data.getOrDefault("companyContact", "") + "</td></tr>" +
+            "    <tr><td style=\"font-weight: bold;\">5.</td><td>Name and address of representative:</td><td style=\"font-weight: bold;\">" + (isMeDoc ? ("<strong>Mr. " + data.getOrDefault("signatoryName", "Shreedhar Shingare").toString().replaceFirst("^Mr\\.\\s*", "") + "</strong><br/><strong>Address: " + data.getOrDefault("signatoryAddress", "") + "</strong>") : ("Name: Mr. " + data.getOrDefault("signatoryName", "") + "<br/>Address: " + data.getOrDefault("signatoryAddress", ""))) + "</td></tr>" +
+            "    <tr><td style=\"font-weight: bold;\">6.</td><td>Telephone</td><td style=\"font-weight: bold;\">" + (isMeDoc ? "<strong>+91 90111 04332</strong>" : data.getOrDefault("companyContact", "")) + "</td></tr>" +
             "    <tr><td style=\"font-weight: bold;\">7.</td><td>Telex</td><td style=\"font-weight: bold;\">NA</td></tr>" +
             "    <tr><td style=\"font-weight: bold;\">8.</td><td>Fax</td><td style=\"font-weight: bold;\">NA</td></tr>" +
-            "    <tr><td style=\"font-weight: bold;\">9.</td><td>Email address</td><td style=\"font-weight: bold;\">" + data.getOrDefault("companyEmail", "") + "</td></tr>" +
-            "    <tr><td style=\"font-weight: bold;\">10.</td><td>Witness</td><td style=\"font-weight: bold;\">" + data.getOrDefault("witnessDetails", "") + "</td></tr>" +
+            "    <tr><td style=\"font-weight: bold;\">9.</td><td>Email address</td><td style=\"font-weight: bold;\">" + (isMeDoc ? "<strong>info@markworld.com</strong>" : data.getOrDefault("companyEmail", "")) + "</td></tr>" +
+            (includeWitnessDoc ? ("    <tr><td style=\"font-weight: bold;\">10.</td><td>Witness</td><td style=\"font-weight: bold;\">" + data.getOrDefault("witnessDetails", "") + "</td></tr>") : "") +
             "  </tbody>" +
             "</table>" +
             "<p>Thanking you and assuring you of our best services at all the times.</p>" + sigBlock
@@ -1112,6 +1136,10 @@ public class DocumentGeneratorService {
             "<p style=\"margin-top: 10px; font-size: 10pt;\"><strong>Declaration:</strong> We hereby declare and confirm that the model and specifications offered above comply fully with all technical parameter requirements stated in Tender Ref No: <strong>" + data.getOrDefault("bidNumber", "") + "</strong>.</p>" + sigBlock
         ));
 
+        boolean isLandscape = rawData != null && "landscape".equalsIgnoreCase(rawData.get("orientation"));
+        String pageOrientationCss = isLandscape ? "size: A4 landscape;" : "size: A4;";
+        String pageWidthCss = isLandscape ? "width: 297mm;" : "width: 210mm;";
+
         return """
             <!DOCTYPE html>
             <html>
@@ -1119,7 +1147,7 @@ public class DocumentGeneratorService {
               <meta charset="utf-8" />
               <style>
                 @page {
-                  size: A4;
+                  """ + pageOrientationCss + """
                   margin: 0;
                 }
                 body {
@@ -1129,7 +1157,7 @@ public class DocumentGeneratorService {
                 }
                 .page {
                   box-sizing: border-box;
-                  width: 210mm;
+                  """ + pageWidthCss + """
                   padding: 30px 42.5px 40px 42.5px;
                   position: relative;
                   page-break-after: always;
@@ -1304,12 +1332,14 @@ public class DocumentGeneratorService {
                 }
                 .service-table td {
                   font-family: 'Cambria', serif;
-                  font-size: 10pt;
-                  line-height: 1.25;
+                  font-size: 11pt;
+                  padding: 8px 6px;
+                  line-height: 1.35;
                 }
                 .service-table th {
                   font-family: 'Cambria', serif;
-                  font-size: 10pt;
+                  font-size: 11pt;
+                  padding: 8px 6px;
                   font-weight: bold;
                 }
                 .escalation-table td {
@@ -3148,7 +3178,7 @@ public class DocumentGeneratorService {
               <meta charset="utf-8" />
               <style>
                 @page {
-                  size: A4;
+                  size: A4 landscape;
                   margin: 0;
                 }
                 body {
@@ -3158,7 +3188,7 @@ public class DocumentGeneratorService {
                 }
                 .page {
                   box-sizing: border-box;
-                  width: 210mm;
+                  width: 297mm;
                   padding: 20px 42.5px 25px 42.5px;
                   position: relative;
                   font-family: 'Cambria', serif;

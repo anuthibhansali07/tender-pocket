@@ -96,6 +96,15 @@ public class ApprovalController {
         return counts;
     }
 
+    private Double positivePrice(Object value) {
+        if (value == null) return null;
+        if (!(value instanceof Number) && !(value instanceof String)) return null;
+        try {
+            double parsed = Double.parseDouble(value.toString().trim());
+            return Double.isFinite(parsed) && parsed > 0 ? parsed : null;
+        } catch (NumberFormatException ignored) { return null; }
+    }
+
     // ── Reconciliation Helper ────────────────────────────────────────────────
     @Transactional
     public void reconcileStaleAndDuplicateApprovals() {
@@ -407,7 +416,7 @@ public class ApprovalController {
     @Transactional
     public ResponseEntity<?> reviewApproval(
             @PathVariable("approvalId") Long approvalId,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, Object> body) {
 
         String username = getAuthenticatedUsername();
         String role = getAuthenticatedRole();
@@ -423,26 +432,33 @@ public class ApprovalController {
         }
 
         // Validate action
-        String action = body.getOrDefault("action", "").toUpperCase();
+        String action = body.get("action") != null ? body.get("action").toString().trim().toUpperCase() : "";
         if (!List.of("APPROVED", "REJECTED", "CHANGES_REQUESTED").contains(action)) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "error", "Invalid action. Must be APPROVED, REJECTED, or CHANGES_REQUESTED"));
         }
 
-        String comment = body.getOrDefault("comment", "").trim();
+        String comment = body.get("comment") != null ? body.get("comment").toString().trim() : "";
         if (comment.isEmpty()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "error", "A reviewer comment is required"));
         }
 
-        String lossReasonMis = body.getOrDefault("lossReasonMis", "");
+        String lossReasonMis = body.get("lossReasonMis") != null ? body.get("lossReasonMis").toString().trim() : "";
+
+        // Parse optional prices from review body
+        Double reqTpcPrice = positivePrice(body.get("tpcPurchasePrice"));
+        if (reqTpcPrice == null) reqTpcPrice = positivePrice(body.get("tpc_purchase_price"));
+
+        Double reqMisPrice = positivePrice(body.get("misFinalPrice"));
+        if (reqMisPrice == null) reqMisPrice = positivePrice(body.get("mis_final_price"));
 
         // Fetch the specific approval request by ID
         Optional<TenderApprovalRequest> reqOpt = approvalRepository.findById(approvalId);
         if (reqOpt.isEmpty()) {
             // Fallback: Check if tenderId and stage are passed in body
-            String tenderId = body.get("tenderId");
-            String stageStr = body.get("stage");
+            String tenderId = body.get("tenderId") != null ? body.get("tenderId").toString() : null;
+            String stageStr = body.get("stage") != null ? body.get("stage").toString() : null;
             if (tenderId != null && stageStr != null) {
                 try {
                     TenderWorkflowStage stageEnum = TenderWorkflowStage.valueOf(stageStr.toUpperCase());
@@ -578,12 +594,12 @@ public class ApprovalController {
                     }
                 }
                 case "WIN_LOSS_PENDING" -> {
-                    String outcome = (String) body.get("outcome");
+                    String outcome = body.get("outcome") != null ? body.get("outcome").toString() : null;
                     boolean isLoss = "Lost".equalsIgnoreCase(outcome)
                             || (!"Won".equalsIgnoreCase(outcome) && (
                                    (approvalReq.getLossReasonExecutive() != null && !approvalReq.getLossReasonExecutive().isBlank())
                                    || !lossReasonMis.isEmpty()
-                               ));
+                                ));
                     if (isLoss) {
                         tender.setCurrentStage("LOST");
                         tender.setOutcomeStatus("Lost");
@@ -598,17 +614,57 @@ public class ApprovalController {
                 case "SPEC_CLEARANCE" -> {
                     tender.setSpecVerificationStatus("Approved");
                     tender.setCurrentStage("TPC_PRICING");
+                    try {
+                        List<TenderApprovalRequest> existingTpc = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.TPC_PRICING);
+                        boolean hasPendingTpc = existingTpc.stream().anyMatch(r -> "PENDING".equalsIgnoreCase(r.getStatus()));
+                        if (!hasPendingTpc) {
+                            TenderApprovalRequest tpcReq = new TenderApprovalRequest(
+                                    tender.getId(),
+                                    TenderWorkflowStage.TPC_PRICING,
+                                    username,
+                                    "TPC Pricing Team",
+                                    "PENDING"
+                            );
+                            approvalRepository.save(tpcReq);
+                        }
+                    } catch (Exception ignored) {}
                 }
                 case "TPC_PRICING"    -> {
-                    // TPC has already stored the price on the approval request; copy it to the tender
-                    if (approvalReq.getTpcPurchasePrice() != null) {
-                        tender.setTpcPurchasePrice(approvalReq.getTpcPurchasePrice());
+                    Double tpcPriceToSet = reqTpcPrice != null ? reqTpcPrice : approvalReq.getTpcPurchasePrice();
+                    if (tpcPriceToSet != null) {
+                        approvalReq.setTpcPurchasePrice(tpcPriceToSet);
+                        tender.setTpcPurchasePrice(tpcPriceToSet);
                     }
                     tender.setCurrentStage("MIS_PRICING");
+                    try {
+                        List<TenderApprovalRequest> existingMis = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.MIS_PRICING);
+                        boolean hasPendingMis = existingMis.stream().anyMatch(r -> "PENDING".equalsIgnoreCase(r.getStatus()));
+                        if (!hasPendingMis) {
+                            String misAssignee = tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank()
+                                    ? tender.getAssignedMisMember()
+                                    : (tender.getMisExecutive() != null && !tender.getMisExecutive().isBlank() ? tender.getMisExecutive() : "MIS Team");
+                            TenderApprovalRequest misReq = new TenderApprovalRequest(
+                                    tender.getId(),
+                                    TenderWorkflowStage.MIS_PRICING,
+                                    username,
+                                    misAssignee,
+                                    "PENDING"
+                            );
+                            if (tpcPriceToSet != null) {
+                                misReq.setTpcPurchasePrice(tpcPriceToSet);
+                            }
+                            approvalRepository.save(misReq);
+                        }
+                    } catch (Exception ignored) {}
                 }
                 case "MIS_PRICING"    -> {
-                    if (approvalReq.getMisFinalPrice() != null) {
-                        tender.setMisFinalPrice(approvalReq.getMisFinalPrice());
+                    Double misPriceToSet = reqMisPrice != null ? reqMisPrice : approvalReq.getMisFinalPrice();
+                    if (misPriceToSet != null) {
+                        approvalReq.setMisFinalPrice(misPriceToSet);
+                        tender.setMisFinalPrice(misPriceToSet);
+                    }
+                    if (tender.getTpcPurchasePrice() != null && approvalReq.getTpcPurchasePrice() == null) {
+                        approvalReq.setTpcPurchasePrice(tender.getTpcPurchasePrice());
                     }
                     tender.setCurrentStage("BID_DOC_PENDING");
                 }
@@ -644,8 +700,14 @@ public class ApprovalController {
         }
 
         // Write workflow comment / audit trail
-        String commentText = action + " by " + username + ": " + comment
-                + (lossReasonMis.isEmpty() ? "" : " [MIS Loss Reason: " + lossReasonMis + "]");
+        String extraInfo = "";
+        if (!lossReasonMis.isEmpty()) extraInfo += " [MIS Loss Reason: " + lossReasonMis + "]";
+        if ("TPC_PRICING".equals(stage) && tender.getTpcPurchasePrice() != null) {
+            extraInfo += " [TPC Price: ₹" + tender.getTpcPurchasePrice() + "]";
+        } else if ("MIS_PRICING".equals(stage) && tender.getMisFinalPrice() != null) {
+            extraInfo += " [MIS Final Price: ₹" + tender.getMisFinalPrice() + "]";
+        }
+        String commentText = action + " by " + username + ": " + comment + extraInfo;
         commentRepository.save(new TenderComment(
                 approvalReq.getTenderId(), stage, username, role, commentText));
 

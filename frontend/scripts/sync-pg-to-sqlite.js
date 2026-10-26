@@ -31,12 +31,18 @@ const path = require('path');
         id, ref_no, title, authority, estimated_cost, emd, location, sector,
         due_date, opening_date, document_url, original_url, status, notes,
         scraped_at, entry_date, mis_executive, source, source_id, publish_date,
-        payment_status, verification_status, submission_status, outcome_status, spec_verification_status
+        payment_status, verification_status, submission_status, outcome_status, spec_verification_status,
+        tpc_purchase_price, mis_final_price, current_stage, working_path, downloaded_docs, loss_reason,
+        assigned_mis_member, assigned_mis_member_spec, assigned_mis_member_docs, assigned_mis_member_emd, assigned_mis_member_submission,
+        emd_amount_actual, emd_payment_mode, emd_payment_ref, emd_payment_date
       ) VALUES (
         @id, @refNo, @title, @authority, @estimatedCost, @emd, @location, @sector,
         @dueDate, @openingDate, @documentUrl, @originalUrl, @status, @notes,
         @scrapedAt, @entryDate, @misExecutive, @source, @sourceId, @publishDate,
-        @paymentStatus, @verificationStatus, @submissionStatus, @outcomeStatus, @specVerificationStatus
+        @paymentStatus, @verificationStatus, @submissionStatus, @outcomeStatus, @specVerificationStatus,
+        @tpcPurchasePrice, @misFinalPrice, @currentStage, @workingPath, @downloadedDocs, @lossReason,
+        @assignedMisMember, @assignedMisMemberSpec, @assignedMisMemberDocs, @assignedMisMemberEmd, @assignedMisMemberSubmission,
+        @emdAmountActual, @emdPaymentMode, @emdPaymentRef, @emdPaymentDate
       )
     `);
 
@@ -44,30 +50,45 @@ const path = require('path');
       for (const t of list) {
         insert.run({
           id: t.id || '',
-          refNo: t.refNo || '',
+          refNo: t.refNo || t.ref_no || '',
           title: t.title || 'Untitled',
           authority: t.authority || '',
-          estimatedCost: t.estimatedCost || 0,
+          estimatedCost: t.estimatedCost ?? t.estimated_cost ?? 0,
           emd: t.emd || 0,
           location: t.location || '',
           sector: t.sector || '',
-          dueDate: t.dueDate || '',
-          openingDate: t.openingDate || '',
-          documentUrl: t.documentUrl || '',
-          originalUrl: t.originalUrl || '',
+          dueDate: t.dueDate || t.due_date || '',
+          openingDate: t.openingDate || t.opening_date || '',
+          documentUrl: t.documentUrl || t.document_url || '',
+          originalUrl: t.originalUrl || t.original_url || '',
           status: t.status || 'Issued',
           notes: t.notes || '',
-          scrapedAt: t.scrapedAt || new Date().toISOString(),
-          entryDate: t.entryDate || '',
-          misExecutive: t.misExecutive || '',
+          scrapedAt: t.scrapedAt || t.scraped_at || new Date().toISOString(),
+          entryDate: t.entryDate || t.entry_date || '',
+          misExecutive: t.misExecutive || t.mis_executive || '',
           source: t.source || 'GeM',
-          sourceId: t.sourceId || '',
-          publishDate: t.publishDate || '',
-          paymentStatus: t.paymentStatus || 'None',
-          verificationStatus: t.verificationStatus || 'None',
-          submissionStatus: t.submissionStatus || 'None',
-          outcomeStatus: t.outcomeStatus || 'None',
-          specVerificationStatus: t.specVerificationStatus || 'None'
+          sourceId: t.sourceId || t.source_id || '',
+          publishDate: t.publishDate || t.publish_date || '',
+          paymentStatus: t.paymentStatus || t.payment_status || 'None',
+          verificationStatus: t.verificationStatus || t.verification_status || 'None',
+          submissionStatus: t.submissionStatus || t.submission_status || 'None',
+          outcomeStatus: t.outcomeStatus || t.outcome_status || 'None',
+          specVerificationStatus: t.specVerificationStatus || t.spec_verification_status || 'None',
+          tpcPurchasePrice: t.tpcPurchasePrice ?? t.tpc_purchase_price ?? null,
+          misFinalPrice: t.misFinalPrice ?? t.mis_final_price ?? null,
+          currentStage: t.currentStage || t.current_stage || null,
+          workingPath: t.workingPath || t.working_path || null,
+          downloadedDocs: t.downloadedDocs || t.downloaded_docs || null,
+          lossReason: t.lossReason || t.loss_reason || null,
+          assignedMisMember: t.assignedMisMember || t.assigned_mis_member || null,
+          assignedMisMemberSpec: t.assignedMisMemberSpec || t.assigned_mis_member_spec || null,
+          assignedMisMemberDocs: t.assignedMisMemberDocs || t.assigned_mis_member_docs || null,
+          assignedMisMemberEmd: t.assignedMisMemberEmd || t.assigned_mis_member_emd || null,
+          assignedMisMemberSubmission: t.assignedMisMemberSubmission || t.assigned_mis_member_submission || null,
+          emdAmountActual: t.emdAmountActual ?? t.emd_amount_actual ?? null,
+          emdPaymentMode: t.emdPaymentMode || t.emd_payment_mode || null,
+          emdPaymentRef: t.emdPaymentRef || t.emd_payment_ref || null,
+          emdPaymentDate: t.emdPaymentDate || t.emd_payment_date || null
         });
       }
     });
