@@ -44,14 +44,14 @@ public final class WorkflowPermissions {
         if (action == Action.VIEW_TENDERS) return true;
         if ("Admin".equals(canonical)) {
             return switch (action) {
-                case VIEW_TPC_PRICE, SET_MIS_PRICE, MANAGE_USERS, VIEW_AUDIT -> true;
+                case VIEW_TPC_PRICE, SET_TPC_PRICE, MANAGE_USERS, VIEW_AUDIT -> true;
                 default -> false;
             };
         }
         return switch (action) {
             case UPLOAD_SPEC, GENERATE_BIDS -> canonical.equals("Tender Executive");
             case APPROVE_SPEC -> canonical.equals("Clearance Team");
-            case SET_TPC_PRICE -> canonical.equals("TPC Pricing Team");
+            case SET_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team");
             case VIEW_TPC_PRICE -> canonical.equals("TPC Pricing Team") || canonical.equals("MIS Team");
             case SET_MIS_PRICE -> canonical.equals("MIS Team");
             case MANAGE_USERS, VIEW_AUDIT -> false;
@@ -109,22 +109,23 @@ public final class WorkflowPermissions {
         boolean isClearance = "Clearance Team".equals(canonical);
         boolean isTpc = "TPC Pricing Team".equals(canonical);
 
-        // Admin may view management data and edit specifications, but cannot alter operational workflow stages, participation decisions, or approvals
+        // Admin has no edit permission except to provide TPC purchase price. Rest are view only.
         if (isAdmin) {
-            if (hasAnyKey(body, "status", "current_stage", "currentStage", "spec_verification_status", "specVerificationStatus",
-                    "verification_status", "verificationStatus", "payment_status", "paymentStatus", "submission_status", "submissionStatus",
-                    "outcome_status", "outcomeStatus", "tpc_purchase_price", "tpcPurchasePrice")) {
-                return false;
+            for (String key : body.keySet()) {
+                if (!"tpc_purchase_price".equals(key) && !"tpcPurchasePrice".equals(key) && !"id".equalsIgnoreCase(key)) {
+                    return false;
+                }
             }
+            return hasAnyKey(body, "tpc_purchase_price", "tpcPurchasePrice");
         }
 
-        // TPC confidential purchase price: only TPC Pricing Team
-        if (hasAnyKey(body, "tpc_purchase_price", "tpcPurchasePrice") && !isTpc) {
+        // TPC confidential purchase price: only TPC Pricing Team and Admin
+        if (hasAnyKey(body, "tpc_purchase_price", "tpcPurchasePrice") && !isTpc && !isAdmin) {
             return false;
         }
 
-        // MIS final price: only MIS Team or Admin
-        if (hasAnyKey(body, "mis_final_price", "misFinalPrice") && !isMis && !isAdmin) {
+        // MIS final price: only MIS Team
+        if (hasAnyKey(body, "mis_final_price", "misFinalPrice") && !isMis) {
             return false;
         }
 
@@ -141,7 +142,7 @@ public final class WorkflowPermissions {
             String val = String.valueOf(getAnyVal(body, "payment_status", "paymentStatus"));
             if (List.of("Approved", "Rejected").contains(val) && !isMis) return false;
             if ("Pending".equals(val) && !isExec) return false;
-            if (!List.of("Approved", "Rejected", "Pending", "None").contains(val) && !isMis) return false;
+            if (!List.of("Approved", "Rejected", "Pending", "None", "Exempt").contains(val) && !isMis) return false;
         }
 
         // EMD payment and execution details: only Executive or MIS
@@ -151,11 +152,17 @@ public final class WorkflowPermissions {
             if (body.containsKey(emdField) && !isExec && !isMis) return false;
         }
 
-        // Assignment fields: only MIS Team or Admin
-        for (String assignField : List.of("mis_executive", "misExecutive", "assigned_mis_member", "assignedMisMember",
+        // Executive assignment: only MIS Team
+        if (hasAnyKey(body, "mis_executive", "misExecutive") && !isMis) {
+            return false;
+        }
+
+        // Operational workflow member assignments: Tender Executive or MIS Team
+        for (String assignField : List.of("assigned_mis_member", "assignedMisMember",
                 "assigned_mis_member_docs", "assignedMisMemberDocs", "assigned_mis_member_emd", "assignedMisMemberEmd",
-                "assigned_mis_member_submission", "assignedMisMemberSubmission", "assigned_mis_member_spec", "assignedMisMemberSpec")) {
-            if (body.containsKey(assignField) && !isMis && !isAdmin) return false;
+                "assigned_mis_member_submission", "assignedMisMemberSubmission", "assigned_mis_member_spec", "assignedMisMemberSpec",
+                "pricing_route", "pricingRoute")) {
+            if (body.containsKey(assignField) && !isExec && !isMis) return false;
         }
 
         // Submission status
@@ -185,7 +192,7 @@ public final class WorkflowPermissions {
             if (List.of("WON", "LOST", "WIN_LOSS_PENDING").contains(newStage) && !isMis) return false;
             if ("DOC_VERIFICATION".equals(newStage) && !isExec && !isMis) return false;
             if ("TPC_PRICING".equals(newStage) && !isClearance && !isExec && !isMis) return false;
-            if ("MIS_PRICING".equals(newStage) && !isTpc && !isMis) return false;
+            if ("MIS_PRICING".equals(newStage) && !isTpc && !isMis && !isExec) return false;
             if ("PAYMENT_APPROVAL".equals(newStage) && !isMis && !isExec) return false;
         }
 

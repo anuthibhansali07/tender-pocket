@@ -104,6 +104,8 @@ public class TenderControllerTest {
         tender4.setTpcPurchasePrice(0.0);
 
         when(tenderRepository.findAll()).thenReturn(List.of(tender1, tender2, tender3, tender4));
+        when(tenderRepository.findByMisExecutive("exec1")).thenReturn(List.of(tender1));
+        when(tenderRepository.findByMisExecutive("exec2")).thenReturn(List.of(tender2));
         when(tenderRepository.findById("T1")).thenReturn(Optional.of(tender1));
         when(tenderRepository.findById("T2")).thenReturn(Optional.of(tender2));
         when(tenderRepository.findById("T3")).thenReturn(Optional.of(tender3));
@@ -702,6 +704,21 @@ public class TenderControllerTest {
     }
 
     @Test
+    void testUpdateTenderAcceptsGeneratedBidDocsWithoutWorkingPath() {
+        authenticate("misteam", "MIS Team");
+
+        tender1.setWorkingPath(null);
+        tender1.setDownloadedDocs("[{\"filename\":\"Bid_Documents_T1.pdf\",\"name\":\"Generated Bid Documents (PDF)\"}]");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("verification_status", "Approved");
+
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Approved", tender1.getVerificationStatus());
+    }
+
+    @Test
     void testUpdateTenderSpecificationParametersByClearanceTeam() {
         authenticate("clearance", "Clearance Team");
 
@@ -774,7 +791,6 @@ public class TenderControllerTest {
     @Test
     void testUpdateTenderSpecificationParametersByAllRoles() {
         for (String[] roleUser : new String[][]{
-                {"Admin", "admin"},
                 {"Tender Executive", "executive"},
                 {"Clearance Team", "clearance"},
                 {"TPC Pricing Team", "tpc"},
@@ -794,15 +810,22 @@ public class TenderControllerTest {
             assertEquals("Authority Edited by " + role, tender1.getAuthority());
             assertEquals(10, tender1.getBidQty());
         }
+
+        // Admin has no edit permission for specifications (view only)
+        authenticate("admin", "Admin");
+        Map<String, Object> adminBody = new HashMap<>();
+        adminBody.put("authority", "Authority Edited by Admin");
+        ResponseEntity<?> adminResponse = tenderController.updateTender("Admin", "admin", "T1", adminBody);
+        assertEquals(HttpStatus.FORBIDDEN, adminResponse.getStatusCode(), "Admin must be forbidden from editing specifications");
     }
 
     @Test
     void testIncompleteDateRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("opening_date", "2026-");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -815,11 +838,11 @@ public class TenderControllerTest {
 
     @Test
     void testImpossibleDateRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("opening_date", "2026-02-30");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -829,22 +852,22 @@ public class TenderControllerTest {
 
     @Test
     void testValidDateAccepted() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("opening_date", "2026-10-26");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("2026-10-26", tender1.getOpeningDate());
     }
 
     @Test
     void testNonNumericFeeRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("document_fee_raw", "maha");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -857,11 +880,11 @@ public class TenderControllerTest {
 
     @Test
     void testNegativeFeeRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("document_fee_raw", "-500");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -870,11 +893,11 @@ public class TenderControllerTest {
 
     @Test
     void testValidFeeAccepted() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("document_fee_raw", "₹ 750.50");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("₹ 750.50", tender1.getDocumentFeeRaw());
         assertEquals(750.50, tender1.getDocumentFee());
@@ -882,11 +905,11 @@ public class TenderControllerTest {
 
     @Test
     void testNegativeQuantityRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("bid_qty", -5);
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -895,11 +918,11 @@ public class TenderControllerTest {
 
     @Test
     void testDecimalQuantityRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("bid_qty", "10.5");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -908,11 +931,11 @@ public class TenderControllerTest {
 
     @Test
     void testInvalidUrlRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("original_url", "not-a-valid-url");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -923,40 +946,40 @@ public class TenderControllerTest {
 
     @Test
     void testMalformedCommaGroupingRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
 
         // "12,34" has invalid grouping (not 3 digits at end)
         Map<String, Object> body1 = new HashMap<>();
         body1.put("document_fee_raw", "12,34");
-        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        ResponseEntity<?> resp1 = tenderController.updateTender("MIS Team", "misteam", "T1", body1);
         assertEquals(HttpStatus.BAD_REQUEST, resp1.getStatusCode());
 
         // "1,,2" has consecutive commas
         Map<String, Object> body2 = new HashMap<>();
         body2.put("estimated_cost_raw", "1,,2");
-        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        ResponseEntity<?> resp2 = tenderController.updateTender("MIS Team", "misteam", "T1", body2);
         assertEquals(HttpStatus.BAD_REQUEST, resp2.getStatusCode());
 
         // "1,2,3,4" has single-digit comma groups
         Map<String, Object> body3 = new HashMap<>();
         body3.put("document_fee_raw", "1,2,3,4");
-        ResponseEntity<?> resp3 = tenderController.updateTender("Admin", "admin", "T1", body3);
+        ResponseEntity<?> resp3 = tenderController.updateTender("MIS Team", "misteam", "T1", body3);
         assertEquals(HttpStatus.BAD_REQUEST, resp3.getStatusCode());
 
         // Trailing comma
         Map<String, Object> body4 = new HashMap<>();
         body4.put("document_fee_raw", "500,");
-        ResponseEntity<?> resp4 = tenderController.updateTender("Admin", "admin", "T1", body4);
+        ResponseEntity<?> resp4 = tenderController.updateTender("MIS Team", "misteam", "T1", body4);
         assertEquals(HttpStatus.BAD_REQUEST, resp4.getStatusCode());
     }
 
     @Test
     void testMultipleDecimalPointsRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("document_fee_raw", "1.2.3");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Map<?, ?> respBody = (Map<?, ?>) response.getBody();
         assertNotNull(respBody);
@@ -965,26 +988,26 @@ public class TenderControllerTest {
 
     @Test
     void testLegitimateCurrencyFormattedAmountsAccepted() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
 
         // Indian format with lakhs
         Map<String, Object> body1 = new HashMap<>();
         body1.put("estimated_cost_raw", "₹ 12,34,567.89");
-        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        ResponseEntity<?> resp1 = tenderController.updateTender("MIS Team", "misteam", "T1", body1);
         assertEquals(HttpStatus.OK, resp1.getStatusCode());
         assertEquals(1234567.89, tender1.getEstimatedCost(), 0.001);
 
         // Western format with millions
         Map<String, Object> body2 = new HashMap<>();
         body2.put("estimated_cost_raw", "$ 1,234,567.89");
-        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        ResponseEntity<?> resp2 = tenderController.updateTender("MIS Team", "misteam", "T1", body2);
         assertEquals(HttpStatus.OK, resp2.getStatusCode());
         assertEquals(1234567.89, tender1.getEstimatedCost(), 0.001);
 
         // Rs prefix with Indian format
         Map<String, Object> body3 = new HashMap<>();
         body3.put("document_fee_raw", "Rs. 1,500.50");
-        ResponseEntity<?> resp3 = tenderController.updateTender("Admin", "admin", "T1", body3);
+        ResponseEntity<?> resp3 = tenderController.updateTender("MIS Team", "misteam", "T1", body3);
         assertEquals(HttpStatus.OK, resp3.getStatusCode());
         assertEquals(1500.50, tender1.getDocumentFee(), 0.001);
     }
@@ -993,59 +1016,59 @@ public class TenderControllerTest {
 
     @Test
     void testLegacyPermittedScrapedDateFormatAccepted() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("due_date", "8 Oct 2026");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("8 Oct 2026", tender1.getDueDate());
     }
 
     @Test
     void testImpossibleLegacyDateRejected() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         Map<String, Object> body = new HashMap<>();
         body.put("due_date", "30 Feb 2026");
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
 
     @Test
     void testDateTimeFormatsAccepted() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
 
         // YYYY-MM-DD HH:mm:ss
         Map<String, Object> body1 = new HashMap<>();
         body1.put("due_date", "2026-10-25 15:30:00");
-        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        ResponseEntity<?> resp1 = tenderController.updateTender("MIS Team", "misteam", "T1", body1);
         assertEquals(HttpStatus.OK, resp1.getStatusCode());
         assertEquals("2026-10-25 15:30:00", tender1.getDueDate());
 
         // YYYY-MM-DDTHH:mm
         Map<String, Object> body2 = new HashMap<>();
         body2.put("due_date", "2026-10-25T15:30");
-        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        ResponseEntity<?> resp2 = tenderController.updateTender("MIS Team", "misteam", "T1", body2);
         assertEquals(HttpStatus.OK, resp2.getStatusCode());
         assertEquals("2026-10-25T15:30", tender1.getDueDate());
     }
 
     @Test
     void testNoPermittedOnlyForPreBidDate() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
 
         // "No" on pre_bid_date is allowed
         Map<String, Object> body1 = new HashMap<>();
         body1.put("pre_bid_date", "No");
-        ResponseEntity<?> resp1 = tenderController.updateTender("Admin", "admin", "T1", body1);
+        ResponseEntity<?> resp1 = tenderController.updateTender("MIS Team", "misteam", "T1", body1);
         assertEquals(HttpStatus.OK, resp1.getStatusCode());
         assertEquals("No", tender1.getPreBidDate());
 
         // "No" on opening_date is NOT allowed
         Map<String, Object> body2 = new HashMap<>();
         body2.put("opening_date", "No");
-        ResponseEntity<?> resp2 = tenderController.updateTender("Admin", "admin", "T1", body2);
+        ResponseEntity<?> resp2 = tenderController.updateTender("MIS Team", "misteam", "T1", body2);
         assertEquals(HttpStatus.BAD_REQUEST, resp2.getStatusCode());
     }
 
@@ -1128,8 +1151,8 @@ public class TenderControllerTest {
 
     @Test
     void testAllRolesCanEditApprovedSpecificationParameters() {
-        String[] roles = {"Admin", "MIS Team", "Tender Executive", "Clearance Team", "TPC Pricing Team"};
-        String[] users = {"admin", "misteam", "exec1", "clearance", "tpc"};
+        String[] roles = {"MIS Team", "Tender Executive", "Clearance Team", "TPC Pricing Team"};
+        String[] users = {"misteam", "exec1", "clearance", "tpc"};
 
         for (int i = 0; i < roles.length; i++) {
             authenticate(users[i], roles[i]);
@@ -1144,11 +1167,31 @@ public class TenderControllerTest {
             assertEquals("2026-10-26", tender1.getOpeningDate());
             assertEquals(500.0, tender1.getDocumentFee());
         }
+
+        // Admin has no edit permission (view only)
+        authenticate("admin", "Admin");
+        Map<String, Object> adminBody = new HashMap<>();
+        adminBody.put("authority", "Authority updated by Admin");
+        ResponseEntity<?> adminResponse = tenderController.updateTender("Admin", "admin", "T1", adminBody);
+        assertEquals(HttpStatus.FORBIDDEN, adminResponse.getStatusCode(), "Role Admin must not be permitted to edit specifications");
+    }
+
+    @Test
+    void testTenderExecutiveCanAssignClearanceRepresentative() {
+        authenticate("exec1", "Tender Executive");
+        tender1.setAssignedMisMemberSpec(null);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("assigned_mis_member_spec", "clearance");
+
+        ResponseEntity<?> response = tenderController.updateTender("Tender Executive", "exec1", "T1", body);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("clearance", tender1.getAssignedMisMemberSpec());
     }
 
     @Test
     void testInvalidRequestDoesNotPartiallyMutateTender() {
-        authenticate("admin", "Admin");
+        authenticate("misteam", "MIS Team");
         tender1.setAuthority("Original Authority");
         tender1.setDocumentFeeRaw("1000");
         tender1.setDocumentFee(1000.0);
@@ -1159,7 +1202,7 @@ public class TenderControllerTest {
         body.put("authority", "Mutated Authority");
         body.put("opening_date", "2026-02-31"); // impossible date
 
-        ResponseEntity<?> response = tenderController.updateTender("Admin", "admin", "T1", body);
+        ResponseEntity<?> response = tenderController.updateTender("MIS Team", "misteam", "T1", body);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
 
         // Verify tender fields were NOT mutated
@@ -1252,3 +1295,51 @@ public class TenderControllerTest {
     }
 }
 
+    @Test
+    void testAdminOnlyHasPermissionToProvideTpcPrice() {
+        authenticate("admin", "Admin");
+
+        // 1. Admin providing TPC purchase price -> 200 OK
+        Map<String, Object> tpcBody = new HashMap<>();
+        tpcBody.put("tpc_purchase_price", 125000.0);
+        ResponseEntity<?> tpcResponse = tenderController.updateTender("Admin", "admin", "T1", tpcBody);
+        assertEquals(HttpStatus.OK, tpcResponse.getStatusCode());
+        assertEquals(125000.0, tender1.getTpcPurchasePrice());
+
+        // 2. Admin providing camelCase tpcPurchasePrice -> 200 OK
+        Map<String, Object> tpcCamelBody = new HashMap<>();
+        tpcCamelBody.put("tpcPurchasePrice", 130000.0);
+        ResponseEntity<?> tpcCamelResponse = tenderController.updateTender("Admin", "admin", "T1", tpcCamelBody);
+        assertEquals(HttpStatus.OK, tpcCamelResponse.getStatusCode());
+        assertEquals(130000.0, tender1.getTpcPurchasePrice());
+
+        // 3. Admin attempting any other edit -> 403 FORBIDDEN
+        // Authority
+        Map<String, Object> authorityBody = new HashMap<>();
+        authorityBody.put("authority", "Admin Modified Authority");
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.updateTender("Admin", "admin", "T1", authorityBody).getStatusCode());
+
+        // Notes
+        Map<String, Object> notesBody = new HashMap<>();
+        notesBody.put("notes", "Admin notes");
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.updateTender("Admin", "admin", "T1", notesBody).getStatusCode());
+
+        // Dates
+        Map<String, Object> datesBody = new HashMap<>();
+        datesBody.put("opening_date", "2026-10-28");
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.updateTender("Admin", "admin", "T1", datesBody).getStatusCode());
+
+        // MIS Price
+        Map<String, Object> misPriceBody = new HashMap<>();
+        misPriceBody.put("mis_final_price", 150000.0);
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.updateTender("Admin", "admin", "T1", misPriceBody).getStatusCode());
+
+        // Status
+        Map<String, Object> statusBody = new HashMap<>();
+        statusBody.put("status", "Won");
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.updateTender("Admin", "admin", "T1", statusBody).getStatusCode());
+
+        // Delete tender -> 403 FORBIDDEN
+        assertEquals(HttpStatus.FORBIDDEN, tenderController.deleteTender("Admin", "admin", "T1").getStatusCode());
+    }
+}

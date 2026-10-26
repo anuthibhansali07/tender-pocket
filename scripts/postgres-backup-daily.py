@@ -10,10 +10,14 @@ enforces local retention (14d daily, 8w weekly), and alerts on failure.
 
 import os
 import sys
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import gzip
 import hashlib
 import json
+import re
 import smtplib
 import subprocess
 from datetime import datetime, timedelta
@@ -354,6 +358,14 @@ def main():
         raw_sql = dump_proc.stdout
         if not raw_sql or len(raw_sql) < 100:
             raise Exception("pg_dump generated empty or suspiciously small output (< 100 bytes)")
+
+        # Filter out configuration parameters introduced in newer PostgreSQL versions (e.g. PG17 transaction_timeout)
+        if b"transaction_timeout" in raw_sql:
+            raw_sql = re.sub(
+                rb"(?m)^\s*SET\s+transaction_timeout\s*=.*?;",
+                b"-- [cross-version-compat] SET transaction_timeout ignored;",
+                raw_sql
+            )
 
         # 2. Extract snapshot table counts directly from dump for 100% point-in-time consistency
         dump_counts = extract_snapshot_counts_from_dump(raw_sql)

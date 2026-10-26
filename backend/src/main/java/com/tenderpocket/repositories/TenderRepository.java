@@ -15,6 +15,47 @@ import java.util.Optional;
 
 @Repository
 public interface TenderRepository extends JpaRepository<Tender, String> {
+
+    public interface TenderAnalyticsProjection {
+        String getId();
+        String getStatus();
+        Double getEstimatedCost();
+        String getDueDate();
+        String getScrapedAt();
+        String getPublishDate();
+        String getAssignedAt();
+        String getEntryDate();
+        String getMisExecutive();
+        String getCurrentStage();
+        Double getTpcPurchasePrice();
+        Double getMisFinalPrice();
+        String getSpecVerificationStatus();
+        String getAssignedMisMemberSpec();
+        String getPricingRoute();
+    }
+
+    @Query("SELECT t.id AS id, t.status AS status, t.estimatedCost AS estimatedCost, " +
+           "t.dueDate AS dueDate, t.scrapedAt AS scrapedAt, t.publishDate AS publishDate, " +
+           "t.assignedAt AS assignedAt, t.entryDate AS entryDate, t.misExecutive AS misExecutive, t.currentStage AS currentStage, " +
+           "t.tpcPurchasePrice AS tpcPurchasePrice, t.misFinalPrice AS misFinalPrice, t.specVerificationStatus AS specVerificationStatus, " +
+           "t.assignedMisMemberSpec AS assignedMisMemberSpec, t.pricingRoute AS pricingRoute FROM Tender t")
+    List<TenderAnalyticsProjection> findAllForAnalytics();
+
+    @Query("SELECT t.id AS id, t.status AS status, t.estimatedCost AS estimatedCost, " +
+           "t.dueDate AS dueDate, t.scrapedAt AS scrapedAt, t.publishDate AS publishDate, " +
+           "t.assignedAt AS assignedAt, t.entryDate AS entryDate, t.misExecutive AS misExecutive, t.currentStage AS currentStage, " +
+           "t.tpcPurchasePrice AS tpcPurchasePrice, t.misFinalPrice AS misFinalPrice, t.specVerificationStatus AS specVerificationStatus, " +
+           "t.assignedMisMemberSpec AS assignedMisMemberSpec, t.pricingRoute AS pricingRoute FROM Tender t WHERE t.misExecutive = :executive")
+    List<TenderAnalyticsProjection> findForAnalyticsByExecutive(@Param("executive") String executive);
+
+    @Query("SELECT t.id AS id, t.status AS status, t.estimatedCost AS estimatedCost, " +
+           "t.dueDate AS dueDate, t.scrapedAt AS scrapedAt, t.publishDate AS publishDate, " +
+           "t.assignedAt AS assignedAt, t.entryDate AS entryDate, t.misExecutive AS misExecutive, t.currentStage AS currentStage, " +
+           "t.tpcPurchasePrice AS tpcPurchasePrice, t.misFinalPrice AS misFinalPrice, t.specVerificationStatus AS specVerificationStatus, " +
+           "t.assignedMisMemberSpec AS assignedMisMemberSpec, t.pricingRoute AS pricingRoute FROM Tender t " +
+           "WHERE LOWER(t.assignedMisMemberSpec) = LOWER(:actor) OR LOWER(t.assignedMisMemberSpec) = 'clearance' " +
+           "OR LOWER(t.assignedMisMemberSpec) = 'clearance team' OR UPPER(t.currentStage) = 'SPEC_CLEARANCE'")
+    List<TenderAnalyticsProjection> findForAnalyticsBySpecMember(@Param("actor") String actor);
     
     List<Tender> findByMisExecutive(String misExecutive);
     Page<Tender> findByMisExecutive(String misExecutive, Pageable pageable);

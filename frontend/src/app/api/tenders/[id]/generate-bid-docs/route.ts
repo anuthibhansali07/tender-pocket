@@ -15,6 +15,33 @@ import HTMLtoDOCX from 'html-to-docx';
 import puppeteer from 'puppeteer';
 
 
+function splitLine(line: string): { left: string, right: string } {
+  const firstCharIdx = line.search(/\S/);
+  if (firstCharIdx === -1) {
+    return { left: '', right: '' };
+  }
+  
+  if (firstCharIdx >= 30) {
+    return { left: '', right: line.trim() };
+  }
+  
+  const remaining = line.substring(firstCharIdx);
+  const gapMatch = remaining.match(/\s{3,}/);
+  if (gapMatch && gapMatch.index !== undefined) {
+    const gapStart = firstCharIdx + gapMatch.index;
+    const gapEnd = gapStart + gapMatch[0].length;
+    
+    if (gapEnd >= 30) {
+      return {
+        left: line.substring(0, gapStart).trim(),
+        right: line.substring(gapEnd).trim()
+      };
+    }
+  }
+  
+  return { left: line.trim(), right: '' };
+}
+
 let hasPdfToText: boolean | null = null;
 function checkPdfToText(): boolean {
   if (hasPdfToText !== null) return hasPdfToText;
@@ -332,11 +359,10 @@ export async function POST(
 
     // Merge body with tender metadata fallbacks
     const specStatus = tender.spec_verification_status || tender.specVerificationStatus;
-    const misFinalPrice = tender.mis_final_price ?? tender.misFinalPrice;
-    if (specStatus !== 'Approved' || misFinalPrice === undefined || misFinalPrice === null || !Number.isFinite(Number(misFinalPrice)) || Number(misFinalPrice) <= 0) {
+    if (specStatus !== 'Approved') {
       return NextResponse.json({
         success: false,
-        error: 'Specification clearance and finalized MIS pricing are required before generating bid documents.'
+        error: 'Specification clearance is required before the bid package. Commercial pricing happens later, after EMD.'
       }, { status: 409 });
     }
 
@@ -576,99 +602,94 @@ export async function POST(
     currentDocs.push(specDocsMeta);
     currentDocs.push(specPdfMeta);
 
-    // Update downloaded_docs metadata and advance stage to DOC_VERIFICATION in SQLite if available
+    const emdValue = tender.emd ?? tender.emdAmount;
+    const emdExempt = tender.emd_applicable === false || tender.emdApplicable === false
+      || (emdValue != null && Number(emdValue) === 0)
+      || tender.payment_status === 'Exempt' || tender.paymentStatus === 'Exempt'
+      || tender.emd_status === 'EXEMPT_SKIPPED';
+    const nextStage = emdExempt ? 'DUAL_TRACK' : 'EMD_PAYMENT';
+    const nextPayment = emdExempt ? 'Exempt' : (tender.payment_status || tender.paymentStatus || 'None');
+
+    // Bid package is step 3. EMD is step 4. Document verification waits until after EMD.
     try {
       const updateStmt = db.prepare(`
         UPDATE tenders 
         SET downloaded_docs = ?, 
-            current_stage = 'DOC_VERIFICATION', 
-            verification_status = 'Pending',
-            payment_status = 'None',
-            submission_status = 'None'
+            current_stage = ?,
+            payment_status = CASE WHEN ? = 'Exempt' THEN 'Exempt' ELSE payment_status END
         WHERE id = ?
       `);
-      updateStmt.run(JSON.stringify(currentDocs), id);
+      updateStmt.run(JSON.stringify(currentDocs), nextStage, nextPayment, id);
     } catch (_) {}
-
-    const now = new Date().toISOString();
-    const assignedMis = tender.assigned_mis_member || tender.assignedMisMember || 'misteam';
-
-    try {
-      // Cancel/remove any premature downstream approval requests
-      db.prepare("DELETE FROM tender_approval_requests WHERE tender_id = ? AND stage IN ('PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING') AND status = 'PENDING'").run(id);
-
-      const existingDocReq = db.prepare("SELECT id FROM tender_approval_requests WHERE tender_id = ? AND stage = 'DOC_VERIFICATION' AND status = 'PENDING'").get(id);
-      if (existingDocReq) {
-        db.prepare("UPDATE tender_approval_requests SET requested_by = ?, assigned_to = ?, working_path = ?, updated_at = ? WHERE id = ?")
-          .run(username, assignedMis, docDownloadPath, now, (existingDocReq as any).id);
-      } else {
-        db.prepare(`
-          INSERT INTO tender_approval_requests (tender_id, stage, requested_by, assigned_to, working_path, status, created_at, updated_at)
-          VALUES (?, 'DOC_VERIFICATION', ?, ?, ?, 'PENDING', ?, ?)
-        `).run(id, username, assignedMis, docDownloadPath, now, now);
-      }
-    } catch (dbErr) {
-      console.error('[API Generate Bid Docs] Error creating approval request:', dbErr);
-    }
 
     // Attempt notifying Spring Boot backend if available
     if (backendUrl) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         const authH = request.headers.get('authorization');
         if (authH) headers['authorization'] = authH;
+        const roleH = request.headers.get('x-user-role');
+        if (roleH) headers['x-user-role'] = roleH;
+        else if (userRole) headers['x-user-role'] = userRole;
+        const userH = request.headers.get('x-user-username');
+        if (userH) headers['x-user-username'] = userH;
+        else if (username) headers['x-user-username'] = username;
 
         const docsJsonStr = JSON.stringify(currentDocs);
+        const isAlreadyApproved = tender.payment_status === 'Approved' || tender.paymentStatus === 'Approved';
+        const paymentStatusToPatch = isAlreadyApproved ? undefined : (emdExempt ? 'Exempt' : undefined);
 
-        fetch(`${backendUrl}/api/tenders/${id}/doc-verification-request`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            assignedMisExecutive: assignedMis,
-            workingPath: docDownloadPath,
-            downloadedDocs: docsJsonStr,
-            downloaded_docs: docsJsonStr,
-            comment: 'Bid document package generated. Submitted for MIS verification & approval.'
-          }),
-          signal: controller.signal,
-          cache: 'no-store'
-        }).catch(() => {});
+        const patchPayload: Record<string, any> = {
+          downloadedDocs: docsJsonStr,
+          downloaded_docs: docsJsonStr,
+          current_stage: nextStage,
+          currentStage: nextStage
+        };
+        if (paymentStatusToPatch) {
+          patchPayload.payment_status = paymentStatusToPatch;
+          patchPayload.paymentStatus = paymentStatusToPatch;
+        }
 
-        fetch(`${backendUrl}/api/tenders/${id}`, {
+        const patchRes = await fetch(`${backendUrl}/api/tenders/${id}`, {
           method: 'PATCH',
           headers,
-          body: JSON.stringify({
-            downloadedDocs: docsJsonStr,
-            downloaded_docs: docsJsonStr,
-            current_stage: 'DOC_VERIFICATION',
-            verification_status: 'Pending'
-          }),
+          body: JSON.stringify(patchPayload),
           signal: controller.signal,
           cache: 'no-store'
-        }).catch(() => {});
+        });
 
+        if (!patchRes.ok) {
+          const errText = await patchRes.text().catch(() => '');
+          console.error(`[generate-bid-docs] Backend PATCH returned ${patchRes.status}: ${errText}`);
+        } else {
+          console.log(`[generate-bid-docs] Backend successfully updated tender ${id} with bid docs`);
+        }
+      } catch (patchErr) {
+        console.error('[generate-bid-docs] Failed to notify backend:', patchErr);
+      } finally {
         clearTimeout(timeout);
-      } catch (_) {}
+      }
     }
 
     // Log the activity to activity_log
     try {
-      addActivityLog(username || 'executive', userRole || 'Tender Executive', 'Generated Bid Documents', id, 'Generated Word & PDF bid document package and Technical Specification Sheet. Submitted to MIS Team for approval.');
+      addActivityLog(username || 'executive', userRole || 'Tender Executive', 'Generated Bid Documents', id, 'Generated the bid package. Next step is EMD, or dual track when EMD is exempt.');
     } catch (_) {}
-
-    console.log(`[API Generate Bid Docs] Compiled Word (.docx) and PDF (.pdf) successfully for Tender ${id}. Advanced stage to DOC_VERIFICATION.`);
 
     return NextResponse.json({
       success: true,
-      message: 'Bid Documents generated successfully and forwarded to MIS Team for approval.',
+      message: emdExempt
+        ? 'Bid package generated. EMD is exempt, so pricing and document verification are now open.'
+        : 'Bid package generated. Enter EMD payment details next. Pricing starts after EMD.',
       downloadUrl: docDownloadPath,
       pdfDownloadUrl: pdfDownloadPath,
       specDownloadUrl: specDocDownloadPath,
       specPdfDownloadUrl: specPdfDownloadPath,
-      currentStage: 'DOC_VERIFICATION',
-      verificationStatus: 'Pending',
+      currentStage: nextStage,
+      paymentStatus: nextPayment,
+      downloadedDocs: JSON.stringify(currentDocs),
       orientation,
       status: tender.status
     });

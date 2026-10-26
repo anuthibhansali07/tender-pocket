@@ -20,9 +20,12 @@ import {
   Shield,
   History,
   Users,
-  Filter
+  Filter,
+  Folder,
+  Send,
+  Award
 } from 'lucide-react';
-import { canReviewAssignment } from '@/lib/workflowAuthorization';
+import { canReviewAssignment, canonicalRole } from '@/lib/workflowAuthorization';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,13 +68,13 @@ interface ApprovalSummary {
 
 interface ApprovalCounts {
   TOTAL?: number;
+  SPEC_CLEARANCE?: number;
   PAYMENT_APPROVAL?: number;
+  TPC_PRICING?: number;
+  MIS_PRICING?: number;
   DOC_VERIFICATION?: number;
   SUBMISSION_PENDING?: number;
   WIN_LOSS_PENDING?: number;
-  SPEC_CLEARANCE?: number;
-  TPC_PRICING?: number;
-  MIS_PRICING?: number;
   statusCounts?: {
     TOTAL?: number;
     PENDING?: number;
@@ -88,10 +91,12 @@ interface ReviewModalState {
   approval: ApprovalSummary | null;
   action: 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED' | null;
   outcome?: 'Won' | 'Lost' | null;
+  complianceType?: 'ALL COMPLY' | 'COMPLY WITH DEVIATIONS' | 'ALL_COMPLY' | 'DEVIATIONS';
   comment: string;
   lossReasonMis: string;
   tpcPurchasePrice: string;
   misFinalPrice: string;
+  assignedMisMember?: string;
   loading: boolean;
   error: string;
 }
@@ -103,28 +108,28 @@ interface Props {
   showToast: (message: string, type: 'success' | 'error') => void;
 }
 
-// ── Stage & Team Config ───────────────────────────────────────────────────────
+// ── Chronological 7-Step Workflow Stage Configuration ─────────────────────────
 
 const PENDING_STAGE_CONFIG: Record<string, { label: string; icon: React.ReactNode }> = {
-  ALL:                 { label: 'All Pending',        icon: <ClipboardCheck size={14} /> },
-  SPEC_CLEARANCE:      { label: 'Spec Clearance',     icon: <AlertTriangle size={14} /> },
-  TPC_PRICING:         { label: 'TPC Pricing',        icon: <DollarSign size={14} /> },
-  MIS_PRICING:         { label: 'MIS Pricing',        icon: <FileText size={14} /> },
-  DOC_VERIFICATION:    { label: 'Bid Docs Approval',  icon: <FileText size={14} /> },
-  PAYMENT_APPROVAL:    { label: 'EMD Payment',        icon: <DollarSign size={14} /> },
-  SUBMISSION_PENDING:  { label: 'Submission Confirm', icon: <CheckCircle2 size={14} /> },
-  WIN_LOSS_PENDING:    { label: 'Win / Loss Outcome', icon: <BarChart2 size={14} /> },
+  ALL:                { label: 'All Pending',              icon: <ClipboardCheck size={14} /> },
+  SPEC_CLEARANCE:     { label: 'Technical Spec Clearance', icon: <AlertTriangle size={14} /> }, // Step 2
+  PAYMENT_APPROVAL:   { label: 'EMD Payment Gateway',      icon: <DollarSign size={14} /> },    // Step 4
+  TPC_PRICING:        { label: 'TPC Commercial Quote',     icon: <DollarSign size={14} /> },    // Step 5 Track A
+  MIS_PRICING:        { label: 'MIS Commercial Go-Ahead',  icon: <CheckCircle2 size={14} /> },  // Step 5 Track A
+  DOC_VERIFICATION:   { label: 'Folder Document Audit',    icon: <FileText size={14} /> },      // Step 5 Track B
+  SUBMISSION_PENDING: { label: 'Portal Filing Audit',      icon: <Send size={14} /> },          // Step 6
+  WIN_LOSS_PENDING:   { label: 'Outcome Evaluation',       icon: <Award size={14} /> },         // Step 7
 };
 
 const HISTORY_STAGE_CONFIG: Record<string, { label: string; icon: React.ReactNode }> = {
-  ALL:                 { label: 'All Stages',         icon: <ClipboardCheck size={14} /> },
-  SPEC_CLEARANCE:      { label: 'Spec Clearance',     icon: <AlertTriangle size={14} /> },
-  TPC_PRICING:         { label: 'TPC Pricing',        icon: <DollarSign size={14} /> },
-  MIS_PRICING:         { label: 'MIS Pricing',        icon: <FileText size={14} /> },
-  DOC_VERIFICATION:    { label: 'Bid Docs Approval',  icon: <FileText size={14} /> },
-  PAYMENT_APPROVAL:    { label: 'EMD Payment',        icon: <DollarSign size={14} /> },
-  SUBMISSION_PENDING:  { label: 'Submission Confirm', icon: <CheckCircle2 size={14} /> },
-  WIN_LOSS_PENDING:    { label: 'Win / Loss Outcome', icon: <BarChart2 size={14} /> },
+  ALL:                { label: 'All Stages',               icon: <ClipboardCheck size={14} /> },
+  SPEC_CLEARANCE:     { label: 'Technical Spec Clearance', icon: <AlertTriangle size={14} /> },
+  PAYMENT_APPROVAL:   { label: 'EMD Payment Gateway',      icon: <DollarSign size={14} /> },
+  TPC_PRICING:        { label: 'TPC Commercial Quote',     icon: <DollarSign size={14} /> },
+  MIS_PRICING:        { label: 'MIS Commercial Go-Ahead',  icon: <CheckCircle2 size={14} /> },
+  DOC_VERIFICATION:   { label: 'Folder Document Audit',    icon: <FileText size={14} /> },
+  SUBMISSION_PENDING: { label: 'Portal Filing Audit',      icon: <Send size={14} /> },
+  WIN_LOSS_PENDING:   { label: 'Outcome Evaluation',       icon: <Award size={14} /> },
 };
 
 const STAGE_CONFIG = PENDING_STAGE_CONFIG;
@@ -144,7 +149,59 @@ const ROLES_OPTIONS = [
   { id: 'admin', label: 'Admin' },
 ];
 
-// ── Helper ────────────────────────────────────────────────────────────────────
+// Helper to determine role-relevant KPI cards and delete unnecessary cards
+function getRoleStageCards(role: string): { key: string; label: string }[] {
+  const canonical = canonicalRole(role);
+  if (canonical === 'Clearance Team') {
+    return [
+      { key: 'TOTAL', label: 'Total Pending' },
+      { key: 'SPEC_CLEARANCE', label: 'Technical Spec Clearance' },
+    ];
+  }
+  if (canonical === 'TPC Pricing Team') {
+    return [
+      { key: 'TOTAL', label: 'Total Pending' },
+      { key: 'TPC_PRICING', label: 'TPC Commercial Quote' },
+    ];
+  }
+  if (canonical === 'MIS Team') {
+    return [
+      { key: 'TOTAL', label: 'Total Pending' },
+      { key: 'PAYMENT_APPROVAL', label: 'EMD Payment Gateway' },
+      { key: 'MIS_PRICING', label: 'MIS Commercial Quote' },
+      { key: 'DOC_VERIFICATION', label: 'Folder Document Audit' },
+      { key: 'SUBMISSION_PENDING', label: 'Portal Filing Audit' },
+      { key: 'WIN_LOSS_PENDING', label: 'Outcome Evaluation' },
+    ];
+  }
+  // Admin & fallback: full chronological pipeline
+  return [
+    { key: 'TOTAL', label: 'Total Pending' },
+    { key: 'SPEC_CLEARANCE', label: 'Technical Spec Clearance' },
+    { key: 'PAYMENT_APPROVAL', label: 'EMD Payment Gateway' },
+    { key: 'TPC_PRICING', label: 'TPC Commercial Quote' },
+    { key: 'MIS_PRICING', label: 'MIS Commercial Go-Ahead' },
+    { key: 'DOC_VERIFICATION', label: 'Folder Document Audit' },
+    { key: 'SUBMISSION_PENDING', label: 'Portal Filing Audit' },
+    { key: 'WIN_LOSS_PENDING', label: 'Outcome Evaluation' },
+  ];
+}
+
+function getRolePillKeys(role: string, isHistory: boolean): string[] {
+  const canonical = canonicalRole(role);
+  if (canonical === 'Clearance Team') {
+    return ['ALL', 'SPEC_CLEARANCE'];
+  }
+  if (canonical === 'TPC Pricing Team') {
+    return ['ALL', 'TPC_PRICING'];
+  }
+  if (canonical === 'MIS Team') {
+    return ['ALL', 'PAYMENT_APPROVAL', 'MIS_PRICING', 'DOC_VERIFICATION', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING'];
+  }
+  return ['ALL', 'SPEC_CLEARANCE', 'PAYMENT_APPROVAL', 'TPC_PRICING', 'MIS_PRICING', 'DOC_VERIFICATION', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING'];
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatCurrency(val?: number | null): string {
   if (val == null) return '—';
@@ -176,7 +233,6 @@ function isSafeUrl(url?: string | null): boolean {
          trimmed.startsWith('https://') ||
          trimmed.startsWith('http://');
 }
-
 
 async function parseJsonSafely(res: Response): Promise<any> {
   const text = await res.text();
@@ -243,8 +299,11 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const userRole = (currentUser?.role || '').toLowerCase();
-  const isAdmin = userRole === 'admin';
+  const canonical = canonicalRole(currentUser?.role);
+  const isAdmin = canonical === 'Admin';
+  const isMis = canonical === 'MIS Team';
+  const isClearance = canonical === 'Clearance Team';
+  const isTpc = canonical === 'TPC Pricing Team';
 
   const [adminTab, setAdminTab] = useState<'PENDING' | 'HISTORY'>('PENDING');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED'>('ALL');
@@ -260,12 +319,18 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   const hasAutoSwitchedRef = useRef(false);
 
   const [modal, setModal] = useState<ReviewModalState>({
-    open: false, approval: null, action: null,
-    comment: '', lossReasonMis: '', tpcPurchasePrice: '', misFinalPrice: '',
+    open: false, approval: null, action: null, outcome: null, complianceType: 'ALL COMPLY',
+    comment: '', lossReasonMis: '', tpcPurchasePrice: '', misFinalPrice: '', assignedMisMember: '',
     loading: false, error: ''
   });
 
-  // Stable refs for prop functions to prevent infinite re-render loops
+  const [misTeamMembers, setMisTeamMembers] = useState<string[]>([]);
+
+  // Clearance document upload states for SPEC_CLEARANCE review modal
+  const [clearancePdfFile, setClearancePdfFile] = useState<File | null>(null);
+  const [clearanceDocxFile, setClearanceDocxFile] = useState<File | null>(null);
+  const [clearanceXlsxFile, setClearanceXlsxFile] = useState<File | null>(null);
+
   const fetchWithAuthRef = useRef(fetchWithAuth);
   fetchWithAuthRef.current = fetchWithAuth;
   const onCountsChangeRef = useRef(onCountsChange);
@@ -287,7 +352,6 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         if (data.historyCounts) setHistoryStageCounts(data.historyCounts);
         if (data.statusCounts) {
           setStatusCounts(data.statusCounts);
-          // If pending queue has 0 items and history has items on first load, auto-switch to HISTORY for Admin only
           if (isAdmin && !hasAutoSwitchedRef.current && (data.statusCounts.PENDING ?? 0) === 0 && (data.statusCounts.HISTORY ?? 0) > 0) {
             hasAutoSwitchedRef.current = true;
             setAdminTab('HISTORY');
@@ -296,7 +360,10 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         }
         if (data.teamCounts) setTeamCounts(data.teamCounts);
         if (data.roleCounts) setRoleCounts(data.roleCounts);
-        onCountsChangeRef.current?.(data.statusCounts?.PENDING ?? data.pendingCounts?.TOTAL ?? 0);
+        const pendingCount = isAdmin
+          ? (data.statusCounts?.PENDING ?? data.pendingCounts?.TOTAL ?? 0)
+          : (data.pendingCounts?.TOTAL ?? data.counts?.TOTAL ?? 0);
+        onCountsChangeRef.current?.(pendingCount);
       }
     } catch (e) {
       console.error('[ApprovalsCenter] Failed to fetch counts:', e);
@@ -335,7 +402,6 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
           params.set('status', histFilter === 'ALL' ? 'HISTORY' : histFilter);
         }
       } else {
-        // Keep operational teams (MIS Team, Clearance, TPC) in standard pending workflow
         params.set('status', 'PENDING');
       }
 
@@ -355,13 +421,22 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
     }
   }, [activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, isAdmin]);
 
-  // Initial load once on mount and whenever activeStage, adminTab, or team/role filters change
   useEffect(() => {
     fetchCounts();
     fetchApprovals(activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, true);
   }, [activeStage, adminTab, selectedTeam, selectedRole]);
 
-  // Debounced search when user types
+  useEffect(() => {
+    fetchWithAuthRef.current('/api/auth/mis-team')
+      .then(res => parseJsonSafely(res))
+      .then(data => {
+        if (data.success && Array.isArray(data.misTeam)) {
+          setMisTeamMembers(data.misTeam);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchApprovals(activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, false);
@@ -400,37 +475,44 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
 
   // ── Review modal ──────────────────────────────────────────────────────────
 
-  // ── Review modal ──────────────────────────────────────────────────────────
-
   const openModal = (approval: ApprovalSummary, action: ReviewModalState['action']) => {
-    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo)) {
+    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo, approval.stage)) {
       showToast('You have view-only access to this approval request.', 'error');
       return;
     }
+    setClearancePdfFile(null);
+    setClearanceDocxFile(null);
+    setClearanceXlsxFile(null);
     setModal({
       open: true,
       approval,
       action,
       outcome: null,
+      complianceType: 'ALL COMPLY',
       comment: '',
       lossReasonMis: '',
       tpcPurchasePrice: approval.tpcPurchasePrice ? String(approval.tpcPurchasePrice) : '',
       misFinalPrice: approval.misFinalPrice ? String(approval.misFinalPrice) : '',
+      assignedMisMember: (approval.stage === 'TPC_PRICING') ? '' : (approval.assignedTo || ''),
       loading: false,
       error: ''
     });
   };
 
   const openOutcomeModal = (approval: ApprovalSummary, outcome: 'Won' | 'Lost') => {
-    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo)) {
+    if (isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo, approval.stage)) {
       showToast('You have view-only access to this approval request.', 'error');
       return;
     }
+    setClearancePdfFile(null);
+    setClearanceDocxFile(null);
+    setClearanceXlsxFile(null);
     setModal({
       open: true,
       approval,
       action: 'APPROVED',
       outcome,
+      complianceType: 'ALL COMPLY',
       comment: outcome === 'Won' ? 'Tender Won / Awarded' : '',
       lossReasonMis: '',
       tpcPurchasePrice: '',
@@ -441,6 +523,9 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
   };
 
   const closeModal = () => {
+    setClearancePdfFile(null);
+    setClearanceDocxFile(null);
+    setClearanceXlsxFile(null);
     setModal(prev => ({ ...prev, open: false, loading: false, error: '' }));
   };
 
@@ -467,7 +552,8 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
     }
 
     if (modal.approval.stage === 'MIS_PRICING' && modal.action === 'APPROVED') {
-      if (!modal.misFinalPrice || parseFloat(modal.misFinalPrice) <= 0) {
+      const effectivePrice = modal.misFinalPrice ? parseFloat(modal.misFinalPrice) : (modal.approval.tpcPurchasePrice || 0);
+      if (!effectivePrice || effectivePrice <= 0) {
         setModal(prev => ({ ...prev, error: 'A valid MIS final purchase price is required.' }));
         return;
       }
@@ -476,25 +562,61 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
     const finalComment = modal.comment.trim() || 
       (modal.outcome === 'Won' ? 'Verified outcome: Won' : modal.outcome === 'Lost' ? 'Verified outcome: Lost' : '');
 
+    // Spec Clearance with Document Upload & Superior Replacement:
+    if (modal.approval.stage === 'SPEC_CLEARANCE' && modal.action === 'APPROVED') {
+      setModal(prev => ({ ...prev, loading: true, error: '' }));
+      try {
+        const formData = new FormData();
+        const compType = (modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS')
+          ? 'COMPLY WITH DEVIATIONS'
+          : 'ALL COMPLY';
+        formData.append('complianceType', compType);
+        formData.append('comment', finalComment);
+        if (clearancePdfFile) formData.append('pdfFile', clearancePdfFile);
+        if (clearanceDocxFile) formData.append('docxFile', clearanceDocxFile);
+        if (clearanceXlsxFile) formData.append('xlsxFile', clearanceXlsxFile);
+
+        const res = await fetchWithAuthRef.current(`/api/tenders/${modal.approval.tenderId}/approve-clearance`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await parseJsonSafely(res);
+        if (data.success) {
+          showToast(data.message || `Clearance granted (${compType})!`, 'success');
+          closeModal();
+          fetchCounts(adminTab);
+          fetchApprovals(activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, false);
+        } else {
+          setModal(prev => ({ ...prev, error: data.error || 'Failed to submit clearance approval', loading: false }));
+        }
+      } catch (e: any) {
+        setModal(prev => ({ ...prev, error: 'Network error: ' + (e?.message || 'Please try again.'), loading: false }));
+      }
+      return;
+    }
+
     setModal(prev => ({ ...prev, loading: true, error: '' }));
     try {
+      const effectiveMisPrice = modal.misFinalPrice ? parseFloat(modal.misFinalPrice) : (modal.approval.tpcPurchasePrice ? Number(modal.approval.tpcPurchasePrice) : undefined);
       const res = await fetchWithAuth(`/api/approvals/${modal.approval.id}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: modal.action,
           outcome: modal.outcome || undefined,
+          complianceType: modal.approval.stage === 'SPEC_CLEARANCE' ? modal.complianceType : undefined,
           comment: finalComment,
           lossReasonMis: modal.lossReasonMis.trim(),
           tpcPurchasePrice: modal.tpcPurchasePrice ? parseFloat(modal.tpcPurchasePrice) : undefined,
-          misFinalPrice: modal.misFinalPrice ? parseFloat(modal.misFinalPrice) : undefined,
+          misFinalPrice: effectiveMisPrice,
+          assignedMisMember: modal.approval.stage === 'TPC_PRICING' ? (modal.assignedMisMember || undefined) : undefined,
           tenderId: modal.approval.tenderId,
           stage: modal.approval.stage
         })
       });
       const data = await parseJsonSafely(res);
       if (data.success) {
-        showToast(data.message || 'Review submitted', 'success');
+        showToast(data.message || 'Review submitted successfully', 'success');
         closeModal();
         fetchCounts(adminTab);
         fetchApprovals(activeStage, search, adminTab, historyStatusFilter, selectedTeam, selectedRole, false);
@@ -506,10 +628,314 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
     }
   };
 
+  // ── Stage-Specific Required Fields Renderer ───────────────────────────────
+  // Strictly renders only required fields per stage to eliminate visual clutter
+
+  const renderRequiredStageFields = (approval: ApprovalSummary) => {
+    switch (approval.stage) {
+      case 'SPEC_CLEARANCE':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: '10px', background: 'rgba(99, 102, 241, 0.03)',
+              border: '1px solid rgba(99, 102, 241, 0.15)',
+              borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+            }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Estimated Value</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Bid Quantity</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderBidQty != null ? `${approval.tenderBidQty} units` : '—'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Quoted Quantity</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderQuotedQty != null ? `${approval.tenderQuotedQty} units` : '—'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+                <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+              </div>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+              background: 'rgba(59, 130, 246, 0.04)', border: '1px solid rgba(59, 130, 246, 0.15)',
+              borderRadius: '6px', padding: '8px 12px', fontSize: '11px'
+            }}>
+              <span style={{ fontWeight: '600', color: 'var(--text-primary)', marginRight: '4px' }}>Generated Specs:</span>
+              <a
+                href={`/documents/${approval.tenderId}/Combined_Technical_Data_Sheet.pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                  border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444',
+                  textDecoration: 'none', background: 'rgba(239, 68, 68, 0.08)'
+                }}
+              >
+                <FileText size={11} /> PDF
+              </a>
+              <a
+                href={`/documents/${approval.tenderId}/Combined_Technical_Data_Sheet.docx`}
+                download
+                onClick={e => e.stopPropagation()}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                  border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6',
+                  textDecoration: 'none', background: 'rgba(59, 130, 246, 0.08)'
+                }}
+              >
+                <Download size={11} /> Word
+              </a>
+              <a
+                href={`/documents/${approval.tenderId}/Combined_Technical_Data_Sheet.xlsx`}
+                download
+                onClick={e => e.stopPropagation()}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '500',
+                  border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981',
+                  textDecoration: 'none', background: 'rgba(16, 185, 129, 0.08)'
+                }}
+              >
+                <Download size={11} /> Excel
+              </a>
+            </div>
+          </div>
+        );
+
+      case 'PAYMENT_APPROVAL':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(16, 185, 129, 0.03)',
+            border: '1px solid rgba(16, 185, 129, 0.18)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>EMD Amount</span>
+              <strong style={{ color: '#10b981', fontSize: '13px' }}>{formatCurrency(approval.emdAmount ?? approval.tenderEmd)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Payment Mode</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.transferMode || 'NEFT / RTGS'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Beneficiary / Ref No</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.transferRefNo || '—'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Total Tender Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+          </div>
+        );
+
+      case 'TPC_PRICING':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(56, 189, 248, 0.03)',
+            border: '1px solid rgba(56, 189, 248, 0.18)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Estimated Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Bid Quantity</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderBidQty != null ? `${approval.tenderBidQty} units` : '—'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Quoted Quantity</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderQuotedQty != null ? `${approval.tenderQuotedQty} units` : '—'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+            {approval.tpcPurchasePrice != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Quoted Production Cost</span>
+                <strong style={{ color: '#38bdf8' }}>{formatCurrency(approval.tpcPurchasePrice)}</strong>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'MIS_PRICING':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(99, 102, 241, 0.03)',
+            border: '1px solid rgba(99, 102, 241, 0.18)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Estimated Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            {approval.tpcPurchasePrice != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>TPC Purchase Price (Cost)</span>
+                <strong style={{ color: '#38bdf8' }}>{formatCurrency(approval.tpcPurchasePrice)}</strong>
+              </div>
+            )}
+            {approval.misFinalPrice != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>MIS Final Quoted Price</span>
+                <strong style={{ color: '#10b981' }}>{formatCurrency(approval.misFinalPrice)}</strong>
+              </div>
+            )}
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Quantity Required</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderBidQty || approval.tenderQuotedQty || '—'} units</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+          </div>
+        );
+
+      case 'DOC_VERIFICATION':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: '10px', background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            {approval.workingPath && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Folder Working Path</span>
+                <strong style={{ wordBreak: 'break-all', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                  📁 {approval.workingPath}
+                </strong>
+              </div>
+            )}
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Estimated Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+          </div>
+        );
+
+      case 'SUBMISSION_PENDING':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(245, 158, 11, 0.03)',
+            border: '1px solid rgba(245, 158, 11, 0.18)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Estimated Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            {approval.misFinalPrice != null && (
+              <div>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Submitted Bid Price</span>
+                <strong style={{ color: '#10b981' }}>{formatCurrency(approval.misFinalPrice)}</strong>
+              </div>
+            )}
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Portal Reference / Ack</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.transferRefNo || 'GeM Portal Filing'}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+          </div>
+        );
+
+      case 'WIN_LOSS_PENDING':
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(245, 158, 11, 0.03)',
+            border: '1px solid rgba(245, 158, 11, 0.15)',
+            borderRadius: '6px', padding: '10px 14px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Outcome Status</span>
+              {approval.tenderStatus?.toLowerCase() === 'won' || approval.tenderStatus?.toLowerCase() === 'awarded' || approval.status === 'APPROVED' ? (
+                <strong style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <CheckCircle2 size={12} /> Tender Won / Awarded
+                </strong>
+              ) : approval.tenderStatus?.toLowerCase() === 'lost' || approval.status === 'REJECTED' ? (
+                <strong style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <XCircle size={12} /> Tender Lost
+                </strong>
+              ) : (
+                <strong style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Clock size={12} /> Under Evaluation
+                </strong>
+              )}
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+            {approval.lossReasonExecutive && (
+              <div style={{ gridColumn: 'span 2', background: 'rgba(239, 68, 68, 0.05)', padding: '8px 10px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <span style={{ color: '#ef4444', display: 'block', fontWeight: '700', fontSize: '11px', marginBottom: '2px' }}>Executive Loss Reason:</span>
+                <span style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{approval.lossReasonExecutive}</span>
+              </div>
+            )}
+            {approval.lossReasonMis && (
+              <div style={{ gridColumn: 'span 2', background: 'rgba(239, 68, 68, 0.05)', padding: '8px 10px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <span style={{ color: '#ef4444', display: 'block', fontWeight: '700', fontSize: '11px', marginBottom: '2px' }}>MIS Loss Reason:</span>
+                <span style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{approval.lossReasonMis}</span>
+              </div>
+            )}
+          </div>
+        );
+
+      default:
+        return (
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px', background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '6px', padding: '10px 12px', fontSize: '12px'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Estimated Value</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
+            </div>
+          </div>
+        );
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const stageKeys = Object.keys(STAGE_CONFIG);
-  const total = counts.TOTAL ?? 0;
+  const visibleCards = getRoleStageCards(currentUser.role);
+  const visiblePills = getRolePillKeys(currentUser.role, adminTab === 'HISTORY');
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -522,15 +948,15 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             Approvals Center
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {currentUser.role === 'Admin'
-              ? 'Executive monitoring dashboard — View-only access across pending queues and completed history'
-              : currentUser.role === 'MIS Team'
-              ? `All pending workflow requests for MIS Team — ${currentUser.username}`
-              : currentUser.role === 'Clearance Team'
-              ? `Spec clearance requests assigned to your team — ${currentUser.username}`
-              : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team'
-              ? `Manufacturer purchase pricing queue — ${currentUser.username}`
-              : `Approval requests you submitted or that are assigned to you — ${currentUser.username}`}
+            {isAdmin
+              ? 'Executive monitoring dashboard — Administrative view-only access across pending queues and audit history'
+              : isMis
+              ? `MIS operational workflow desk — Review and action EMD, pricing, folder audits, and submissions — ${currentUser.username}`
+              : isClearance
+              ? `Technical specification review desk — Verify parameters, seal specs, and mark compliance — ${currentUser.username}`
+              : isTpc
+              ? `Commercial quotation desk — Input OEM purchase pricing securely — ${currentUser.username}`
+              : `Operational workflow desk — ${currentUser.username}`}
           </p>
         </div>
         <button
@@ -620,43 +1046,29 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         </div>
       )}
 
-      {/* Banner: View-Only Mode for Pending vs Audit History for History */}
+      {/* Banner: View-Only Mode for Admin vs Operational Instructions for Teams */}
       {isAdmin && adminTab === 'PENDING' && (
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: 'rgba(99, 102, 241, 0.08)',
-          border: '1px solid rgba(99, 102, 241, 0.25)',
-          borderRadius: '8px',
-          padding: '10px 14px',
-          marginBottom: '18px',
-          fontSize: '12px',
-          color: 'var(--text-secondary)'
+          display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)',
+          borderRadius: '8px', padding: '10px 14px', marginBottom: '18px', fontSize: '12px', color: 'var(--text-secondary)'
         }}>
           <Shield size={16} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <div>
-            <strong style={{ color: 'var(--text-primary)' }}>Admin View-Only Access:</strong> Approvals Center provides administrative visibility into pending requests awaiting operational action (MIS Team, Clearance Team, TPC Pricing Team).
+            <strong style={{ color: 'var(--text-primary)' }}>Admin View-Only Access:</strong> Monitoring active approval requests across operational teams (MIS Team, Clearance Team, TPC Pricing Team).
           </div>
         </div>
       )}
 
       {isAdmin && adminTab === 'HISTORY' && (
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          background: 'rgba(99, 102, 241, 0.08)',
-          border: '1px solid rgba(99, 102, 241, 0.25)',
-          borderRadius: '8px',
-          padding: '10px 14px',
-          marginBottom: '18px',
-          fontSize: '12px',
-          color: 'var(--text-secondary)'
+          display: 'flex', alignItems: 'center', gap: '10px',
+          background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)',
+          borderRadius: '8px', padding: '10px 14px', marginBottom: '18px', fontSize: '12px', color: 'var(--text-secondary)'
         }}>
           <History size={16} style={{ color: 'var(--primary)', flexShrink: 0 }} />
           <div>
-            <strong style={{ color: 'var(--text-primary)' }}>Approvals History & Audit Archive:</strong> Completed reviews, clearance records, and historical decision outcomes across all operational workflows.
+            <strong style={{ color: 'var(--text-primary)' }}>Approvals History & Audit Archive:</strong> Completed reviews, technical clearance records, and historical decision outcomes across all workflows.
           </div>
         </div>
       )}
@@ -664,7 +1076,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
       {/* ─── APPROVALS HISTORY VIEW (ADMIN ONLY) ─── */}
       {isAdmin && adminTab === 'HISTORY' ? (
         <>
-          {/* History Outcome KPI Summary Cards (Interactive filters) */}
+          {/* History Outcome KPI Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
             {[
               { id: 'ALL', label: 'Total Resolved', count: statusCounts.HISTORY ?? historyStageCounts.TOTAL ?? 0, color: 'var(--primary)', icon: <History size={18} /> },
@@ -680,10 +1092,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   style={{
                     background: isSelected ? 'var(--primary-glow, rgba(129, 140, 248, 0.15))' : 'var(--bg-card, rgba(15, 23, 42, 0.45))',
                     border: `1px solid ${isSelected ? card.color : 'var(--border-color)'}`,
-                    borderRadius: '8px',
-                    padding: '14px 16px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
+                    borderRadius: '8px', padding: '14px 16px', cursor: 'pointer', transition: 'all 0.15s ease',
                     boxShadow: isSelected ? `0 0 12px ${card.color}33` : 'none'
                   }}
                 >
@@ -701,11 +1110,11 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             })}
           </div>
 
-          {/* History Stage Filter Pills (Strictly NO "Pending" in labels) */}
+          {/* History Stage Filter Pills */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
             <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600', marginRight: '4px' }}>Filter Stage:</span>
-            {Object.keys(HISTORY_STAGE_CONFIG).map(key => {
-              const cfg = HISTORY_STAGE_CONFIG[key];
+            {visiblePills.map(key => {
+              const cfg = HISTORY_STAGE_CONFIG[key] || { label: key, icon: null };
               const count = key === 'ALL'
                 ? (historyStageCounts.TOTAL ?? statusCounts.HISTORY ?? 0)
                 : (historyStageCounts[key] ?? 0);
@@ -743,7 +1152,6 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             background: 'var(--bg-card, rgba(15, 23, 42, 0.3))', padding: '10px 14px', borderRadius: '8px',
             border: '1px solid var(--border-color)'
           }}>
-            {/* Team filter dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
               <Users size={14} style={{ color: 'var(--text-muted)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Team:</span>
@@ -764,7 +1172,6 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
               </select>
             </div>
 
-            {/* Role / Requester filter dropdown */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
               <Filter size={14} style={{ color: 'var(--text-muted)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Requester:</span>
@@ -785,7 +1192,6 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
               </select>
             </div>
 
-            {/* Search */}
             <div style={{ marginLeft: 'auto', position: 'relative' }}>
               <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
@@ -804,36 +1210,30 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
       ) : (
         /* ─── PENDING APPROVALS VIEW ─── */
         <>
-          {/* Pending Stage KPI Cards */}
+          {/* Pending Stage KPI Cards (Role-Filtered & Chronologically Ordered) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-            {[
-              { key: 'TOTAL',              label: 'Total Pending' },
-              { key: 'SPEC_CLEARANCE',     label: 'Spec Clearance' },
-              { key: 'TPC_PRICING',        label: 'TPC Pricing' },
-              { key: 'MIS_PRICING',        label: 'MIS Pricing' },
-              { key: 'DOC_VERIFICATION',   label: 'Bid Docs Approval' },
-              { key: 'PAYMENT_APPROVAL',   label: 'EMD Payment' },
-              { key: 'SUBMISSION_PENDING', label: 'Submission' },
-              { key: 'WIN_LOSS_PENDING',   label: 'Outcome' },
-            ].map(({ key, label }) => {
+            {visibleCards.map(({ key, label }) => {
               const isSelected = activeStage === key || (key === 'TOTAL' && activeStage === 'ALL');
               const countVal = key === 'TOTAL'
-                ? (statusCounts.PENDING ?? pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0)
+                ? (isAdmin
+                    ? (statusCounts.PENDING ?? pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0)
+                    : (pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0))
                 : (pendingStageCounts[key] ?? counts[key] ?? 0);
               return (
                 <div key={key}
                   style={{
                     background: isSelected ? 'var(--primary-glow, rgba(129, 140, 248, 0.15))' : 'var(--bg-card, rgba(15, 23, 42, 0.45))',
                     border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border-color)'}`,
-                    borderRadius: '8px',
-                    padding: '12px 14px',
-                    cursor: key !== 'TOTAL' ? 'pointer' : 'default',
+                    borderRadius: '8px', padding: '12px 14px',
+                    cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     boxShadow: isSelected ? '0 0 12px var(--primary-glow)' : 'none'
                   }}
-                  onClick={() => { if (key !== 'TOTAL') handleStageChange(key === activeStage ? 'ALL' : key); }}
+                  onClick={() => handleStageChange(key === 'TOTAL' ? 'ALL' : (key === activeStage ? 'ALL' : key))}
                 >
-                  <div style={{ fontSize: '11px', color: isSelected ? 'var(--primary)' : 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
+                  <div style={{ fontSize: '11px', color: isSelected ? 'var(--primary)' : 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                    {label}
+                  </div>
                   <div style={{ fontSize: '24px', fontWeight: '700', color: isSelected ? 'var(--primary)' : 'var(--text-primary)', marginTop: '4px', letterSpacing: '-0.4px' }}>
                     {countVal}
                   </div>
@@ -842,12 +1242,14 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             })}
           </div>
 
-          {/* Pending Stage Filter Pills */}
+          {/* Pending Stage Filter Pills (Role-Filtered) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-            {Object.keys(PENDING_STAGE_CONFIG).map(key => {
-              const cfg = PENDING_STAGE_CONFIG[key];
+            {visiblePills.map(key => {
+              const cfg = PENDING_STAGE_CONFIG[key] || { label: key, icon: null };
               const count = key === 'ALL'
-                ? (statusCounts.PENDING ?? pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0)
+                ? (isAdmin
+                    ? (statusCounts.PENDING ?? pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0)
+                    : (pendingStageCounts.TOTAL ?? counts.TOTAL ?? 0))
                 : (pendingStageCounts[key] ?? counts[key] ?? 0);
               const active = activeStage === key;
               return (
@@ -982,24 +1384,16 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
               <div style={{ fontSize: '13px', marginTop: '4px' }}>
                 {activeStage !== 'ALL'
                   ? `No pending requests in ${PENDING_STAGE_CONFIG[activeStage]?.label || activeStage}.`
-                  : 'All caught up! No approvals are awaiting review.'}
+                  : 'All caught up! No approvals are awaiting review in your queue.'}
               </div>
               {isAdmin && (statusCounts.HISTORY ?? 0) > 0 && (
                 <div style={{ marginTop: '16px' }}>
                   <button
                     onClick={() => handleTabSwitch('HISTORY')}
                     style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 18px',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      background: 'var(--primary)',
-                      color: '#ffffff',
-                      border: 'none',
-                      cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: '8px',
+                      padding: '8px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '600',
+                      background: 'var(--primary)', color: '#ffffff', border: 'none', cursor: 'pointer',
                       boxShadow: '0 2px 10px rgba(99, 102, 241, 0.3)'
                     }}
                   >
@@ -1015,9 +1409,8 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {approvals.map(approval => {
             const isOutcomeStage = approval.stage === 'WIN_LOSS_PENDING';
-            const stageCfg = isOutcomeStage
-              ? { label: 'Outcome Verification', icon: <BarChart2 size={14} /> }
-              : ((adminTab === 'HISTORY' ? HISTORY_STAGE_CONFIG : PENDING_STAGE_CONFIG)[approval.stage] || { label: approval.stage, icon: null });
+            const stageCfg = (adminTab === 'HISTORY' ? HISTORY_STAGE_CONFIG : PENDING_STAGE_CONFIG)[approval.stage]
+              || { label: approval.stage, icon: null };
 
             return (
               <div key={approval.id} style={{
@@ -1032,44 +1425,37 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                       {approval.status === 'APPROVED' ? (
                         <span style={{
                           fontSize: '11px', fontWeight: '700',
-                          color: '#10b981',
-                          background: 'rgba(16, 185, 129, 0.12)',
+                          color: '#10b981', background: 'rgba(16, 185, 129, 0.12)',
                           border: '1px solid rgba(16, 185, 129, 0.3)',
                           padding: '2px 8px', borderRadius: '4px',
                           display: 'inline-flex', alignItems: 'center', gap: '4px'
                         }}>
-                          <CheckCircle2 size={12} />
-                          Approved
+                          <CheckCircle2 size={12} /> Approved
                         </span>
                       ) : approval.status === 'REJECTED' ? (
                         <span style={{
                           fontSize: '11px', fontWeight: '700',
-                          color: '#ef4444',
-                          background: 'rgba(239, 68, 68, 0.12)',
+                          color: '#ef4444', background: 'rgba(239, 68, 68, 0.12)',
                           border: '1px solid rgba(239, 68, 68, 0.3)',
                           padding: '2px 8px', borderRadius: '4px',
                           display: 'inline-flex', alignItems: 'center', gap: '4px'
                         }}>
-                          <XCircle size={12} />
-                          Rejected
+                          <XCircle size={12} /> Rejected
                         </span>
                       ) : approval.status === 'CHANGES_REQUESTED' ? (
                         <span style={{
                           fontSize: '11px', fontWeight: '700',
-                          color: '#f59e0b',
-                          background: 'rgba(245, 158, 11, 0.12)',
+                          color: '#f59e0b', background: 'rgba(245, 158, 11, 0.12)',
                           border: '1px solid rgba(245, 158, 11, 0.3)',
                           padding: '2px 8px', borderRadius: '4px',
                           display: 'inline-flex', alignItems: 'center', gap: '4px'
                         }}>
-                          <AlertTriangle size={12} />
-                          Changes Requested
+                          <AlertTriangle size={12} /> Changes Requested
                         </span>
                       ) : (
                         <span style={{
                           fontSize: '11px', fontWeight: '700',
-                          color: '#f59e0b',
-                          background: 'rgba(245, 158, 11, 0.15)',
+                          color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)',
                           padding: '2px 8px', borderRadius: '12px'
                         }}>
                           Pending
@@ -1112,200 +1498,15 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   </div>
                 </div>
 
-                {/* Stage-specific details */}
-                {isOutcomeStage ? (
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                    gap: '10px', background: 'rgba(245, 158, 11, 0.03)',
-                    border: '1px solid rgba(245, 158, 11, 0.15)',
-                    borderRadius: '8px', padding: '12px 14px', fontSize: '12px'
-                  }}>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Outcome Status</span>
-                      {approval.tenderStatus?.toLowerCase() === 'won' || approval.tenderStatus?.toLowerCase() === 'awarded' ? (
-                        <strong style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={12} /> Tender Won / Awarded
-                        </strong>
-                      ) : approval.tenderStatus?.toLowerCase() === 'lost' ? (
-                        <strong style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={12} /> Tender Lost
-                        </strong>
-                      ) : approval.status === 'APPROVED' ? (
-                        <strong style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <CheckCircle2 size={12} /> Outcome Verified
-                        </strong>
-                      ) : approval.status === 'REJECTED' ? (
-                        <strong style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <XCircle size={12} /> Outcome Rejected
-                        </strong>
-                      ) : approval.status === 'CHANGES_REQUESTED' ? (
-                        <strong style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <AlertTriangle size={12} /> Changes Requested
-                        </strong>
-                      ) : (
-                        <strong style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={12} /> Pending Verification
-                        </strong>
-                      )}
-                    </div>
-                    {approval.tenderEstimatedCost != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender Value</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
-                      </div>
-                    )}
-                    {approval.tenderRefNo && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Tender / Bid No</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderRefNo}</strong>
-                      </div>
-                    )}
-                    {approval.tenderAuthority && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Client / Authority</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderAuthority}</strong>
-                      </div>
-                    )}
-                    {approval.tenderLocation && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Location</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderLocation}</strong>
-                      </div>
-                    )}
-                    {approval.tenderSector && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Sector</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderSector}</strong>
-                      </div>
-                    )}
-                    <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Executive</span>
-                      <strong style={{ color: 'var(--text-primary)' }}>{approval.misExecutive || approval.requestedBy || '—'}</strong>
-                    </div>
-                    {approval.assignedTo && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '11px' }}>Assigned Reviewer</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.assignedTo}</strong>
-                      </div>
-                    )}
-                    {approval.lossReasonExecutive && (
-                      <div style={{ gridColumn: 'span 2', background: 'rgba(239, 68, 68, 0.05)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.18)' }}>
-                        <span style={{ color: '#ef4444', display: 'block', fontWeight: '700', fontSize: '11px', marginBottom: '2px' }}>Declared Loss Reason (Executive):</span>
-                        <span style={{ color: 'var(--text-primary)', fontSize: '12px' }}>{approval.lossReasonExecutive}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                    gap: '8px', background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '6px', padding: '10px 12px', fontSize: '12px'
-                  }}>
-                    {approval.tenderEstimatedCost != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Tender Value</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEstimatedCost)}</strong>
-                      </div>
-                    )}
-                    {approval.emdAmount != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>EMD Requested</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.emdAmount)}</strong>
-                      </div>
-                    )}
-                    {approval.emdAmount == null && approval.tenderEmd != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Tender EMD</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tenderEmd)}</strong>
-                      </div>
-                    )}
-                    {approval.tpcPurchasePrice != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Transfer Price</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.tpcPurchasePrice)}</strong>
-                      </div>
-                    )}
-                    {approval.misFinalPrice != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Provided Price</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(approval.misFinalPrice)}</strong>
-                      </div>
-                    )}
-                    {approval.tenderBidQty != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Bid Quantity</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderBidQty}</strong>
-                      </div>
-                    )}
-                    {approval.tenderQuotedQty != null && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Quoted Quantity</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderQuotedQty}</strong>
-                      </div>
-                    )}
-                    {approval.transferMode && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Transfer Mode</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.transferMode}</strong>
-                      </div>
-                    )}
-                    {approval.transferRefNo && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Ref Number</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.transferRefNo}</strong>
-                      </div>
-                    )}
-                    {approval.assignedTo && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Assigned To</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.assignedTo}</strong>
-                      </div>
-                    )}
-                    {approval.tenderLocation && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Location</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderLocation}</strong>
-                      </div>
-                    )}
-                    {approval.tenderSector && (
-                      <div>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Sector</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{approval.tenderSector}</strong>
-                      </div>
-                    )}
-                    {approval.workingPath && (
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Working Path</span>
-                        <strong style={{ wordBreak: 'break-all', color: 'var(--text-primary)' }}>{approval.workingPath}</strong>
-                      </div>
-                    )}
-                    {approval.lossReasonExecutive && (
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Loss Reason (Executive)</span>
-                        <strong style={{ color: 'var(--text-secondary)' }}>{approval.lossReasonExecutive}</strong>
-                      </div>
-                    )}
-                    {approval.lossReasonMis && (
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ color: 'var(--text-muted)', display: 'block' }}>Loss Reason (MIS)</span>
-                        <strong style={{ color: 'var(--text-secondary)' }}>{approval.lossReasonMis}</strong>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Stage-Specific Required Fields (No unnecessary or irrelevant fields shown) */}
+                {renderRequiredStageFields(approval)}
 
-                {/* Reviewer Audit Details (shown when item was reviewed or status is not PENDING) */}
+                {/* Reviewer Audit Details (shown when reviewed) */}
                 {(approval.status !== 'PENDING' || approval.reviewedBy || approval.reviewerComment) && (
                   <div style={{
-                    background: 'rgba(255, 255, 255, 0.025)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '6px',
-                    padding: '10px 14px',
-                    fontSize: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px'
+                    background: 'rgba(255, 255, 255, 0.025)', border: '1px solid var(--border-color)',
+                    borderRadius: '6px', padding: '10px 14px', fontSize: '12px',
+                    display: 'flex', flexDirection: 'column', gap: '4px'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1333,16 +1534,12 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                         <span style={{ color: 'var(--text-primary)' }}>{approval.reviewerComment}</span>
                       </div>
                     )}
-                    {approval.lossReasonMis && (
-                      <div style={{ marginTop: '2px', color: '#ef4444', fontSize: '12px' }}>
-                        <strong>MIS Loss Reason:</strong> {approval.lossReasonMis}
-                      </div>
-                    )}
                   </div>
                 )}
 
                 {/* Action buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Payment Receipt Link (shown only when receipt is uploaded and authorized) */}
                   {approval.receiptFileUrl && isSafeUrl(approval.receiptFileUrl) && (
                     <a
                       href={approval.receiptFileUrl}
@@ -1359,6 +1556,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     </a>
                   )}
 
+                  {/* Document Verification Package Links */}
                   {approval.stage === 'DOC_VERIFICATION' && (
                     <>
                       <a
@@ -1371,7 +1569,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                           textDecoration: 'none', background: 'rgba(16, 185, 129, 0.05)'
                         }}
                       >
-                        <Download size={12} /> Download DOCX
+                        <Download size={12} /> Download DOCX Package
                       </a>
                       <a
                         href={`/documents/${approval.tenderId}/Bid_Documents_${approval.tenderId}.pdf`}
@@ -1384,11 +1582,12 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                           textDecoration: 'none', background: 'rgba(59, 130, 246, 0.05)'
                         }}
                       >
-                        <FileText size={12} /> View PDF
+                        <FileText size={12} /> View PDF Bundle
                       </a>
                     </>
                   )}
 
+                  {/* View Tender Workspace Link */}
                   <a
                     href={`/tenders/${approval.tenderId}`}
                     target="_blank"
@@ -1403,7 +1602,8 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     <ChevronRight size={12} /> View Tender
                   </a>
 
-                  {isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo) ? (
+                  {/* Operational Review Buttons vs View-Only Indicator */}
+                  {isAdmin || !canReviewAssignment(currentUser.role, currentUser.username, approval.assignedTo, approval.stage) ? (
                     <div style={{
                       marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px',
                       padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500',
@@ -1411,7 +1611,11 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                       color: 'var(--primary-light, #a5b4fc)'
                     }}>
                       <Shield size={13} style={{ color: 'var(--primary)' }} />
-                      <span>View-Only Access · Assigned: <strong style={{ color: 'var(--text-primary)' }}>{approval.assignedTo || 'Operational Team'}</strong></span>
+                      <span>View-Only Access · Assigned: <strong style={{ color: 'var(--text-primary)' }}>{
+                        (approval.stage && ['MIS_PRICING', 'DOC_VERIFICATION', 'PAYMENT_APPROVAL', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING'].includes(approval.stage) && (approval.assignedTo === 'tpc' || approval.assignedTo === 'clearance' || approval.assignedTo === 'executive'))
+                          ? 'MIS Team'
+                          : (approval.assignedTo || 'Operational Team')
+                      }</strong></span>
                     </div>
                   ) : approval.status !== 'PENDING' ? (
                     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -1477,7 +1681,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                         }}
                       >
                         <CheckCircle2 size={13} style={{ display: 'inline', marginRight: '4px' }} />
-                        Approve
+                        {approval.stage === 'TPC_PRICING' ? 'Set Price & Approve' : 'Approve'}
                       </button>
                     </div>
                   )}
@@ -1497,7 +1701,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
         }}>
           <div style={{
             background: 'var(--bg-sidebar, #0b0f19)', borderRadius: '14px',
-            padding: '28px', width: '100%', maxWidth: '520px',
+            padding: '28px', width: '100%', maxWidth: modal.approval.stage === 'SPEC_CLEARANCE' ? '600px' : '520px',
             border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)'
           }}>
             {/* Modal header */}
@@ -1521,7 +1725,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   {modal.approval.tenderTitle || modal.approval.tenderId}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {modal.approval.stage === 'WIN_LOSS_PENDING' ? 'Win / Loss Outcome Verification' : STAGE_CONFIG[modal.approval.stage]?.label} · Requested by {modal.approval.requestedBy}
+                  {PENDING_STAGE_CONFIG[modal.approval.stage]?.label || modal.approval.stage} · Requested by {modal.approval.requestedBy}
                 </div>
               </div>
               <button onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
@@ -1529,7 +1733,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
               </button>
             </div>
 
-            {/* Summary block or Outcome Banner */}
+            {/* Outcome Banner (for WIN_LOSS_PENDING) */}
             {modal.approval.stage === 'WIN_LOSS_PENDING' ? (
               <div style={{
                 background: modal.outcome === 'Won' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
@@ -1541,7 +1745,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     <span style={{ fontSize: '26px' }}>🏆</span>
                     <div>
                       <strong style={{ color: '#10b981', display: 'block', fontSize: '13px' }}>Mark Tender as Won / Awarded</strong>
-                      <span style={{ color: 'var(--text-secondary)' }}>This will verify and finalize the tender outcome as Won (Awarded).</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>This verifies the tender outcome as Won (Awarded) and marks the workflow 100% complete.</span>
                     </div>
                   </div>
                 ) : (
@@ -1549,101 +1753,313 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                     <span style={{ fontSize: '26px' }}>❌</span>
                     <div>
                       <strong style={{ color: '#ef4444', display: 'block', fontSize: '13px' }}>Mark Tender as Lost / Not Awarded</strong>
-                      <span style={{ color: 'var(--text-secondary)' }}>This will verify and finalize the tender outcome as Lost (Not Awarded).</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>This verifies the tender outcome as Lost and records the mandatory loss rationale.</span>
                     </div>
                   </div>
                 )}
               </div>
             ) : (
+              /* Modal Stage-Specific Summary Block (Only required fields shown) */
               <div style={{
                 background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px',
                 border: '1px solid var(--border-color)',
                 padding: '12px', marginBottom: '16px', fontSize: '12px', display: 'grid',
                 gridTemplateColumns: '1fr 1fr', gap: '8px'
               }}>
-                {modal.approval.emdAmount != null && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>EMD Amount</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.emdAmount)}</div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Tender Value</span>
+                  <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.tenderEstimatedCost)}</div>
+                </div>
+
+                {modal.approval.stage === 'PAYMENT_APPROVAL' && (
+                  <>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>EMD Amount</span>
+                      <div style={{ fontWeight: '700', color: '#10b981' }}>{formatCurrency(modal.approval.emdAmount ?? modal.approval.tenderEmd)}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Payment Mode</span>
+                      <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.transferMode || 'NEFT / RTGS'}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Beneficiary / Ref No</span>
+                      <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.transferRefNo || '—'}</div>
+                    </div>
+                  </>
+                )}
+
+                {(modal.approval.stage === 'SPEC_CLEARANCE' || modal.approval.stage === 'TPC_PRICING') && (
+                  <>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Bid Quantity</span>
+                      <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderBidQty != null ? `${modal.approval.tenderBidQty} units` : '—'}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Quoted Quantity</span>
+                      <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderQuotedQty != null ? `${modal.approval.tenderQuotedQty} units` : '—'}</div>
+                    </div>
+                  </>
+                )}
+
+                {modal.approval.stage === 'SPEC_CLEARANCE' && (
+                  <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: '600' }}>Generated Technical Specifications (AI):</span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <a
+                        href={`/documents/${modal.approval.tenderId}/Combined_Technical_Data_Sheet.pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          flex: 1, minWidth: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444',
+                          textDecoration: 'none', background: 'rgba(239, 68, 68, 0.08)'
+                        }}
+                      >
+                        <FileText size={12} /> View PDF
+                      </a>
+                      <a
+                        href={`/documents/${modal.approval.tenderId}/Combined_Technical_Data_Sheet.docx`}
+                        download
+                        style={{
+                          flex: 1, minWidth: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6',
+                          textDecoration: 'none', background: 'rgba(59, 130, 246, 0.08)'
+                        }}
+                      >
+                        <Download size={12} /> Word
+                      </a>
+                      <a
+                        href={`/documents/${modal.approval.tenderId}/Combined_Technical_Data_Sheet.xlsx`}
+                        download
+                        style={{
+                          flex: 1, minWidth: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981',
+                          textDecoration: 'none', background: 'rgba(16, 185, 129, 0.08)'
+                        }}
+                      >
+                        <Download size={12} /> Excel
+                      </a>
+                    </div>
                   </div>
                 )}
-                {modal.approval.transferMode && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Transfer Mode</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.transferMode}</div>
-                  </div>
+
+                {modal.approval.stage === 'MIS_PRICING' && (
+                  <>
+                    {modal.approval.tpcPurchasePrice != null && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)' }}>TPC Cost (Production)</span>
+                        <div style={{ fontWeight: '700', color: '#38bdf8' }}>{formatCurrency(modal.approval.tpcPurchasePrice)}</div>
+                      </div>
+                    )}
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Quantity</span>
+                      <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderBidQty || modal.approval.tenderQuotedQty || '—'} units</div>
+                    </div>
+                  </>
                 )}
-                {modal.approval.transferRefNo && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Reference No.</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.transferRefNo}</div>
-                  </div>
-                )}
-                {modal.approval.workingPath && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Working Path</span>
-                    <div style={{ fontWeight: '700', wordBreak: 'break-all', fontSize: '11px', color: 'var(--text-primary)' }}>{modal.approval.workingPath}</div>
-                  </div>
-                )}
-                {modal.approval.tpcPurchasePrice != null && currentUser?.role !== 'Tender Executive' && currentUser?.role !== 'MIS Executive' && currentUser?.role !== 'Executive' && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Transfer Price (Production Cost)</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.tpcPurchasePrice)}</div>
-                  </div>
-                )}
-                {modal.approval.misFinalPrice != null && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Provided Price</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{formatCurrency(modal.approval.misFinalPrice)}</div>
-                  </div>
-                )}
-                {modal.approval.tenderBidQty != null && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Bid Quantity</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderBidQty}</div>
-                  </div>
-                )}
-                {modal.approval.tenderQuotedQty != null && (
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Quoted Quantity</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.tenderQuotedQty}</div>
-                  </div>
-                )}
-                {modal.approval.lossReasonExecutive && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Executive Loss Reason</span>
-                    <div style={{ fontWeight: '700', color: 'var(--text-secondary)' }}>{modal.approval.lossReasonExecutive}</div>
-                  </div>
-                )}
+
                 {modal.approval.stage === 'DOC_VERIFICATION' && (
-                  <div style={{ gridColumn: 'span 2', display: 'flex', gap: '8px', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
-                    <a
-                      href={`/documents/${modal.approval.tenderId}/Bid_Documents_${modal.approval.tenderId}.docx`}
-                      download
-                      style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
-                        border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981',
-                        textDecoration: 'none', background: 'rgba(16, 185, 129, 0.08)'
-                      }}
-                    >
-                      <Download size={14} /> Download DOCX Package
-                    </a>
-                    <a
-                      href={`/documents/${modal.approval.tenderId}/Bid_Documents_${modal.approval.tenderId}.pdf`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
-                        border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6',
-                        textDecoration: 'none', background: 'rgba(59, 130, 246, 0.08)'
-                      }}
-                    >
-                      <FileText size={14} /> View PDF Bundle
-                    </a>
+                  <>
+                    {modal.approval.workingPath && (
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Folder Path</span>
+                        <div style={{ fontWeight: '700', wordBreak: 'break-all', fontSize: '11px', color: 'var(--text-primary)' }}>📁 {modal.approval.workingPath}</div>
+                      </div>
+                    )}
+                    <div style={{ gridColumn: 'span 2', display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <a
+                        href={`/documents/${modal.approval.tenderId}/Bid_Documents_${modal.approval.tenderId}.docx`}
+                        download
+                        style={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981',
+                          textDecoration: 'none', background: 'rgba(16, 185, 129, 0.08)'
+                        }}
+                      >
+                        <Download size={12} /> Download DOCX
+                      </a>
+                      <a
+                        href={`/documents/${modal.approval.tenderId}/Bid_Documents_${modal.approval.tenderId}.pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
+                          border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6',
+                          textDecoration: 'none', background: 'rgba(59, 130, 246, 0.08)'
+                        }}
+                      >
+                        <FileText size={12} /> View PDF Bundle
+                      </a>
+                    </div>
+                  </>
+                )}
+
+                {modal.approval.stage === 'SUBMISSION_PENDING' && (
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Portal Ref</span>
+                    <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{modal.approval.transferRefNo || 'GeM Filing'}</div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Spec Clearance Compliance Type Selection & Document Upload */}
+            {modal.approval.stage === 'SPEC_CLEARANCE' && modal.action === 'APPROVED' && (
+              <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* 1. Technical Compliance Radio Options */}
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '8px' }}>
+                    Technical Compliance Result <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                      padding: '8px 12px', borderRadius: '6px',
+                      border: `2px solid ${(modal.complianceType === 'ALL COMPLY' || modal.complianceType === 'ALL_COMPLY') ? '#10b981' : 'var(--border-color)'}`,
+                      background: (modal.complianceType === 'ALL COMPLY' || modal.complianceType === 'ALL_COMPLY') ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                      fontSize: '12px', color: (modal.complianceType === 'ALL COMPLY' || modal.complianceType === 'ALL_COMPLY') ? '#10b981' : 'var(--text-secondary)',
+                      fontWeight: (modal.complianceType === 'ALL COMPLY' || modal.complianceType === 'ALL_COMPLY') ? '600' : '500'
+                    }}>
+                      <input
+                        type="radio"
+                        name="modalComplianceType"
+                        value="ALL COMPLY"
+                        checked={modal.complianceType === 'ALL COMPLY' || modal.complianceType === 'ALL_COMPLY'}
+                        onChange={() => setModal(prev => ({ ...prev, complianceType: 'ALL COMPLY' }))}
+                      />
+                      <span>✓ ALL COMPLY</span>
+                    </label>
+                    <label style={{
+                      flex: 1, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                      padding: '8px 12px', borderRadius: '6px',
+                      border: `2px solid ${(modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS') ? '#f59e0b' : 'var(--border-color)'}`,
+                      background: (modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS') ? 'rgba(245, 158, 11, 0.12)' : 'transparent',
+                      fontSize: '12px', color: (modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS') ? '#f59e0b' : 'var(--text-secondary)',
+                      fontWeight: (modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS') ? '600' : '500'
+                    }}>
+                      <input
+                        type="radio"
+                        name="modalComplianceType"
+                        value="COMPLY WITH DEVIATIONS"
+                        checked={modal.complianceType === 'COMPLY WITH DEVIATIONS' || modal.complianceType === 'DEVIATIONS'}
+                        onChange={() => setModal(prev => ({ ...prev, complianceType: 'COMPLY WITH DEVIATIONS' }))}
+                      />
+                      <span>⚠ COMPLY WITH DEVIATIONS</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 2. Optional Superior Document Upload Fields (PDF, Word, Excel) */}
+                <div style={{
+                  padding: '12px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                    Upload Clearance Documents (Optional — Superior Specification Files):
+                  </div>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+                    None of these fields are required. Any document uploaded here is superior and will replace the previous docs generated by the executive through AI.
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+                    {/* PDF upload field */}
+                    <div style={{ padding: '8px 10px', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                        1. PDF (.pdf)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        id="modal-clearance-pdf-input"
+                        onChange={e => setClearancePdfFile(e.target.files?.[0] || null)}
+                        style={{ fontSize: '10.5px', width: '100%' }}
+                      />
+                      {clearancePdfFile && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '120px' }}>✓ {clearancePdfFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClearancePdfFile(null);
+                              const el = document.getElementById('modal-clearance-pdf-input') as HTMLInputElement;
+                              if (el) el.value = '';
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Word upload field */}
+                    <div style={{ padding: '8px 10px', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                        2. Word (.docx / .doc)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".docx,.doc"
+                        id="modal-clearance-docx-input"
+                        onChange={e => setClearanceDocxFile(e.target.files?.[0] || null)}
+                        style={{ fontSize: '10.5px', width: '100%' }}
+                      />
+                      {clearanceDocxFile && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '120px' }}>✓ {clearanceDocxFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClearanceDocxFile(null);
+                              const el = document.getElementById('modal-clearance-docx-input') as HTMLInputElement;
+                              if (el) el.value = '';
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Excel upload field */}
+                    <div style={{ padding: '8px 10px', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                        3. Excel (.xlsx / .xls)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        id="modal-clearance-xlsx-input"
+                        onChange={e => setClearanceXlsxFile(e.target.files?.[0] || null)}
+                        style={{ fontSize: '10.5px', width: '100%' }}
+                      />
+                      {clearanceXlsxFile && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                          <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '120px' }}>✓ {clearanceXlsxFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClearanceXlsxFile(null);
+                              const el = document.getElementById('modal-clearance-xlsx-input') as HTMLInputElement;
+                              if (el) el.value = '';
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1656,7 +2072,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                 <textarea
                   value={modal.lossReasonMis}
                   onChange={e => setModal(prev => ({ ...prev, lossReasonMis: e.target.value }))}
-                  placeholder="Provide reason for loss (e.g. L1 price difference, technical disqualification, etc.)..."
+                  placeholder="Provide reason for loss (e.g. L1 price difference ₹..., technical disqualification, etc.)..."
                   rows={2}
                   style={{
                     width: '100%', boxSizing: 'border-box', borderRadius: '6px',
@@ -1671,21 +2087,42 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             {modal.approval.stage === 'TPC_PRICING' && modal.action === 'APPROVED' && (
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
-                  Transfer Price (Total Production Cost) (₹) <span style={{ color: '#ef4444' }}>*</span>
+                  Manufacturer Purchase Price (₹) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
                   value={modal.tpcPurchasePrice}
                   onChange={e => setModal(prev => ({ ...prev, tpcPurchasePrice: e.target.value }))}
-                  placeholder="Enter total production cost / transfer price..."
+                  placeholder="Enter manufacturer purchase price / OEM cost..."
                   style={{
                     width: '100%', boxSizing: 'border-box', borderRadius: '6px',
                     border: '1px solid var(--border-color)', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))',
                     color: 'var(--text-primary)', fontSize: '13px', padding: '10px'
                   }}
                 />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px', marginBottom: '12px' }}>
+                  🔒 Confidential: Visible to MIS Team &amp; Admin only. Masked from Tender Executive.
+                </span>
+
+                <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
+                  Forward Tender to MIS Team Member of Choice
+                </label>
+                <select
+                  value={modal.assignedMisMember || ''}
+                  onChange={e => setModal(prev => ({ ...prev, assignedMisMember: e.target.value }))}
+                  style={{
+                    width: '100%', boxSizing: 'border-box', borderRadius: '6px',
+                    border: '1px solid var(--border-color)', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))',
+                    color: 'var(--text-primary)', fontSize: '13px', padding: '10px'
+                  }}
+                >
+                  <option value="">MIS Team (Shared Queue)</option>
+                  {misTeamMembers.map(m => (
+                    <option key={m} value={m}>{m} (MIS Team)</option>
+                  ))}
+                </select>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                  🔒 Confidential: Sent to Admin &amp; MIS Team. Not visible to Tender Executive.
+                  Tender will be forwarded directly to this MIS member to finalize the commercial price.
                 </span>
               </div>
             )}
@@ -1693,14 +2130,43 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
             {/* MIS Pricing input */}
             {modal.approval.stage === 'MIS_PRICING' && modal.action === 'APPROVED' && (
               <div style={{ marginBottom: '14px' }}>
+                {modal.approval.tpcPurchasePrice != null && Number(modal.approval.tpcPurchasePrice) > 0 && (
+                  <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#38bdf8' }}>TPC Transfer Price:</span>
+                      <span style={{ fontSize: '15px', fontWeight: '800', color: '#38bdf8' }}>₹{Number(modal.approval.tpcPurchasePrice).toLocaleString('en-IN')}</span>
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 8px 0' }}>
+                      You can adopt the TPC price directly or update it with custom commercial margins below.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const price = String(modal.approval?.tpcPurchasePrice || '');
+                        setModal(prev => ({
+                          ...prev,
+                          misFinalPrice: price,
+                          comment: prev.comment || `Approved using TPC quote of ₹${Number(price).toLocaleString('en-IN')}`
+                        }));
+                      }}
+                      style={{
+                        fontSize: '11px', fontWeight: '700', padding: '6px 12px', borderRadius: '6px',
+                        background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38bdf8', color: '#38bdf8', cursor: 'pointer'
+                      }}
+                    >
+                      ⚡ Use TPC Price &amp; Send Directly to Executive
+                    </button>
+                  </div>
+                )}
+
                 <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
-                  Provided Price (₹) <span style={{ color: '#ef4444' }}>*</span>
+                  Final Provided Price for Executive (₹) <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <input
                   type="number"
                   value={modal.misFinalPrice}
                   onChange={e => setModal(prev => ({ ...prev, misFinalPrice: e.target.value }))}
-                  placeholder="Enter final provided price for Tender Executive..."
+                  placeholder={modal.approval.tpcPurchasePrice ? `Update price or keep ₹${Number(modal.approval.tpcPurchasePrice).toLocaleString('en-IN')}...` : "Enter final quote price..."}
                   style={{
                     width: '100%', boxSizing: 'border-box', borderRadius: '6px',
                     border: '1px solid var(--border-color)', background: 'var(--bg-card, rgba(15, 23, 42, 0.6))',
@@ -1708,7 +2174,7 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   }}
                 />
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
-                  This final provided price will be sent to the Tender Executive to unblock bid document generation.
+                  This commercial price will unlock Step 6 Portal Submission once Track B documents pass.
                 </span>
               </div>
             )}
@@ -1775,6 +2241,8 @@ export default function ApprovalsCenter({ currentUser, fetchWithAuth, onCountsCh
                   ? <><Loader2 size={14} className="spin" /> Submitting...</>
                   : modal.approval.stage === 'WIN_LOSS_PENDING'
                     ? (modal.outcome === 'Won' ? 'Confirm Won' : 'Confirm Lost')
+                  : (modal.approval.stage === 'SPEC_CLEARANCE' && modal.action === 'APPROVED')
+                    ? 'GRANT CLEARANCE'
                   : modal.action === 'APPROVED' ? 'Confirm Approve'
                   : modal.action === 'REJECTED' ? 'Confirm Reject'
                   : 'Send for Changes'}

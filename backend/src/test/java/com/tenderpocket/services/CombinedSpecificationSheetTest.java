@@ -12,7 +12,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-class CombinedSpecificationSheetTest {
+public class CombinedSpecificationSheetTest {
     private List<SpecificationSheetContent.Product> products() {
         return List.of(
                 new SpecificationSheetContent.Product("Pump Alpha", "7", List.of(

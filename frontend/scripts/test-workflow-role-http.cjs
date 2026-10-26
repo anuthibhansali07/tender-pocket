@@ -99,10 +99,10 @@ async function main() {
       return { status: response.status, data: await response.json() };
     };
     for (const [route, allowed, body] of [
-      ['approve-clearance', ['clearance', 'admin'], {}],
+      ['approve-clearance', ['clearance'], {}],
       ['tpc-price', ['tpc', 'admin'], { tpcPurchasePrice: 100 }],
-      ['mis-price', ['misteam', 'admin'], { misFinalPrice: 100 }],
-      ['generate-bid-docs', ['executive', 'admin'], {}],
+      ['mis-price', ['misteam'], { misFinalPrice: 100 }],
+      ['generate-bid-docs', ['executive'], {}],
     ]) {
       for (const name of ['admin', 'executive', 'clearance', 'tpc', 'misteam', null]) {
         const result = await api(`/api/tenders/missing/${route}`, name, body);

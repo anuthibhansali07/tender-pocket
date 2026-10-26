@@ -1,4 +1,4 @@
-import { getAuthFromRequest } from '@/lib/auth';
+import { getAuthFromRequest, getTokenFromRequest } from '@/lib/auth';
 
 export type SpecificationPayload = Record<string, unknown>;
 
@@ -49,7 +49,12 @@ export function fetchSpecificationBackend(request: Request, resource: string, in
   headers.set('x-user-role', auth?.role || request.headers.get('x-user-role') || 'User');
   headers.set('x-user-username', auth?.username || request.headers.get('x-user-username') || 'system');
   const authorization = request.headers.get('authorization');
-  if (authorization) headers.set('authorization', authorization);
+  if (authorization) {
+    headers.set('authorization', authorization);
+  } else {
+    const token = getTokenFromRequest(request);
+    if (token) headers.set('authorization', `Bearer ${token}`);
+  }
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
 
   // Java runs conversion synchronously. Do not impose the old optional-sync 3s timer,

@@ -137,4 +137,110 @@ public interface TenderApprovalRepository extends JpaRepository<TenderApprovalRe
 
     @Query("SELECT a.status, COUNT(a) FROM TenderApprovalRequest a GROUP BY a.status")
     List<Object[]> countByStatusForAdmin();
+
+    @Query("SELECT a.stage, COUNT(a) FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'tpc' " +
+           "  OR LOWER(a.assignedTo) = 'tpc team' " +
+           "  OR LOWER(a.assignedTo) = 'tpc pricing team' " +
+           "  OR a.stage = :stage" +
+           ") GROUP BY a.stage")
+    List<Object[]> countByStageForTpcTeam(@Param("assignedTo") String assignedTo,
+                                         @Param("status") String status,
+                                         @Param("stage") TenderWorkflowStage stage);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'tpc' " +
+           "  OR LOWER(a.assignedTo) = 'tpc team' " +
+           "  OR LOWER(a.assignedTo) = 'tpc pricing team' " +
+           "  OR a.stage = :stage" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStatusForTpcTeam(@Param("assignedTo") String assignedTo,
+                                                      @Param("status") String status,
+                                                      @Param("stage") TenderWorkflowStage stage);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND a.stage = :stage AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'tpc' " +
+           "  OR LOWER(a.assignedTo) = 'tpc team' " +
+           "  OR LOWER(a.assignedTo) = 'tpc pricing team' " +
+           "  OR a.stage = :stage" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStageAndStatusForTpcTeam(@Param("assignedTo") String assignedTo,
+                                                              @Param("stage") TenderWorkflowStage stage,
+                                                              @Param("status") String status);
+
+    @Query("SELECT a.stage, COUNT(a) FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'clearance' " +
+           "  OR LOWER(a.assignedTo) = 'clearance team' " +
+           "  OR LOWER(a.assignedTo) = 'specification' " +
+           "  OR LOWER(a.assignedTo) = 'specification team' " +
+           "  OR a.stage = :stage" +
+           ") GROUP BY a.stage")
+    List<Object[]> countByStageForClearanceTeam(@Param("assignedTo") String assignedTo,
+                                               @Param("status") String status,
+                                               @Param("stage") TenderWorkflowStage stage);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'clearance' " +
+           "  OR LOWER(a.assignedTo) = 'clearance team' " +
+           "  OR LOWER(a.assignedTo) = 'specification' " +
+           "  OR LOWER(a.assignedTo) = 'specification team' " +
+           "  OR a.stage = :stage" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStatusForClearanceTeam(@Param("assignedTo") String assignedTo,
+                                                            @Param("status") String status,
+                                                            @Param("stage") TenderWorkflowStage stage);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND a.stage = :stage AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:assignedTo) " +
+           "  OR LOWER(a.assignedTo) = 'clearance' " +
+           "  OR LOWER(a.assignedTo) = 'clearance team' " +
+           "  OR LOWER(a.assignedTo) = 'specification' " +
+           "  OR LOWER(a.assignedTo) = 'specification team' " +
+           "  OR a.stage = :stage" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStageAndStatusForClearanceTeam(@Param("assignedTo") String assignedTo,
+                                                                    @Param("stage") TenderWorkflowStage stage,
+                                                                    @Param("status") String status);
+
+    @Query("SELECT a.stage, COUNT(a) FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = 'executive' " +
+           "  OR a.tenderId IN (SELECT t.id FROM Tender t WHERE LOWER(t.misExecutive) = LOWER(:username))" +
+           ") GROUP BY a.stage")
+    List<Object[]> countByStageForExecutive(@Param("username") String username,
+                                            @Param("status") String status);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = 'executive' " +
+           "  OR a.tenderId IN (SELECT t.id FROM Tender t WHERE LOWER(t.misExecutive) = LOWER(:username))" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStatusForExecutive(@Param("username") String username,
+                                                         @Param("status") String status);
+
+    @Query("SELECT a FROM TenderApprovalRequest a " +
+           "WHERE (:status = 'ALL' OR (:status = 'HISTORY' AND a.status != 'PENDING') OR a.status = :status) AND a.stage = :stage AND (" +
+           "  LOWER(a.assignedTo) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = LOWER(:username) " +
+           "  OR LOWER(a.requestedBy) = 'executive' " +
+           "  OR a.tenderId IN (SELECT t.id FROM Tender t WHERE LOWER(t.misExecutive) = LOWER(:username))" +
+           ") ORDER BY a.updatedAt DESC, a.createdAt DESC")
+    List<TenderApprovalRequest> findByStageAndStatusForExecutive(@Param("username") String username,
+                                                                @Param("stage") TenderWorkflowStage stage,
+                                                                @Param("status") String status);
 }

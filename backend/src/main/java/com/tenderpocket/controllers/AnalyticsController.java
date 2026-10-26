@@ -38,18 +38,14 @@ public class AnalyticsController {
         final String actor = WorkflowPermissions.username();
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
 
-        List<Tender> tenders;
-        if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole) || "Executive".equalsIgnoreCase(userRole)) {
-            tenders = tenderRepository.findByMisExecutive(actor);
+        boolean isExec = "MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole) || "Executive".equalsIgnoreCase(userRole);
+        List<com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection> tenders;
+        if (isExec) {
+            tenders = tenderRepository.findForAnalyticsByExecutive(actor);
         } else if ("Clearance Team".equalsIgnoreCase(userRole) || "Specification Team".equalsIgnoreCase(userRole)) {
-            tenders = tenderRepository.findAll().stream()
-                    .filter(t -> actor.equalsIgnoreCase(t.getAssignedMisMemberSpec())
-                              || "clearance".equalsIgnoreCase(t.getAssignedMisMemberSpec())
-                              || "Clearance Team".equalsIgnoreCase(t.getAssignedMisMemberSpec())
-                              || "SPEC_CLEARANCE".equalsIgnoreCase(t.getCurrentStage()))
-                    .collect(java.util.stream.Collectors.toList());
+            tenders = tenderRepository.findForAnalyticsBySpecMember(actor);
         } else {
-            tenders = tenderRepository.findAll();
+            tenders = tenderRepository.findAllForAnalytics();
         }
 
         int issuedCount = 0;
@@ -78,7 +74,7 @@ public class AnalyticsController {
 
         double valNew = 0, valPart = 0, valNotPart = 0, valLapsed = 0, valFiled = 0, valWon = 0, valLost = 0, valMissedDead = 0, valMissedOpp = 0;
 
-        for (Tender t : tenders) {
+        for (com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection t : tenders) {
             String status = resolveStatus(t, todayIST);
             double val = t.getEstimatedCost() != null ? t.getEstimatedCost() : 0.0;
 
@@ -88,7 +84,10 @@ public class AnalyticsController {
 
             if ("Rejected".equalsIgnoreCase(t.getStatus()) || "REJECTED_TPC".equalsIgnoreCase(t.getCurrentStage())) {
                 tpcRejectedCount++;
-            } else if ("TPC_PRICING".equalsIgnoreCase(t.getCurrentStage()) && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() == 0)) {
+            } else if (("TPC_PRICING".equalsIgnoreCase(t.getCurrentStage()) || "TPC".equalsIgnoreCase(t.getPricingRoute()))
+                    && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() == 0)
+                    && (t.getMisFinalPrice() == null || t.getMisFinalPrice() == 0)
+                    && !"MIS".equalsIgnoreCase(t.getPricingRoute())) {
                 tpcPendingCount++;
             } else if (t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0) {
                 tpcApprovedCount++;
@@ -134,18 +133,14 @@ public class AnalyticsController {
 
         try {
             // Deadlines Query
-            String deadlineSql = "SELECT due_date, COUNT(*) as count FROM tenders " +
-                    "WHERE due_date >= ? AND due_date <= ? " +
-                    ("MIS Executive".equalsIgnoreCase(userRole) ? "WHERE mis_executive = ? " : "") +
-                    "GROUP BY due_date ORDER BY due_date ASC";
             Query q0 = entityManager.createNativeQuery("SELECT due_date, COUNT(*) as count FROM tenders " +
                     "WHERE due_date >= ? AND due_date <= ? " +
-                    ("MIS Executive".equalsIgnoreCase(userRole) ? "AND mis_executive = ? " : "") +
+                    (isExec ? "AND mis_executive = ? " : "") +
                     "GROUP BY due_date ORDER BY due_date ASC");
             q0.setParameter(1, todayIST);
             q0.setParameter(2, LocalDate.now().plusDays(30).toString());
-            if ("MIS Executive".equalsIgnoreCase(userRole)) {
-                q0.setParameter(3, username);
+            if (isExec) {
+                q0.setParameter(3, actor);
             }
             List<Object[]> r0 = q0.getResultList();
             for (Object[] row : r0) {
@@ -155,11 +150,11 @@ public class AnalyticsController {
             // Sectors Query
             String sectorSql = "SELECT COALESCE(sector, 'Unknown') as sector, COUNT(*) as count, SUM(COALESCE(estimated_cost, 0.0)) as total_val " +
                     "FROM tenders " +
-                    ("MIS Executive".equalsIgnoreCase(userRole) ? "WHERE mis_executive = ? " : "") +
+                    (isExec ? "WHERE mis_executive = ? " : "") +
                     "GROUP BY sector ORDER BY count DESC LIMIT 10";
             Query q1 = entityManager.createNativeQuery(sectorSql);
-            if ("MIS Executive".equalsIgnoreCase(userRole)) {
-                q1.setParameter(1, username);
+            if (isExec) {
+                q1.setParameter(1, actor);
             }
             List<Object[]> r1 = q1.getResultList();
             for (Object[] row : r1) {
@@ -169,11 +164,11 @@ public class AnalyticsController {
             // Authorities Query
             String authSql = "SELECT COALESCE(authority, 'Unknown') as authority, COUNT(*) as count, SUM(COALESCE(estimated_cost, 0.0)) as total_val " +
                     "FROM tenders " +
-                    ("MIS Executive".equalsIgnoreCase(userRole) ? "WHERE mis_executive = ? " : "") +
+                    (isExec ? "WHERE mis_executive = ? " : "") +
                     "GROUP BY authority ORDER BY total_val DESC LIMIT 10";
             Query q2 = entityManager.createNativeQuery(authSql);
-            if ("MIS Executive".equalsIgnoreCase(userRole)) {
-                q2.setParameter(1, username);
+            if (isExec) {
+                q2.setParameter(1, actor);
             }
             List<Object[]> r2 = q2.getResultList();
             for (Object[] row : r2) {
@@ -191,11 +186,11 @@ public class AnalyticsController {
                     "  ELSE 'Over 5Cr' " +
                     "END as bracket, COUNT(*) as count " +
                     "FROM tenders " +
-                    ("MIS Executive".equalsIgnoreCase(userRole) ? "WHERE mis_executive = ? " : "") +
+                    (isExec ? "WHERE mis_executive = ? " : "") +
                     "GROUP BY bracket";
             Query q3 = entityManager.createNativeQuery(bracketSql);
-            if ("MIS Executive".equalsIgnoreCase(userRole)) {
-                q3.setParameter(1, username);
+            if (isExec) {
+                q3.setParameter(1, actor);
             }
             List<Object[]> r3 = q3.getResultList();
             
@@ -263,9 +258,9 @@ public class AnalyticsController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
             @RequestHeader(value = "x-user-role", required = false, defaultValue = "Tender Executive") String userRole) {
 
-        List<Tender> tenders = ("Admin".equalsIgnoreCase(userRole) || "MIS Team".equalsIgnoreCase(userRole))
-                ? tenderRepository.findAll()
-                : tenderRepository.findByMisExecutive(username);
+        List<com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection> tenders = ("Admin".equalsIgnoreCase(userRole) || "MIS Team".equalsIgnoreCase(userRole))
+                ? tenderRepository.findAllForAnalytics()
+                : tenderRepository.findForAnalyticsByExecutive(username);
 
         LocalDate today = LocalDate.now();
         LocalDate sevenDaysAgo = today.minusDays(7);
@@ -284,7 +279,7 @@ public class AnalyticsController {
         statusDistribution.put("Lost", 0);
         statusDistribution.put("Missed", 0);
 
-        for (Tender t : tenders) {
+        for (com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection t : tenders) {
             String status = t.getStatus() != null ? t.getStatus() : "Live";
             statusDistribution.put(status, statusDistribution.getOrDefault(status, 0) + 1);
 
@@ -365,6 +360,10 @@ public class AnalyticsController {
      * the moment it was imported - GeM bids are routinely published days before they are
      * scraped - and reported 130 of 198 tenders as Lapsed on a database populated that evening.
      */
+    private String resolveStatus(com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection t, String todayIST) {
+        return com.tenderpocket.services.TenderStatusResolver.resolve(t, todayIST);
+    }
+
     private String resolveStatus(Tender t, String todayIST) {
         return com.tenderpocket.services.TenderStatusResolver.resolve(t, todayIST);
     }

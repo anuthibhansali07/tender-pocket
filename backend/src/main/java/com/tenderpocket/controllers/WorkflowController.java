@@ -4,15 +4,25 @@ import static com.tenderpocket.config.WorkflowPermissions.Action.*;
 
 import com.tenderpocket.models.*;
 import com.tenderpocket.repositories.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @RestController
@@ -27,6 +37,9 @@ public class WorkflowController {
 
     @Autowired
     private TenderCommentRepository commentRepository;
+
+    @Autowired
+    private com.tenderpocket.services.WorkflowSyncService workflowSyncService;
 
     private boolean isSafeUrl(String url) {
         if (url == null || url.isBlank()) return true;
@@ -166,13 +179,82 @@ public class WorkflowController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Technical specification submitted to Clearance Team for approval."));
     }
 
-    // POST /api/tenders/{id}/approve-clearance (Clearance Team approves spec -> Notify Executive & send to TPC Team)
-    @PostMapping("/{id}/approve-clearance")
+    // Helper to mirror/save documents to all candidate paths
+    private void saveDocBytesToAllLocations(String tenderId, String fileName, byte[] data) {
+        String[] locations = new String[] {
+            "public/documents/" + tenderId,
+            "backend/public/documents/" + tenderId,
+            "../backend/public/documents/" + tenderId,
+            "../public/documents/" + tenderId,
+            "../frontend/public/documents/" + tenderId,
+            "frontend/public/documents/" + tenderId
+        };
+        for (String loc : locations) {
+            try {
+                Path p = Paths.get(loc).toAbsolutePath().normalize();
+                if (p.getParent() != null) {
+                    Files.createDirectories(p);
+                    Files.write(p.resolve(fileName), data);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    // Helper to remove obsolete/superseded documents from all candidate paths
+    private void deleteDocFromAllLocations(String tenderId, String fileName) {
+        String[] locations = new String[] {
+            "public/documents/" + tenderId,
+            "backend/public/documents/" + tenderId,
+            "../backend/public/documents/" + tenderId,
+            "../public/documents/" + tenderId,
+            "../frontend/public/documents/" + tenderId,
+            "frontend/public/documents/" + tenderId
+        };
+        for (String loc : locations) {
+            try {
+                Path p = Paths.get(loc).toAbsolutePath().normalize().resolve(fileName);
+                Files.deleteIfExists(p);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    // POST /api/tenders/{id}/approve-clearance (Clearance Team approves spec: 1. Approved [All Comply] or 2. Approved with deviation [Upload 3 replacement docs])
+    @PostMapping(value = "/{id}/approve-clearance", consumes = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_OCTET_STREAM_VALUE})
     @Transactional
     public ResponseEntity<?> approveClearance(
             @PathVariable("id") String id,
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "clearance") String username,
-            @RequestBody(required = false) Map<String, String> body) {
+            @RequestBody(required = false) Map<String, Object> body) {
+        String complianceType = (body != null && body.containsKey("complianceType")) ? String.valueOf(body.get("complianceType")) : "ALL_COMPLY";
+        String comment = (body != null && body.containsKey("comment")) ? String.valueOf(body.get("comment")) : null;
+        return handleClearanceApproval(id, username, complianceType, comment, null, null, null);
+    }
+
+    @PostMapping(value = "/{id}/approve-clearance", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<?> approveClearanceMultipart(
+            @PathVariable("id") String id,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "clearance") String username,
+            @RequestParam(value = "complianceType", required = false, defaultValue = "ALL COMPLY") String complianceType,
+            @RequestParam(value = "comment", required = false) String comment,
+            @RequestParam(value = "pdfFile", required = false) MultipartFile pdfFile,
+            @RequestParam(value = "docxFile", required = false) MultipartFile docxFile,
+            @RequestParam(value = "wordFile", required = false) MultipartFile wordFile,
+            @RequestParam(value = "xlsxFile", required = false) MultipartFile xlsxFile,
+            @RequestParam(value = "excelFile", required = false) MultipartFile excelFile) {
+        MultipartFile effectiveDocx = docxFile != null ? docxFile : wordFile;
+        MultipartFile effectiveXlsx = xlsxFile != null ? xlsxFile : excelFile;
+        return handleClearanceApproval(id, username, complianceType, comment, pdfFile, effectiveDocx, effectiveXlsx);
+    }
+
+    private ResponseEntity<?> handleClearanceApproval(
+            String id,
+            String username,
+            String complianceType,
+            String comment,
+            MultipartFile pdfFile,
+            MultipartFile docxFile,
+            MultipartFile xlsxFile) {
 
         if (!WorkflowPermissions.allowed(APPROVE_SPEC)) return WorkflowPermissions.denied();
         username = WorkflowPermissions.username();
@@ -195,52 +277,234 @@ public class WorkflowController {
                         "error", "Access denied: Specification clearance is assigned to " + assignedSpec));
             }
         }
-        tender.setCurrentStage("TPC_PRICING");
+
+        boolean isDeviation = complianceType != null && (
+                "DEVIATIONS".equalsIgnoreCase(complianceType.trim())
+                || "COMPLY WITH DEVIATIONS".equalsIgnoreCase(complianceType.trim())
+                || "COMPLY_WITH_DEVIATIONS".equalsIgnoreCase(complianceType.trim())
+                || "Approved with some deviation".equalsIgnoreCase(complianceType.trim())
+                || "comply with deviations".equalsIgnoreCase(complianceType.trim())
+                || "deviation".equalsIgnoreCase(complianceType.trim())
+                || "deviations".equalsIgnoreCase(complianceType.trim())
+        );
+        String compType = isDeviation ? "COMPLY WITH DEVIATIONS" : "ALL COMPLY";
+
+        String fileError = validateClearanceFiles(pdfFile, docxFile, xlsxFile);
+        if (fileError != null) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", fileError));
+        }
+
+        boolean hasPdf = pdfFile != null && !pdfFile.isEmpty();
+        boolean hasDocx = docxFile != null && !docxFile.isEmpty();
+        boolean hasXlsx = xlsxFile != null && !xlsxFile.isEmpty();
+        boolean hasUploadedDocs = hasPdf || hasDocx || hasXlsx;
+
+        String stem = "Combined_Technical_Data_Sheet";
+        String pdfFileName = stem + ".pdf";
+        String docxFileName = stem + ".docx";
+        String xlsxFileName = stem + ".xlsx";
+        String pdfDownloadUrl = "/documents/" + id + "/" + pdfFileName;
+        String docxDownloadUrl = "/documents/" + id + "/" + docxFileName;
+        String xlsxDownloadUrl = "/documents/" + id + "/" + xlsxFileName;
+        String now = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        String today = LocalDate.now().toString();
+        String version = String.valueOf(System.currentTimeMillis());
+
+        if (hasUploadedDocs) {
+            // Delete previous AI specs that were NOT uploaded by clearance!
+            // ONLY things uploaded by clearance are carried forward!
+            try {
+                if (!hasPdf) {
+                    deleteDocFromAllLocations(id, pdfFileName);
+                }
+                if (!hasDocx) {
+                    deleteDocFromAllLocations(id, docxFileName);
+                }
+                if (!hasXlsx) {
+                    deleteDocFromAllLocations(id, xlsxFileName);
+                }
+                deleteDocFromAllLocations(id, "specification.pdf");
+
+                if (hasPdf) {
+                    saveDocBytesToAllLocations(id, pdfFileName, pdfFile.getBytes());
+                }
+                if (hasDocx) {
+                    saveDocBytesToAllLocations(id, docxFileName, docxFile.getBytes());
+                }
+                if (hasXlsx) {
+                    saveDocBytesToAllLocations(id, xlsxFileName, xlsxFile.getBytes());
+                }
+            } catch (Exception e) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("success", false, "error", "Failed to save clearance superior documents: " + e.getMessage()));
+            }
+
+            // Update downloaded_docs so ONLY clearance superior docs carry forward
+            List<Map<String, Object>> docsList = new ArrayList<>();
+            ObjectMapper objectMapper = new ObjectMapper();
+            String existingJson = tender.getDownloadedDocs();
+            if (existingJson != null && !existingJson.isBlank()) {
+                try {
+                    docsList = objectMapper.readValue(existingJson, new TypeReference<List<Map<String, Object>>>() {});
+                } catch (Exception ignored) {}
+            }
+
+            // Purge ALL prior technical spec entries (AI specs, previous drafts)
+            docsList.removeIf(item -> {
+                String fn = item.get("filename") != null ? item.get("filename").toString().toLowerCase() : "";
+                String nm = item.get("name") != null ? item.get("name").toString().toLowerCase() : "";
+                return fn.contains("combined_technical") || fn.contains("tech_spec") || fn.contains("technical_specification") || fn.equals("specification.pdf")
+                        || nm.contains("combined technical") || nm.contains("technical specification");
+            });
+
+            if (hasPdf) {
+                Map<String, Object> doc = replacementDoc("Combined Technical Specifications (PDF) [Clearance Superior]", pdfFileName, pdfDownloadUrl, today, version);
+                doc.put("superior", true);
+                doc.put("uploaded_by", username);
+                docsList.add(doc);
+            }
+            if (hasDocx) {
+                Map<String, Object> doc = replacementDoc("Combined Technical Specifications (DOCX) [Clearance Superior]", docxFileName, docxDownloadUrl, today, version);
+                doc.put("superior", true);
+                doc.put("uploaded_by", username);
+                docsList.add(doc);
+            }
+            if (hasXlsx) {
+                Map<String, Object> doc = replacementDoc("Combined Technical Specifications (XLSX) [Clearance Superior]", xlsxFileName, xlsxDownloadUrl, today, version);
+                doc.put("superior", true);
+                doc.put("uploaded_by", username);
+                docsList.add(doc);
+            }
+
+            // Set finalTechSpecFilename to the primary uploaded document
+            if (hasPdf) {
+                tender.setFinalTechSpecFilename(pdfFileName);
+            } else if (hasDocx) {
+                tender.setFinalTechSpecFilename(docxFileName);
+            } else if (hasXlsx) {
+                tender.setFinalTechSpecFilename(xlsxFileName);
+            }
+
+            try {
+                tender.setDownloadedDocs(objectMapper.writeValueAsString(docsList));
+            } catch (Exception ignored) {}
+
+            tender.setFinalTechSpecUploadedBy(username);
+            tender.setFinalTechSpecUploadedAt(now);
+        } else {
+            // Keep AI-generated documents if no replacement files uploaded
+            if (tender.getFinalTechSpecFilename() == null || tender.getFinalTechSpecFilename().isBlank()) {
+                tender.setFinalTechSpecFilename(pdfFileName);
+            }
+        }
+
         tender.setSpecVerificationStatus("Approved");
+        tender.setSpecComplianceType(compType);
         tenderRepository.save(tender);
+
+        String effectiveSpecFilename = tender.getFinalTechSpecFilename() != null && !tender.getFinalTechSpecFilename().isBlank()
+                ? tender.getFinalTechSpecFilename()
+                : (hasDocx ? docxFileName : (hasXlsx ? xlsxFileName : pdfFileName));
+
+        // Sync modern workflow: clearance returns the tender to the executive for EMD.
+        if (workflowSyncService != null) {
+            try {
+                workflowSyncService.recordFinalTechSpec(id, effectiveSpecFilename, compType, comment, username);
+            } catch (Exception ex) {
+                System.err.println("[WorkflowController] Error syncing workflow state: " + ex.getMessage());
+                workflowSyncService.handOffClearedSpecToExecutive(tender, null);
+                tenderRepository.save(tender);
+            }
+        } else {
+            workflowSyncServiceMissingHandoff(tender);
+            tenderRepository.save(tender);
+        }
 
         // Resolve all pending SPEC_CLEARANCE requests as APPROVED so it clears out of Approvals Center
         List<TenderApprovalRequest> pendingSpecList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.SPEC_CLEARANCE);
         for (TenderApprovalRequest a : pendingSpecList) {
             if ("PENDING".equalsIgnoreCase(a.getStatus())) {
                 a.setStatus("APPROVED");
+                String revComment = hasUploadedDocs
+                        ? (isDeviation ? "Approved with Deviations (Clearance superior documents uploaded)." : "Approved: All Comply (Clearance superior documents uploaded).")
+                        : (isDeviation ? "Approved with Deviations." : "Approved: Technical specifications verified (All Comply).");
+                a.setReviewerComment(revComment);
                 a.setUpdatedAt(java.time.LocalDateTime.now());
                 approvalRepository.save(a);
             }
         }
 
-        // Avoid duplicate TPC_PRICING requests if already pending
-        List<TenderApprovalRequest> existingTpcList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.TPC_PRICING);
-        TenderApprovalRequest targetTpc = null;
-        for (TenderApprovalRequest a : existingTpcList) {
-            if ("PENDING".equalsIgnoreCase(a.getStatus())) {
-                if (targetTpc == null) {
-                    targetTpc = a;
-                } else {
-                    approvalRepository.delete(a);
-                }
-            }
-        }
-
-        if (targetTpc != null) {
-            targetTpc.setRequestedBy(username);
-            targetTpc.setAssignedTo("TPC Team");
-            targetTpc.setStatus("PENDING");
-            targetTpc.setUpdatedAt(java.time.LocalDateTime.now());
-            approvalRepository.save(targetTpc);
+        String stageNow = tender.getCurrentStage() == null ? "BID_DOCS_PREPARATION" : tender.getCurrentStage();
+        String defaultComment;
+        if (isDeviation) {
+            defaultComment = hasUploadedDocs
+                    ? "Comply with deviations. Clearance superior documents uploaded and replace previous AI specifications."
+                    : "Comply with deviations accepted.";
         } else {
-            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.TPC_PRICING, username, "TPC Team", "PENDING");
-            approvalRepository.save(req);
+            defaultComment = hasUploadedDocs
+                    ? "All comply. Clearance superior documents uploaded and replace previous AI specifications."
+                    : "All comply. Existing specification documents continue with this tender.";
         }
+        String finalComment = (comment != null && !comment.isBlank()) ? comment : defaultComment;
+        String handoff = " Tender returned to the Tender Executive to generate the bid package.";
+        commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Clearance Team",
+                finalComment + " [" + compType + "." + handoff + "]"));
 
-        String comment = (body != null && body.containsKey("comment")) ? body.get("comment") : "Technical specification approved by Clearance Team.";
-        commentRepository.save(new TenderComment(id, "SPEC_CLEARANCE", username, "Clearance Team", comment + " [Notification to Executive: Technical specification cleared! Tender sent to TPC Team for manufacturer purchase price.]"));
+        String message = hasUploadedDocs
+                ? (compType + " recorded. Clearance superior documents replace previous specifications." + handoff)
+                : (compType + " recorded. Specifications continue to Executive." + handoff);
 
         return ResponseEntity.ok(Map.of(
             "success", true,
-            "message", "Technical specification approved! Executive notified and tender forwarded to TPC Team for manufacturer purchase price.",
-            "notification", "Technical specification cleared by Clearance Team! Sent to TPC Team for purchase price."
+            "complianceType", compType,
+            "currentStage", stageNow,
+            "message", message,
+            "notification", message
         ));
+    }
+
+    private void workflowSyncServiceMissingHandoff(Tender tender) {
+        tender.setCurrentStage("BID_DOCS_PREPARATION");
+    }
+
+    private boolean isEmdSettled(Tender tender) {
+        if (tender == null) return false;
+        if (tender.getEmd() != null && tender.getEmd() == 0.0) return true;
+        if (Boolean.FALSE.equals(tender.getEmdApplicable())) return true;
+        String payment = tender.getPaymentStatus();
+        return "Approved".equalsIgnoreCase(payment) || "Exempt".equalsIgnoreCase(payment);
+    }
+
+    private String validateClearanceFiles(MultipartFile pdfFile, MultipartFile docxFile, MultipartFile xlsxFile) {
+        if (pdfFile != null && !pdfFile.isEmpty()) {
+            String pdfName = pdfFile.getOriginalFilename() == null ? "" : pdfFile.getOriginalFilename().toLowerCase(Locale.ROOT);
+            if (!pdfName.endsWith(".pdf")) {
+                return "Uploaded PDF document must have a .pdf extension.";
+            }
+        }
+        if (docxFile != null && !docxFile.isEmpty()) {
+            String docxName = docxFile.getOriginalFilename() == null ? "" : docxFile.getOriginalFilename().toLowerCase(Locale.ROOT);
+            if (!docxName.endsWith(".docx") && !docxName.endsWith(".doc")) {
+                return "Uploaded Word document must have a .docx or .doc extension.";
+            }
+        }
+        if (xlsxFile != null && !xlsxFile.isEmpty()) {
+            String xlsxName = xlsxFile.getOriginalFilename() == null ? "" : xlsxFile.getOriginalFilename().toLowerCase(Locale.ROOT);
+            if (!xlsxName.endsWith(".xlsx") && !xlsxName.endsWith(".xls")) {
+                return "Uploaded Excel spreadsheet must have a .xlsx or .xls extension.";
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> replacementDoc(String name, String filename, String path, String today, String version) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("name", name);
+        doc.put("filename", filename);
+        doc.put("local_path", path + "?v=" + version);
+        doc.put("created_date", today);
+        doc.put("source", "clearance_replacement");
+        return doc;
     }
 
     // POST /api/tenders/{id}/tpc-price (TPC Team enters manufacturer purchase price -> Forward to MIS Team)
@@ -263,9 +527,31 @@ public class WorkflowController {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
                     "error", "Specification clearance is required before TPC pricing."));
         }
+        if (!isEmdSettled(tender)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "EMD must be approved or exempt before commercial pricing."));
+        }
+
+        String chosenMis = (body.get("assignedMisMember") != null && !body.get("assignedMisMember").toString().isBlank())
+                ? body.get("assignedMisMember").toString().trim()
+                : (body.get("misAssignee") != null && !body.get("misAssignee").toString().isBlank() ? body.get("misAssignee").toString().trim() : null);
+        if (chosenMis != null && !chosenMis.isBlank()) {
+            tender.setAssignedMisMember(chosenMis);
+        }
+
         tender.setTpcPurchasePrice(price);
-        tender.setCurrentStage("MIS_PRICING");
+        if (!"DUAL_TRACK".equalsIgnoreCase(tender.getCurrentStage()) && !"DUAL_TRACK_ACTIVE".equalsIgnoreCase(tender.getCurrentStage())) {
+            tender.setCurrentStage("MIS_PRICING");
+        }
         tenderRepository.save(tender);
+
+        if (workflowSyncService != null) {
+            try {
+                workflowSyncService.recordTpcPricing(id, price, chosenMis, username);
+            } catch (Exception ex) {
+                System.err.println("[WorkflowController] Error syncing recordTpcPricing: " + ex.getMessage());
+            }
+        }
 
         List<TenderApprovalRequest> pendingTpcList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.TPC_PRICING);
         for (TenderApprovalRequest a : pendingTpcList) {
@@ -276,6 +562,9 @@ public class WorkflowController {
                 approvalRepository.save(a);
             }
         }
+
+        String targetMisAssignee = (chosenMis != null && !chosenMis.isBlank()) ? chosenMis :
+                (tender.getAssignedMisMember() != null && !tender.getAssignedMisMember().isBlank() ? tender.getAssignedMisMember() : "MIS Team");
 
         // Avoid duplicate MIS_PRICING requests if already pending
         List<TenderApprovalRequest> existingMisList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.MIS_PRICING);
@@ -292,20 +581,20 @@ public class WorkflowController {
 
         if (targetMis != null) {
             targetMis.setRequestedBy(username);
-            targetMis.setAssignedTo("MIS Team");
+            targetMis.setAssignedTo(targetMisAssignee);
             targetMis.setTpcPurchasePrice(price);
             targetMis.setStatus("PENDING");
             targetMis.setUpdatedAt(java.time.LocalDateTime.now());
             approvalRepository.save(targetMis);
         } else {
-            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.MIS_PRICING, username, "MIS Team", "PENDING");
+            TenderApprovalRequest req = new TenderApprovalRequest(id, TenderWorkflowStage.MIS_PRICING, username, targetMisAssignee, "PENDING");
             req.setTpcPurchasePrice(price);
             approvalRepository.save(req);
         }
 
-        commentRepository.save(new TenderComment(id, "TPC_PRICING", username, "TPC Team", "Obtained manufacturer purchase price (₹" + price + "). Forwarded securely to MIS Team."));
+        commentRepository.save(new TenderComment(id, "TPC_PRICING", username, "TPC Team", "Obtained manufacturer purchase price (₹" + price + "). Forwarded securely to MIS member: " + targetMisAssignee + "."));
 
-        return ResponseEntity.ok(Map.of("success", true, "message", "Manufacturer purchase price obtained by TPC Team and forwarded securely to MIS Team."));
+        return ResponseEntity.ok(Map.of("success", true, "message", "Manufacturer purchase price obtained by TPC Team and forwarded securely to MIS member: " + targetMisAssignee + "."));
     }
 
     // POST /api/tenders/{id}/mis-price (MIS Team provides final purchase price to Tender Executive)
@@ -323,13 +612,18 @@ public class WorkflowController {
         Double price = positivePrice(body.get("misFinalPrice"));
         if (price == null) return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Valid MIS final price is required"));
         Tender tender = tOpt.get();
-        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getTpcPurchasePrice() == null
-                || !Double.isFinite(tender.getTpcPurchasePrice()) || tender.getTpcPurchasePrice() <= 0) {
+        if (!"Approved".equals(tender.getSpecVerificationStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "Approved specifications and a TPC quote are required before MIS pricing."));
+                    "error", "Approved technical specification clearance is required before MIS pricing."));
+        }
+        if (!isEmdSettled(tender)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "EMD must be approved or exempt before the final commercial price."));
         }
         tender.setMisFinalPrice(price);
-        tender.setCurrentStage("BID_DOC_PENDING");
+        if (tender.getCurrentStage() == null || List.of("MIS_PRICING", "TPC_PRICING", "EMD_PAYMENT", "PAYMENT_APPROVAL").contains(tender.getCurrentStage())) {
+            tender.setCurrentStage("DUAL_TRACK");
+        }
         tenderRepository.save(tender);
 
         List<TenderApprovalRequest> pendingMisList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.MIS_PRICING);
@@ -337,7 +631,29 @@ public class WorkflowController {
             if ("PENDING".equalsIgnoreCase(a.getStatus())) {
                 a.setStatus("APPROVED");
                 a.setMisFinalPrice(price);
+                a.setUpdatedAt(java.time.LocalDateTime.now());
                 approvalRepository.save(a);
+            }
+        }
+
+        // Also resolve any pending TPC_PRICING requests if MIS directly provides pricing
+        List<TenderApprovalRequest> pendingTpcList = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(id, TenderWorkflowStage.TPC_PRICING);
+        for (TenderApprovalRequest a : pendingTpcList) {
+            if ("PENDING".equalsIgnoreCase(a.getStatus())) {
+                a.setStatus("APPROVED");
+                if (a.getReviewerComment() == null || a.getReviewerComment().isBlank()) {
+                    a.setReviewerComment("Priced directly by MIS Team");
+                }
+                a.setUpdatedAt(java.time.LocalDateTime.now());
+                approvalRepository.save(a);
+            }
+        }
+
+        if (workflowSyncService != null) {
+            try {
+                workflowSyncService.approveTrackAPricing(id, price, username);
+            } catch (Exception ex) {
+                System.err.println("[WorkflowController] Error syncing workflow state: " + ex.getMessage());
             }
         }
 
@@ -434,10 +750,13 @@ public class WorkflowController {
         String comment = body.getOrDefault("comment", "Submitted document verification request.");
 
         Tender tender = tOpt.get();
-        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getMisFinalPrice() == null
-                || !Double.isFinite(tender.getMisFinalPrice()) || tender.getMisFinalPrice() <= 0) {
+        if (!"Approved".equals(tender.getSpecVerificationStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "Specification clearance and finalized MIS pricing are required before document verification."));
+                    "error", "Specification clearance is required before document verification."));
+        }
+        if (!isEmdSettled(tender)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
+                    "error", "EMD must be approved or exempt before document verification. Pricing runs in parallel and is not required first."));
         }
         String downloadedDocsVal = body.get("downloadedDocs");
         if (downloadedDocsVal == null) downloadedDocsVal = body.get("downloaded_docs");
@@ -602,10 +921,15 @@ public class WorkflowController {
         String authRole = getAuthenticatedRole();
         String authUsername = getAuthenticatedUsername();
 
+        if ("Admin".equalsIgnoreCase(authRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Admin has view-only access to approvals."));
+        }
+
         if (!WorkflowPermissions.allowed(REVIEW_BIDS) && !WorkflowPermissions.allowed(APPROVE_SPEC)
                 && !WorkflowPermissions.allowed(SET_TPC_PRICE)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("success", false, "error", "Access denied: Valid MIS Team or Admin authentication required"));
+                    .body(Map.of("success", false, "error", "Access denied: Valid operational role authentication required"));
         }
 
         Optional<Tender> tOpt = tenderRepository.findById(id);
@@ -644,8 +968,15 @@ public class WorkflowController {
         String expectedStage = latest.getStage().name();
 
         // Concurrency / stale safeguard: Ensure tender is still at the stage of the approval request
-        boolean stageMatches = expectedStage.equalsIgnoreCase(tender.getCurrentStage())
-                || ("DOC_VERIFICATION".equalsIgnoreCase(expectedStage) && "BID_DOC_PENDING".equalsIgnoreCase(tender.getCurrentStage()));
+        String currentStage = tender.getCurrentStage() != null ? tender.getCurrentStage().toUpperCase() : "";
+        boolean stageMatches = expectedStage.equalsIgnoreCase(currentStage)
+                || ("DOC_VERIFICATION".equalsIgnoreCase(expectedStage) && List.of("DOC_VERIFICATION", "BID_DOC_PENDING", "DUAL_TRACK", "DUAL_TRACK_ACTIVE", "TPC_PRICING", "MIS_PRICING").contains(currentStage))
+                || ("MIS_PRICING".equalsIgnoreCase(expectedStage) && List.of("MIS_PRICING", "DUAL_TRACK", "DUAL_TRACK_ACTIVE", "TPC_PRICING", "DOC_VERIFICATION", "BID_DOC_PENDING").contains(currentStage))
+                || ("TPC_PRICING".equalsIgnoreCase(expectedStage) && List.of("TPC_PRICING", "DUAL_TRACK", "DUAL_TRACK_ACTIVE", "DOC_VERIFICATION", "BID_DOC_PENDING").contains(currentStage))
+                || ("PAYMENT_APPROVAL".equalsIgnoreCase(expectedStage) && List.of("PAYMENT_APPROVAL", "BID_DOCS_PREPARATION", "EMD_PENDING", "EMD_PAYMENT").contains(currentStage))
+                || ("SPEC_CLEARANCE".equalsIgnoreCase(expectedStage) && List.of("SPEC_CLEARANCE", "SPEC_GENERATION_PENDING", "EXECUTIVE_ASSIGNMENT").contains(currentStage))
+                || ("SUBMISSION_PENDING".equalsIgnoreCase(expectedStage) && List.of("SUBMISSION_READY", "SUBMISSION_PENDING", "SUBMITTED").contains(currentStage))
+                || ("WIN_LOSS_PENDING".equalsIgnoreCase(expectedStage) && List.of("WIN_LOSS_PENDING", "SUBMITTED", "SUBMISSION_READY").contains(currentStage));
         if (!stageMatches) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("success", false, "error", "Conflict: Tender is currently at stage " + tender.getCurrentStage() + ", cannot action approval for stage " + expectedStage));
@@ -654,6 +985,9 @@ public class WorkflowController {
         String action = body.get("action") != null ? body.get("action").toString().trim().toUpperCase() : "APPROVED";
         if (!List.of("APPROVED", "REJECTED", "CHANGES_REQUESTED").contains(action)) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid approval action."));
+        }
+        if ("REJECTED".equals(action) && "SPEC_CLEARANCE".equalsIgnoreCase(expectedStage)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Clearance team cannot reject technical specifications. Only 'All Comply' or 'Deviations' are allowed."));
         }
         String comment = body.get("comment") != null ? body.get("comment").toString().trim() : "Review completed by MIS Team.";
         String lossReasonMis = body.get("lossReasonMis") != null ? body.get("lossReasonMis").toString().trim() : "";
@@ -669,11 +1003,27 @@ public class WorkflowController {
             switch (expectedStage) {
                 case "PAYMENT_APPROVAL" -> {
                     tender.setPaymentStatus("Approved");
-                    tender.setCurrentStage("SUBMISSION_PENDING");
+                    if (workflowSyncService != null) {
+                        workflowSyncService.approveEmdPayment(tender.getId(), authUsername);
+                    } else {
+                        tender.setCurrentStage("SUBMISSION_PENDING");
+                    }
                 }
                 case "DOC_VERIFICATION" -> {
                     tender.setVerificationStatus("Approved");
-                    tender.setCurrentStage("PAYMENT_APPROVAL");
+                    if (workflowSyncService != null) {
+                        workflowSyncService.approveTrackBDocs(tender.getId(), authUsername, comment);
+                        tender = tenderRepository.findById(tender.getId()).orElse(tender);
+                    } else {
+                        boolean pricingDone = "Approved".equalsIgnoreCase(tender.getPricingStatus())
+                                || (tender.getMisFinalPrice() != null && tender.getMisFinalPrice() > 0);
+                        if (pricingDone) {
+                            tender.setCurrentStage("SUBMISSION_READY");
+                            tender.setCanFinalSubmit(true);
+                        } else if (!List.of("TPC_PRICING", "MIS_PRICING", "DUAL_TRACK", "DUAL_TRACK_ACTIVE").contains(tender.getCurrentStage())) {
+                            tender.setCurrentStage("PAYMENT_APPROVAL");
+                        }
+                    }
                 }
                 case "SUBMISSION_PENDING" -> {
                     tender.setSubmissionStatus("Approved");
@@ -703,34 +1053,31 @@ public class WorkflowController {
                                    (latest.getLossReasonExecutive() != null && !latest.getLossReasonExecutive().isBlank())
                                    || !lossReasonMis.isEmpty()
                                 ));
-                    if (isLoss) {
-                        tender.setCurrentStage("LOST");
-                        tender.setOutcomeStatus("Lost");
-                        tender.setStatus("Not Awarded");
-                        if (!lossReasonMis.isEmpty()) tender.setLossReason(lossReasonMis);
+                    if (workflowSyncService != null) {
+                        workflowSyncService.recordOutcome(tender.getId(), isLoss ? "Lost" : "Won", lossReasonMis, authUsername);
                     } else {
-                        tender.setCurrentStage("WON");
-                        tender.setOutcomeStatus("Won");
-                        tender.setStatus("Awarded");
+                        if (isLoss) {
+                            tender.setCurrentStage("LOST");
+                            tender.setOutcomeStatus("Lost");
+                            tender.setStatus("Not Awarded");
+                            if (!lossReasonMis.isEmpty()) tender.setLossReason(lossReasonMis);
+                        } else {
+                            tender.setCurrentStage("WON");
+                            tender.setOutcomeStatus("Won");
+                            tender.setStatus("Awarded");
+                        }
                     }
                 }
                 case "SPEC_CLEARANCE" -> {
                     tender.setSpecVerificationStatus("Approved");
-                    tender.setCurrentStage("TPC_PRICING");
-                    try {
-                        List<TenderApprovalRequest> existingTpc = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.TPC_PRICING);
-                        boolean hasPendingTpc = existingTpc.stream().anyMatch(r -> "PENDING".equalsIgnoreCase(r.getStatus()));
-                        if (!hasPendingTpc) {
-                            TenderApprovalRequest tpcReq = new TenderApprovalRequest(
-                                    tender.getId(),
-                                    TenderWorkflowStage.TPC_PRICING,
-                                    authUsername,
-                                    "TPC Pricing Team",
-                                    "PENDING"
-                            );
-                            approvalRepository.save(tpcReq);
-                        }
-                    } catch (Exception ignored) {}
+                    tender.setSpecComplianceType("ALL_COMPLY");
+                    if (workflowSyncService != null) {
+                        String specFile = tender.getFinalTechSpecFilename() != null && !tender.getFinalTechSpecFilename().isBlank()
+                                ? tender.getFinalTechSpecFilename() : "Combined_Technical_Data_Sheet.pdf";
+                        workflowSyncService.recordFinalTechSpec(tender.getId(), specFile, "ALL_COMPLY", comment, authUsername);
+                    } else {
+                        tender.setCurrentStage("BID_DOCS_PREPARATION");
+                    }
                 }
                 case "TPC_PRICING"    -> {
                     Double tpcPriceToSet = reqTpcPrice != null ? reqTpcPrice : latest.getTpcPurchasePrice();
@@ -769,7 +1116,18 @@ public class WorkflowController {
                     if (tender.getTpcPurchasePrice() != null && latest.getTpcPurchasePrice() == null) {
                         latest.setTpcPurchasePrice(tender.getTpcPurchasePrice());
                     }
-                    tender.setCurrentStage("BID_DOC_PENDING");
+                    if (workflowSyncService != null) {
+                        workflowSyncService.approveTrackAPricing(tender.getId(), misPriceToSet != null ? misPriceToSet : 0.0, authUsername);
+                        tender = tenderRepository.findById(tender.getId()).orElse(tender);
+                    } else {
+                        boolean docsDone = "Approved".equalsIgnoreCase(tender.getVerificationStatus());
+                        if (docsDone) {
+                            tender.setCurrentStage("SUBMISSION_READY");
+                            tender.setCanFinalSubmit(true);
+                        } else {
+                            tender.setCurrentStage("BID_DOC_PENDING");
+                        }
+                    }
                 }
                 default -> {}
             }
@@ -779,7 +1137,13 @@ public class WorkflowController {
         if (!"APPROVED".equals(action)) {
             switch (expectedStage) {
                 case "SPEC_CLEARANCE" -> tender.setSpecVerificationStatus("Rejected");
-                case "DOC_VERIFICATION" -> tender.setVerificationStatus("Rejected");
+                case "DOC_VERIFICATION" -> {
+                    tender.setVerificationStatus("Rejected");
+                    if (workflowSyncService != null) {
+                        workflowSyncService.rejectTrackBDocs(tender.getId(), authUsername, comment);
+                        tender = tenderRepository.findById(tender.getId()).orElse(tender);
+                    }
+                }
                 case "PAYMENT_APPROVAL" -> tender.setPaymentStatus("Rejected");
                 case "SUBMISSION_PENDING" -> tender.setSubmissionStatus("Rejected");
                 default -> { }

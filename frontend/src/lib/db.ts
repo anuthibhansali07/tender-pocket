@@ -216,7 +216,12 @@ const newColumns = [
   { name: 'assigned_mis_member_spec', type: 'TEXT' },
   { name: 'tpc_purchase_price', type: 'REAL' },
   { name: 'mis_final_price', type: 'REAL' },
-  { name: 'current_stage', type: 'TEXT' }
+  { name: 'current_stage', type: 'TEXT' },
+  { name: 'emd_beneficiary_name', type: 'TEXT' },
+  { name: 'emd_applicable', type: "INTEGER DEFAULT 1" },
+  { name: 'emd_receipt_doc_path', type: 'TEXT' },
+  { name: 'emd_receipt_confidential', type: "INTEGER DEFAULT 1" },
+  { name: 'pricing_route', type: 'TEXT' }
 ];
 
 for (const col of newColumns) {
@@ -350,9 +355,10 @@ export interface Tender {
   emd_payment_ref?: string | null;
   emd_payment_date?: string | null;
   loss_reason?: string | null;
-  payment_status?: 'None' | 'Pending' | 'Approved' | 'Rejected';
+  payment_status?: 'None' | 'Pending' | 'Approved' | 'Rejected' | 'Exempt';
+  emd_status?: string | null;
   verification_status?: 'None' | 'Pending' | 'Approved' | 'Rejected';
-  submission_status?: 'None' | 'Pending' | 'Approved';
+  submission_status?: 'None' | 'Pending' | 'Approved' | 'Rejected';
   outcome_status?: 'None' | 'Pending' | 'Won' | 'Lost';
   spec_verification_status?: 'None' | 'Pending' | 'Approved' | 'Rejected' | 'Generated';
   has_tech_spec?: boolean;
@@ -360,6 +366,20 @@ export interface Tender {
   tpc_purchase_price?: number | null;
   mis_final_price?: number | null;
   current_stage?: string | null;
+  final_tech_spec_filename?: string | null;
+  final_tech_spec_uploaded_by?: string | null;
+  final_tech_spec_uploaded_at?: string | null;
+  spec_compliance_type?: string | null;
+  emd_applicable?: boolean;
+  emd_beneficiary_name?: string | null;
+  emd_receipt_doc_path?: string | null;
+  emd_receipt_confidential?: boolean;
+  pricing_status?: string | null;
+  pricing_route?: string | null;
+  track_a_pricing_status?: string | null;
+  pricing_go_ahead_by?: string | null;
+  pricing_go_ahead_at?: string | null;
+  can_final_submit?: boolean;
 }
 
 export interface ProcessedEmail {

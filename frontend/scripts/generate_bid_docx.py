@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 generate_bid_docx.py
-High-fidelity Microsoft Word (.docx) generator for Bid Documents & Technical Specification Sheets.
+High-fidelity Microsoft Word (.docx) generator for Bid Documents.
 Supports both Portrait and Landscape orientations for Mark Enterprises and Marken Healthtech.
 Uses authentic letterhead templates (ME_Portrait / Healthtech_Portrait / ME_Landscape / Healthtech_Landscape)
 to preserve exact native headers, footers, watermarks, drawingML shapes, and margins without OpenXML corruption.

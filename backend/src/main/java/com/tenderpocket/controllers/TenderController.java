@@ -101,8 +101,34 @@ public class TenderController {
                 id.contains("/") || id.contains("\\") || fileName.contains("/") || fileName.contains("\\")) {
             return null;
         }
+
+        // 1. Check primary upload directory
         Path basePath = Paths.get(uploadDir).toAbsolutePath().normalize();
         Path targetPath = basePath.resolve(id).resolve(fileName).normalize();
+        if (targetPath.startsWith(basePath) && Files.exists(targetPath)) {
+            return targetPath;
+        }
+
+        // 2. Check candidate fallback directories (backend/public/documents, ../public/documents, public/documents)
+        String[] candidateDirs = new String[] {
+            uploadDir,
+            "backend/" + uploadDir,
+            "../backend/" + uploadDir,
+            "../" + uploadDir,
+            "public/documents",
+            "../frontend/public/documents",
+            "frontend/public/documents"
+        };
+        for (String cDir : candidateDirs) {
+            try {
+                Path cBase = Paths.get(cDir).toAbsolutePath().normalize();
+                Path cTarget = cBase.resolve(id).resolve(fileName).normalize();
+                if (cTarget.startsWith(cBase) && Files.exists(cTarget)) {
+                    return cTarget;
+                }
+            } catch (Exception ignored) {}
+        }
+
         if (!targetPath.startsWith(basePath)) {
             return null;
         }
@@ -122,12 +148,33 @@ public class TenderController {
             try {
                 Path filePath = resolveSafeLocalPath(tenderId, fileName);
                 if (filePath == null) {
-                    throw new IllegalArgumentException("Invalid path or traversal attempt: " + tenderId + "/" + fileName);
+                    Path basePath = Paths.get(uploadDir).toAbsolutePath().normalize();
+                    filePath = basePath.resolve(tenderId).resolve(fileName).normalize();
                 }
                 if (filePath.getParent() != null) {
                     Files.createDirectories(filePath.getParent());
                 }
                 Files.write(filePath, data);
+
+                // Mirror to common directories so both backend and frontend can access directly
+                String[] mirrorDirs = new String[] {
+                    "public/documents",
+                    "../backend/public/documents",
+                    "../public/documents",
+                    "../frontend/public/documents"
+                };
+                for (String mDir : mirrorDirs) {
+                    try {
+                        Path mBase = Paths.get(mDir).toAbsolutePath().normalize();
+                        if (Files.exists(mBase)) {
+                            Path mTarget = mBase.resolve(tenderId).resolve(fileName).normalize();
+                            if (mTarget.startsWith(mBase) && !mTarget.equals(filePath)) {
+                                if (mTarget.getParent() != null) Files.createDirectories(mTarget.getParent());
+                                Files.write(mTarget, data);
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
             } catch (Exception e) {
                 throw new RuntimeException("Failed to save document to local storage (" + fileName + "): " + e.getMessage(), e);
             }
@@ -248,12 +295,23 @@ public class TenderController {
             @RequestParam(value = "minCost", required = false) Double minCost,
             @RequestParam(value = "maxCost", required = false) Double maxCost,
             @RequestParam(value = "sortBy", required = false, defaultValue = "scraped_at") String sortBy,
-            @RequestParam(value = "order", required = false, defaultValue = "desc") String order) {
+            @RequestParam(value = "order", required = false, defaultValue = "desc") String order,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "limit", required = false) Integer limit) {
 
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
         username = resolveUsername(username);
-        List<Tender> list = tenderRepository.findAll();
+
+        // Scope database query by executive when applicable to prevent full-table heap allocation
+        List<Tender> list;
+        if ("MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole)) {
+            list = tenderRepository.findByMisExecutive(username);
+        } else if (misExecutive != null && !misExecutive.isBlank()) {
+            list = tenderRepository.findByMisExecutive(misExecutive);
+        } else {
+            list = tenderRepository.findAll();
+        }
         List<Tender> filtered = new ArrayList<>();
 
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
@@ -275,7 +333,8 @@ public class TenderController {
             if (isTpcRole) {
                 boolean match = "TPC_PRICING".equalsIgnoreCase(t.getCurrentStage())
                         || "REJECTED_TPC".equalsIgnoreCase(t.getCurrentStage())
-                        || (t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0);
+                        || (t.getTpcPurchasePrice() != null && t.getTpcPurchasePrice() > 0)
+                        || ("Approved".equalsIgnoreCase(t.getSpecVerificationStatus()) && (t.getMisFinalPrice() == null || t.getMisFinalPrice() == 0));
                 if (!match) continue;
             }
             if (misExecutive != null && !misExecutive.isEmpty() && !misExecutive.equalsIgnoreCase(t.getMisExecutive())) {
@@ -301,8 +360,9 @@ public class TenderController {
             if (status != null && !status.isEmpty()) {
                 if (isTpcRole) {
                     if ("Pending".equalsIgnoreCase(status)) {
-                        boolean isPending = "TPC_PRICING".equalsIgnoreCase(t.getCurrentStage())
+                        boolean isPending = ("TPC_PRICING".equalsIgnoreCase(t.getCurrentStage()) || "Approved".equalsIgnoreCase(t.getSpecVerificationStatus()))
                                 && (t.getTpcPurchasePrice() == null || t.getTpcPurchasePrice() == 0)
+                                && (t.getMisFinalPrice() == null || t.getMisFinalPrice() == 0)
                                 && !"Rejected".equalsIgnoreCase(t.getStatus());
                         if (!isPending) continue;
                     } else if ("Approved".equalsIgnoreCase(status)) {
@@ -366,8 +426,8 @@ public class TenderController {
                 continue;
             }
 
-            // Create safe response copy to prevent mutating managed JPA entity
-            Tender responseItem = createResponseCopy(t);
+            // Create safe response copy to prevent mutating managed JPA entity and strip heavy payload fields
+            Tender responseItem = createSummaryResponseCopy(t);
 
             // Apply pricing confidentiality
             if (!canViewTpcPrice) {
@@ -413,11 +473,53 @@ public class TenderController {
                 ? tenderRepository.findUniqueSectorsBySpecMember(username)
                 : tenderRepository.findUniqueSectors();
 
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "tenders", filtered,
-                "filters", Map.of("locations", locations, "sectors", sectors)
-        ));
+        int totalElements = filtered.size();
+        int totalPages = (limit != null && limit > 0) ? (int) Math.ceil((double) totalElements / limit) : 1;
+        int currentPage = (page != null && page >= 0) ? page : 0;
+
+        List<Tender> resultList = filtered;
+        if (limit != null && limit > 0) {
+            int fromIndex = Math.min(currentPage * limit, totalElements);
+            int toIndex = Math.min(fromIndex + limit, totalElements);
+            resultList = filtered.subList(fromIndex, toIndex);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("tenders", resultList);
+        response.put("totalElements", totalElements);
+        response.put("totalPages", totalPages);
+        response.put("currentPage", currentPage);
+        response.put("filters", Map.of("locations", locations, "sectors", sectors));
+
+        return ResponseEntity.ok(response);
+    }
+
+    public ResponseEntity<?> getTenders(
+            String userRole,
+            String username,
+            String search,
+            String status,
+            String location,
+            String sector,
+            String misExecutive,
+            Double minCost,
+            Double maxCost,
+            String sortBy,
+            String order) {
+        return getTenders(userRole, username, search, status, location, sector, misExecutive, minCost, maxCost, sortBy, order, null, null);
+    }
+
+    private Tender createSummaryResponseCopy(Tender source) {
+        if (source == null) return null;
+        Tender copy = new Tender();
+        org.springframework.beans.BeanUtils.copyProperties(source, copy);
+        // Exclude heavy text and blob fields from list responses to reduce payload size by ~90%
+        copy.setAiDetailsSummary(null);
+        copy.setAiHistorySummary(null);
+        copy.setDownloadedDocs(null);
+        copy.setLossReason(null);
+        return copy;
     }
 
     private Tender createResponseCopy(Tender source) {
@@ -627,6 +729,36 @@ public class TenderController {
         }
     }
 
+
+    private boolean isAuthorizedForEmdReceipt(String userRole, String username, Tender tender) {
+        if (tender == null) return false;
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
+        if ("Admin".equalsIgnoreCase(userRole)) return true;
+
+        String u = username != null ? username.trim().toLowerCase() : "";
+
+        // That particular executive:
+        String execUser = tender.getMisExecutive() != null ? tender.getMisExecutive().trim().toLowerCase() : "";
+        if (execUser.isEmpty() && tender.getAssignedMisExecutive() != null) {
+            execUser = tender.getAssignedMisExecutive().trim().toLowerCase();
+        }
+        if ("Tender Executive".equalsIgnoreCase(userRole) && (u.equals(execUser) || execUser.isEmpty())) {
+            return true;
+        }
+
+        // His MIS team:
+        String misUser = tender.getAssignedMisMemberEmd() != null && !tender.getAssignedMisMemberEmd().isBlank()
+                ? tender.getAssignedMisMemberEmd().trim().toLowerCase()
+                : (tender.getAssignedMisMember() != null ? tender.getAssignedMisMember().trim().toLowerCase() : "");
+        if (("MIS Team".equalsIgnoreCase(userRole) || "MIS Executive".equalsIgnoreCase(userRole)) &&
+                (u.equals(misUser) || misUser.isEmpty() || "misteam".equals(misUser) || "mis team".equals(misUser))) {
+            return true;
+        }
+
+        return false;
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getTenderById(
             @PathVariable("id") String id,
@@ -660,7 +792,8 @@ public class TenderController {
         } else if ("TPC Pricing Team".equalsIgnoreCase(userRole) || "TPC Team".equalsIgnoreCase(userRole)) {
             boolean match = "TPC_PRICING".equalsIgnoreCase(dbTender.getCurrentStage())
                     || "REJECTED_TPC".equalsIgnoreCase(dbTender.getCurrentStage())
-                    || (dbTender.getTpcPurchasePrice() != null && dbTender.getTpcPurchasePrice() > 0);
+                    || (dbTender.getTpcPurchasePrice() != null && dbTender.getTpcPurchasePrice() > 0)
+                    || ("Approved".equalsIgnoreCase(dbTender.getSpecVerificationStatus()) && (dbTender.getMisFinalPrice() == null || dbTender.getMisFinalPrice() == 0));
             if (!match) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("success", false, "error", "Access denied: Tender not available for TPC pricing"));
             }
@@ -676,6 +809,11 @@ public class TenderController {
             tender.setTpcPurchasePrice(null);
             tender.setAiDetailsSummary(null);
             tender.setAiHistorySummary(null);
+        }
+
+        // EMD Receipt Confidentiality: Visible strictly to Admin, that particular executive, and his MIS team
+        if (tender.getEmdReceiptDocPath() != null && !isAuthorizedForEmdReceipt(userRole, username, dbTender)) {
+            tender.setEmdReceiptDocPath(null);
         }
 
         // Generate Standard Summaries
@@ -1176,13 +1314,26 @@ public class TenderController {
         }
 
         if (body.containsKey("working_path") || body.containsKey("workingPath")) {
-            String val = (String) (body.containsKey("working_path") ? body.get("working_path") : body.get("workingPath"));
+            Object rawPath = body.containsKey("working_path") ? body.get("working_path") : body.get("workingPath");
+            String val = rawPath != null ? rawPath.toString() : null;
             tender.setWorkingPath(val);
             logDetails.add("working path updated to '" + val + "'");
         }
 
         if (body.containsKey("downloaded_docs") || body.containsKey("downloadedDocs")) {
-            String val = (String) (body.containsKey("downloaded_docs") ? body.get("downloaded_docs") : body.get("downloadedDocs"));
+            Object rawDocs = body.containsKey("downloaded_docs") ? body.get("downloaded_docs") : body.get("downloadedDocs");
+            String val;
+            if (rawDocs instanceof String) {
+                val = (String) rawDocs;
+            } else if (rawDocs != null) {
+                try {
+                    val = new ObjectMapper().writeValueAsString(rawDocs);
+                } catch (Exception e) {
+                    val = rawDocs.toString();
+                }
+            } else {
+                val = null;
+            }
             tender.setDownloadedDocs(val);
             logDetails.add("downloaded docs updated");
         }
@@ -1255,6 +1406,23 @@ public class TenderController {
             String val = (String) (body.containsKey("emd_payment_date") ? body.get("emd_payment_date") : body.get("emdPaymentDate"));
             tender.setEmdPaymentDate(val);
             logDetails.add("EMD payment date updated to '" + val + "'");
+        }
+
+        if (body.containsKey("emd_beneficiary_name") || body.containsKey("emdBeneficiaryName")) {
+            String val = (String) (body.containsKey("emd_beneficiary_name") ? body.get("emd_beneficiary_name") : body.get("emdBeneficiaryName"));
+            tender.setEmdBeneficiaryName(val);
+            logDetails.add("EMD beneficiary name updated to '" + val + "'");
+        }
+
+        if (body.containsKey("emd_receipt_doc_path") || body.containsKey("emdReceiptDocPath")) {
+            String val = (String) (body.containsKey("emd_receipt_doc_path") ? body.get("emd_receipt_doc_path") : body.get("emdReceiptDocPath"));
+            tender.setEmdReceiptDocPath(val != null && !val.isBlank() ? val.trim() : null);
+            logDetails.add("EMD receipt document path updated");
+        }
+
+        if (body.containsKey("emd_receipt_confidential") || body.containsKey("emdReceiptConfidential")) {
+            Object rawVal = body.containsKey("emd_receipt_confidential") ? body.get("emd_receipt_confidential") : body.get("emdReceiptConfidential");
+            tender.setEmdReceiptConfidential(rawVal == null || Boolean.parseBoolean(rawVal.toString()));
         }
 
         if (body.containsKey("loss_reason") || body.containsKey("lossReason")) {
@@ -1331,22 +1499,46 @@ public class TenderController {
             tender.setSpecVerificationStatus(val);
             logDetails.add("spec verification status updated to '" + val + "'");
 
+            if ("Rejected".equalsIgnoreCase(val)) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Clearance team cannot reject technical specifications. Only 'All Comply' or 'Deviations' are allowed."));
+            }
             if ("Approved".equalsIgnoreCase(val)) {
-                tender.setCurrentStage("TPC_PRICING");
-                logDetails.add("workflow stage auto-advanced to 'TPC_PRICING'");
+                tender.setCurrentStage("BID_DOCS_PREPARATION");
+                logDetails.add("specification cleared; returned to Tender Executive for the bid package");
+            }
+        }
+
+        if (body.containsKey("current_stage") || body.containsKey("currentStage")) {
+            String val = (String) (body.containsKey("current_stage") ? body.get("current_stage") : body.get("currentStage"));
+            if (val != null && !val.isBlank()) {
+                tender.setCurrentStage(val.trim());
+                logDetails.add("current stage updated to '" + val + "'");
+            }
+        }
+
+        if (body.containsKey("tpc_purchase_price") || body.containsKey("tpcPurchasePrice")) {
+            Object rawVal = body.containsKey("tpc_purchase_price") ? body.get("tpc_purchase_price") : body.get("tpcPurchasePrice");
+            if (rawVal != null) {
                 try {
-                    List<TenderApprovalRequest> existingTpc = approvalRepository.findByTenderIdAndStageOrderByCreatedAtDesc(tender.getId(), TenderWorkflowStage.TPC_PRICING);
-                    if (existingTpc.isEmpty()) {
-                        TenderApprovalRequest tpcReq = new TenderApprovalRequest(
-                                tender.getId(),
-                                TenderWorkflowStage.TPC_PRICING,
-                                username,
-                                "TPC Pricing Team",
-                                "PENDING"
-                        );
-                        approvalRepository.save(tpcReq);
+                    double p = Double.parseDouble(rawVal.toString().trim());
+                    if (Double.isFinite(p) && p > 0) {
+                        tender.setTpcPurchasePrice(p);
+                        logDetails.add("TPC purchase price updated to " + p);
                     }
-                } catch (Exception e) {}
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        if (body.containsKey("mis_final_price") || body.containsKey("misFinalPrice")) {
+            Object rawVal = body.containsKey("mis_final_price") ? body.get("mis_final_price") : body.get("misFinalPrice");
+            if (rawVal != null) {
+                try {
+                    double p = Double.parseDouble(rawVal.toString().trim());
+                    if (Double.isFinite(p) && p > 0) {
+                        tender.setMisFinalPrice(p);
+                        logDetails.add("MIS final price updated to " + p);
+                    }
+                } catch (NumberFormatException ignored) {}
             }
         }
 
@@ -1413,7 +1605,7 @@ public class TenderController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username,
             @PathVariable("id") String id) {
 
-        if (!WorkflowPermissions.role().equals("Admin") && !WorkflowPermissions.role().equals("MIS Team"))
+        if (!WorkflowPermissions.role().equals("MIS Team"))
             return WorkflowPermissions.denied();
         userRole = resolveUserRole(userRole);
         username = resolveUsername(username);
@@ -1468,10 +1660,9 @@ public class TenderController {
                     "error", "Technical Specification PDF must be provided/uploaded by the Tender Executive first before generating Bid Documents."
             ));
         }
-        if (!"Approved".equals(tender.getSpecVerificationStatus()) || tender.getMisFinalPrice() == null
-                || !Double.isFinite(tender.getMisFinalPrice()) || tender.getMisFinalPrice() <= 0) {
+        if (!"Approved".equals(tender.getSpecVerificationStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("success", false,
-                    "error", "Specification clearance and finalized MIS pricing are required before generating bid documents."));
+                    "error", "Specification clearance is required before the bid package. Commercial pricing happens after EMD."));
         }
 
         try {
@@ -1508,6 +1699,14 @@ public class TenderController {
                     Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", techDocFileName, "local_path", techDocDownloadUrl, "created_date", createdDate)
             );
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
+            boolean emdExempt = (tender.getEmd() != null && tender.getEmd() == 0.0)
+                    || Boolean.FALSE.equals(tender.getEmdApplicable())
+                    || "Exempt".equalsIgnoreCase(tender.getPaymentStatus())
+                    || "Approved".equalsIgnoreCase(tender.getPaymentStatus());
+            if (emdExempt && !"Approved".equalsIgnoreCase(tender.getPaymentStatus())) {
+                tender.setPaymentStatus("Exempt");
+            }
+            tender.setCurrentStage(emdExempt ? "DUAL_TRACK" : "EMD_PAYMENT");
             tenderRepository.save(tender);
 
             // Audit Log
@@ -1580,7 +1779,21 @@ public class TenderController {
 
     private boolean isBidDocsProvided(Tender tender) {
         if (tender == null) return false;
-        return tender.getWorkingPath() != null && !tender.getWorkingPath().trim().isEmpty();
+        if (tender.getWorkingPath() != null && !tender.getWorkingPath().trim().isEmpty()) return true;
+        String docs = tender.getDownloadedDocs();
+        if (docs != null) {
+            String lower = docs.toLowerCase(Locale.ROOT);
+            if (lower.contains("bid_documents_") || lower.contains("generated bid documents")) return true;
+        }
+        String id = tender.getId();
+        if (id == null || id.isBlank()) return false;
+        return generatedBidFileExists(id, "Bid_Documents_" + id + ".pdf")
+                || generatedBidFileExists(id, "Bid_Documents_" + id + ".docx");
+    }
+
+    private boolean generatedBidFileExists(String id, String fileName) {
+        Path path = resolveSafeLocalPath(id, fileName);
+        return path != null && Files.isRegularFile(path);
     }
 
     @GetMapping("/{id}/tech-spec-progress")
@@ -1640,6 +1853,12 @@ public class TenderController {
             tender = tenderRepository.save(tender);
         } else {
             tender = opt.get();
+            if ("Approved".equalsIgnoreCase(tender.getSpecVerificationStatus())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "success", false,
+                        "error", "Technical specifications are already cleared. New PDF, DOCX, and XLSX files can only replace them through Clearance Team comply-with-deviations."
+                ));
+            }
         }
 
         if (file.isEmpty()) {
@@ -2132,6 +2351,19 @@ public class TenderController {
             @PathVariable("fileName") String fileName) {
         if (!WorkflowPermissions.allowed(VIEW_TENDERS)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
+        // Enforce confidentiality on EMD payment receipt/proof
+        if (fileName != null && fileName.toLowerCase().contains("emd_receipt")) {
+            Optional<Tender> opt = tenderRepository.findById(id);
+            if (opt.isPresent()) {
+                String reqRole = WorkflowPermissions.role();
+                String reqUser = WorkflowPermissions.username();
+                if (!isAuthorizedForEmdReceipt(reqRole, reqUser, opt.get())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "error", "Confidential: Access to EMD payment receipt is restricted to the assigned Executive, his MIS Team, and Admin."));
+                }
+            }
+        }
+
         Path filePath = resolveSafeLocalPath(id, fileName);
         if (filePath == null) {
             return ResponseEntity.badRequest().build();
@@ -2208,4 +2440,59 @@ public class TenderController {
             }
         } catch (Exception ignored) {}
     }
+
+    @PostMapping(value = "/{id}/upload-emd-receipt", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadEmdReceipt(
+            @PathVariable("id") String id,
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Tender Executive") String userRole,
+            @RequestHeader(value = "x-user-username", required = false, defaultValue = "executive") String username,
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+
+        userRole = resolveUserRole(userRole);
+        username = resolveUsername(username);
+
+        Optional<Tender> opt = tenderRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("success", false, "error", "Tender not found"));
+        }
+        Tender tender = opt.get();
+
+        if ("Admin".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Admin has view-only access. EMD receipt upload must be performed by Tender Executive or MIS Team."));
+        }
+        if (!isAuthorizedForEmdReceipt(userRole, username, tender)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Only the assigned Executive or his MIS Team can upload EMD payment proof."));
+        }
+
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "No file provided"));
+        }
+
+        try {
+            String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "receipt.pdf";
+            String cleanOriginal = originalName.replaceAll("[^a-zA-Z0-9._-]", "_");
+            String fileName = "EMD_Receipt_" + id + "_" + cleanOriginal;
+            byte[] bytes = file.getBytes();
+
+            persistDocument(id, fileName, bytes, file.getContentType() != null ? file.getContentType() : "application/pdf");
+
+            String docPath = "/documents/" + id + "/" + fileName;
+            tender.setEmdReceiptDocPath(docPath);
+            tender.setEmdReceiptConfidential(true);
+            tenderRepository.save(tender);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "EMD payment receipt uploaded successfully (marked confidential).",
+                    "emd_receipt_doc_path", docPath,
+                    "emd_receipt_confidential", true
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to save EMD receipt: " + e.getMessage()));
+        }
+    }
+
 }

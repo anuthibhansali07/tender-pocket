@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -46,7 +46,8 @@ import {
   Tag,
   BookOpen,
   ClipboardCheck,
-  Shield
+  Shield,
+  Lock
 } from 'lucide-react';
 import {
   BarChart,
@@ -71,7 +72,7 @@ import StatusDashboard from '@/app/components/StatusDashboard';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import ProductCatalogue from '@/app/components/ProductCatalogue';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
-import { canPerform, canonicalRole, canReviewAssignment } from '@/lib/workflowAuthorization';
+import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 
@@ -135,6 +136,8 @@ export default function Dashboard() {
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [logPage, setLogPage] = useState(1);
   const [logLimit, setLogLimit] = useState(10);
+  const [repoPage, setRepoPage] = useState(1);
+  const [repoLimit, setRepoLimit] = useState(20);
   const [regUsername, setRegUsername] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -155,6 +158,9 @@ export default function Dashboard() {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (token) {
         headers.set('Authorization', `Bearer ${token}`);
+        if (typeof document !== 'undefined') {
+          document.cookie = `token=${encodeURIComponent(token)}; path=/; SameSite=Lax`;
+        }
       }
     }
     const response = await fetch(url, { cache: 'no-store', ...options, headers });
@@ -166,6 +172,9 @@ export default function Dashboard() {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('currentUser');
           localStorage.removeItem('token');
+          if (typeof document !== 'undefined') {
+            document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+          }
         }
         setCurrentUser(null);
         setLoginError('Your session has expired. Please sign in again.');
@@ -174,6 +183,14 @@ export default function Dashboard() {
 
     return response;
   }, [currentUser]);
+
+  const getDocDownloadUrl = useCallback((pathOrUrl: string) => {
+    if (!pathOrUrl) return '';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return pathOrUrl;
+    const separator = pathOrUrl.includes('?') ? '&' : '?';
+    return `${pathOrUrl}${separator}token=${encodeURIComponent(token)}`;
+  }, []);
   
   // Data States
   const [tenders, setTenders] = useState<Tender[]>([]);
@@ -181,6 +198,7 @@ export default function Dashboard() {
   const [filters, setFilters] = useState({ locations: [] as string[], sectors: [] as string[] });
   const [analytics, setAnalytics] = useState<any>(null);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+
 
   
   // Loading States
@@ -205,7 +223,7 @@ export default function Dashboard() {
   const [statusTabActionRequiredOnly, setStatusTabActionRequiredOnly] = useState(false);
   const [statusTabSortBy, setStatusTabSortBy] = useState<'due_date' | 'scraped_at' | 'estimated_cost'>('due_date');
   const [statusTabSortOrder, setStatusTabSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [statusCategoryFilter, setStatusCategoryFilter] = useState<'ALL' | 'OVERVIEW' | 'PIPELINE' | 'ACTION_REQUIRED'>('ALL');
+  const [statusCategoryFilter, setStatusCategoryFilter] = useState<'ALL' | 'PIPELINE' | 'OUTCOMES' | 'ACTION_REQUIRED' | 'OVERVIEW'>('ALL');
   const [statusExecutiveFilter, setStatusExecutiveFilter] = useState('');
 
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
@@ -263,19 +281,28 @@ export default function Dashboard() {
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
   // The horizontal sections in the tender are only visible if previous required changes are completed.
   const isStage1Complete = Boolean(selectedTender && selectedTender.spec_verification_status === 'Approved');
-  const isStage2Complete = (isStage1Complete && Boolean(selectedTender && selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0)) || isOutcomeState;
-  const isStage3Complete = (isStage2Complete && areDocsGenerated) || isOutcomeState;
-  const isStage4Complete = (isStage3Complete && Boolean(selectedTender && selectedTender.verification_status === 'Approved')) || isOutcomeState;
-  const isStage5Complete = (isStage4Complete && Boolean(selectedTender && selectedTender.payment_status === 'Approved')) || isOutcomeState;
-  const isStage6Complete = (isStage5Complete && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
+  const emdSettledForDrawer = Boolean(selectedTender && (
+    selectedTender.emd_applicable === false ||
+    (selectedTender.emd != null && Number(selectedTender.emd) === 0) ||
+    selectedTender.payment_status === 'Exempt' ||
+    selectedTender.payment_status === 'Approved' ||
+    selectedTender.emd_status === 'EXEMPT_SKIPPED'
+  ));
+  const isStage3Complete = (isStage1Complete && areDocsGenerated) || isOutcomeState; // bid package after clearance
+  const isStage5Complete = (isStage3Complete && emdSettledForDrawer) || isOutcomeState; // EMD after bid package
+  const pricingDone = Boolean(selectedTender && selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0);
+  const docsVerified = Boolean(selectedTender && selectedTender.verification_status === 'Approved');
+  const isStage2Complete = (isStage5Complete && pricingDone) || isOutcomeState; // Track A after EMD
+  const isStage4Complete = (isStage5Complete && docsVerified) || isOutcomeState; // Track B after EMD
+  const isStage6Complete = ((isStage2Complete && isStage4Complete) && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
 
   const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
-  const isStage1Visible = true; // Stage 1 is always visible
-  const isStage2Visible = isOperationalRole && (isStage1Complete || isOutcomeState);
-  const isStage3Visible = isOperationalRole && (isStage2Complete || isOutcomeState);
-  const isStage4Visible = isOperationalRole && (isStage3Complete || isOutcomeState);
-  const isStage5Visible = isOperationalRole && (isStage4Complete || isOutcomeState);
-  const isStage6Visible = isOperationalRole && (isStage5Complete || isOutcomeState);
+  const isStage1Visible = true; // Step 2 spec clearance
+  const isStage3Visible = isOperationalRole && (isStage1Complete || isOutcomeState); // Step 3 bid package after clearance
+  const isStage5Visible = isOperationalRole && (isStage3Complete || isOutcomeState); // Step 4 EMD after the bid package
+  const isStage2Visible = isOperationalRole && (isStage5Complete || isOutcomeState); // Track A pricing after EMD
+  const isStage4Visible = isOperationalRole && (isStage5Complete || isOutcomeState); // Track B folder audit after EMD
+  const isStage6Visible = isOperationalRole && ((isStage2Complete && isStage4Complete) || isOutcomeState); // Step 6 after both tracks
   const isStage7Visible = isOperationalRole && (isStage6Complete || isOutcomeState);
 
   const [tenderNotes, setTenderNotes] = useState('');
@@ -312,6 +339,11 @@ export default function Dashboard() {
   const [submittingMisPrice, setSubmittingMisPrice] = useState(false);
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
+  const [clearanceComplianceType, setClearanceComplianceType] = useState<'ALL COMPLY' | 'COMPLY WITH DEVIATIONS'>('ALL COMPLY');
+  const [clearancePdfFile, setClearancePdfFile] = useState<File | null>(null);
+  const [clearanceDocxFile, setClearanceDocxFile] = useState<File | null>(null);
+  const [clearanceXlsxFile, setClearanceXlsxFile] = useState<File | null>(null);
+  const [showDeviationUpload, setShowDeviationUpload] = useState(false);
 
   useEffect(() => {
     if (selectedTender) {
@@ -489,8 +521,8 @@ export default function Dashboard() {
           return { 
             ...prev, 
             downloaded_docs: JSON.stringify(currentDocs),
-            current_stage: 'DOC_VERIFICATION',
-            verification_status: 'Pending'
+            current_stage: data.currentStage || 'EMD_PAYMENT',
+            payment_status: data.paymentStatus || prev.payment_status
           };
         });
       } else {
@@ -524,6 +556,9 @@ export default function Dashboard() {
     if (storedUser && storedToken) {
       try {
         setCurrentUser(JSON.parse(storedUser));
+        if (typeof document !== 'undefined') {
+          document.cookie = `token=${encodeURIComponent(storedToken)}; path=/; SameSite=Lax`;
+        }
       } catch (e) {
         console.error('Failed to parse currentUser from localStorage:', e);
         localStorage.removeItem('currentUser');
@@ -559,6 +594,11 @@ export default function Dashboard() {
     }
   }, [activeTab, mounted]);
 
+  // Reset Tender Repository pagination on filter changes
+  useEffect(() => {
+    setRepoPage(1);
+  }, [statusFilter, searchQuery, locationFilter, sectorFilter, corrigendumFilter, misExecutiveFilter]);
+
   useEffect(() => {
     if (mounted && currentUser) {
       fetchData();
@@ -579,7 +619,10 @@ export default function Dashboard() {
       fetchUsers();
       fetchAssignedTenders();
     }
-  }, [activeTab, currentUser]);
+    if (activeTab === 'analytics' && execStats.length === 0) {
+      fetchExecStats();
+    }
+  }, [activeTab, currentUser, execStats.length]);
 
   // Handle direct /tenders/[id] routing once on initial page load
   useEffect(() => {
@@ -654,7 +697,8 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      await Promise.all([fetchTenders(), fetchAnalytics(), fetchAssignedTenders(), fetchExecStats(), fetchMisTeam()]);
+      // Eagerly load primary dashboard data; secondary tab data (stats/assignments) is lazy-loaded or derived
+      await Promise.all([fetchTenders(), fetchAnalytics(), fetchMisTeam()]);
     } catch (e) {
       showToast('Failed to retrieve dashboard data', 'error');
     } finally {
@@ -662,7 +706,7 @@ export default function Dashboard() {
     }
   };
 
-  const fetchTenders = async (overrides?: { status?: string; search?: string; location?: string; sector?: string; mis_executive?: string }) => {
+  const fetchTenders = async (overrides?: { status?: string; search?: string; location?: string; sector?: string; mis_executive?: string; limit?: number; page?: number }) => {
     try {
       const activeStatus = overrides?.status !== undefined ? overrides.status : statusFilter;
       const activeSearch = overrides?.search !== undefined ? overrides.search : searchQuery;
@@ -679,11 +723,20 @@ export default function Dashboard() {
         order: sortOrder,
         mis_executive: activeExec
       });
+
+      if (overrides?.limit != null) {
+        params.set('limit', String(overrides.limit));
+      }
+      if (overrides?.page != null) {
+        params.set('page', String(overrides.page));
+      }
+
       const response = await fetchWithAuth(`/api/tenders?${params.toString()}`);
       if (!response.ok) throw new Error('API Error');
       const data = await response.json();
       if (data.success && data.tenders) {
         setTenders(data.tenders);
+        setAllAssignedTenders(data.tenders.filter((t: any) => t.mis_executive));
         if (data.filters) setFilters(data.filters);
       }
     } catch (e) {
@@ -692,11 +745,15 @@ export default function Dashboard() {
   };
 
   const fetchAssignedTenders = async () => {
+    if (tenders.length > 0) {
+      setAllAssignedTenders(tenders.filter((t: any) => t.mis_executive));
+      return;
+    }
     try {
       const response = await fetchWithAuth('/api/tenders');
       if (response.ok) {
         const data = await response.json();
-        if (data.success) {
+        if (data.success && data.tenders) {
           setAllAssignedTenders(data.tenders.filter((t: any) => t.mis_executive));
         }
       }
@@ -1209,6 +1266,52 @@ export default function Dashboard() {
     }
   };
 
+  const [uploadingEmdReceipt, setUploadingEmdReceipt] = useState(false);
+  const emdFileInputRef = useRef<HTMLInputElement>(null);
+
+  const canViewConfidentialEmd = useMemo(() => {
+    return isAuthorizedForEmdReceipt(currentUser?.role, currentUser?.username, selectedTender);
+  }, [currentUser, selectedTender]);
+
+  const handleUploadEmdReceipt = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTender?.id) return;
+    try {
+      setUploadingEmdReceipt(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-emd-receipt`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success && data.emd_receipt_doc_path) {
+        showToast('EMD payment receipt attached successfully (marked confidential).', 'success');
+        setSelectedTender((prev: any) => prev ? {
+          ...prev,
+          emd_receipt_doc_path: data.emd_receipt_doc_path,
+          emd_receipt_confidential: true
+        } : prev);
+      } else {
+        showToast(data.error || 'Failed to upload EMD receipt.', 'error');
+      }
+    } catch (err: any) {
+      showToast('Error uploading EMD receipt: ' + err.message, 'error');
+    } finally {
+      setUploadingEmdReceipt(false);
+      if (emdFileInputRef.current) emdFileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveEmdReceipt = async () => {
+    if (!selectedTender?.id) return;
+    try {
+      await updateTenderField({ emd_receipt_doc_path: null });
+      setSelectedTender((prev: any) => prev ? { ...prev, emd_receipt_doc_path: null } : prev);
+      showToast('EMD receipt attachment removed.', 'success');
+    } catch (_) {}
+  };
+
   const isValidTechSpecFile = (file: File) => {
     const name = file.name.toLowerCase();
     return name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') ||
@@ -1328,6 +1431,7 @@ export default function Dashboard() {
     setSearchQuery('');
     setLocationFilter('');
     setSectorFilter('');
+    setCorrigendumFilter(false);
     setStatusFilter(status);
     setActiveTab('tenders');
     fetchTenders({ status, search: '', location: '', sector: '' });
@@ -1875,6 +1979,9 @@ export default function Dashboard() {
         localStorage.setItem('currentUser', JSON.stringify(data.user));
         if (data.token) {
           localStorage.setItem('token', data.token);
+          if (typeof document !== 'undefined') {
+            document.cookie = `token=${encodeURIComponent(data.token)}; path=/; SameSite=Lax`;
+          }
         }
         setCurrentUser(data.user);
         setUsernameInput('');
@@ -2036,7 +2143,12 @@ export default function Dashboard() {
   const specRejectedCount = analytics?.metrics?.specRejectedCount ?? tenders.filter((t: any) => t.spec_verification_status === 'Rejected').length;
 
   const tpcTotalCount = analytics?.metrics?.tpcTotalCount ?? tenders.length;
-  const tpcPendingCount = analytics?.metrics?.tpcPendingCount ?? tenders.filter((t: any) => t.current_stage === 'TPC_PRICING' && (!t.tpc_purchase_price || t.tpc_purchase_price === 0) && t.status !== 'Rejected').length;
+  const tpcPendingCount = analytics?.metrics?.tpcPendingCount ?? tenders.filter((t: any) => 
+    (t.current_stage === 'TPC_PRICING' || t.spec_verification_status === 'Approved') && 
+    (!t.tpc_purchase_price || t.tpc_purchase_price === 0) && 
+    (!t.mis_final_price || t.mis_final_price === 0) && 
+    t.status !== 'Rejected'
+  ).length;
   const tpcApprovedCount = analytics?.metrics?.tpcApprovedCount ?? tenders.filter((t: any) => t.tpc_purchase_price && t.tpc_purchase_price > 0).length;
   const tpcRejectedCount = analytics?.metrics?.tpcRejectedCount ?? tenders.filter((t: any) => t.status === 'Rejected' || t.current_stage === 'REJECTED_TPC').length;
 
@@ -2222,7 +2334,7 @@ export default function Dashboard() {
             </button>
           )}
 
-          {(['Admin', 'MIS Team', 'MIS Executive'].includes(currentUser.role)) && (
+          {(['Admin', 'MIS Team', 'Clearance Team', 'TPC Pricing Team'].includes(canonicalRole(currentUser.role) || currentUser.role)) && (
             <button
               className={`menu-item ${activeTab === 'approvals' ? 'active' : ''}`}
               onClick={() => setActiveTab('approvals')}
@@ -2407,9 +2519,9 @@ export default function Dashboard() {
                     fontSize: '12.5px'
                   }}
                 >
-                  <option value="ALL">All Cards (12)</option>
-                  <option value="OVERVIEW">Overview (4 Cards)</option>
-                  <option value="PIPELINE">8 Pipeline Stages</option>
+                  <option value="ALL">All Cards (11)</option>
+                  <option value="PIPELINE">Steps 1-6 Pipeline</option>
+                  <option value="OUTCOMES">Outcomes & Won/Lost</option>
                   <option value="ACTION_REQUIRED">Action Required Only</option>
                 </select>
               </>
@@ -3017,6 +3129,32 @@ export default function Dashboard() {
                     filteredList = filteredList.filter(t => {
                       const s = (t.status || '').toLowerCase().trim();
                       const f = statusFilter.toLowerCase().trim();
+
+                      // Role-specific definitions for TPC Pricing Team
+                      if (currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') {
+                        if (f === 'pending') {
+                          const isRoutedToTpc = (t.pricing_route === 'TPC' || (t.current_stage || '').toUpperCase() === 'TPC_PRICING' || (t.track_a_pricing_status || '').toUpperCase() === 'TPC_PENDING') && t.pricing_route !== 'MIS';
+                          return isRoutedToTpc &&
+                                 (!t.tpc_purchase_price || Number(t.tpc_purchase_price) === 0) &&
+                                 s !== 'rejected' && (t.current_stage || '') !== 'REJECTED_TPC';
+                        }
+                        if (f === 'approved') {
+                          return Boolean(t.tpc_purchase_price && Number(t.tpc_purchase_price) > 0);
+                        }
+                        if (f === 'rejected') {
+                          return s === 'rejected' || (t.current_stage || '') === 'REJECTED_TPC';
+                        }
+                      }
+
+                      // Role-specific definitions for Clearance Team
+                      if (currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team') {
+                        if (f === 'pending') {
+                          return (t.spec_verification_status || '').toLowerCase() === 'pending' || !t.spec_verification_status || (t.spec_verification_status || '').toLowerCase() === 'not started';
+                        }
+                        if (f === 'approved') return (t.spec_verification_status || '').toLowerCase() === 'approved';
+                        if (f === 'rejected') return (t.spec_verification_status || '').toLowerCase() === 'rejected';
+                      }
+
                       if (f === 'participating') return s === 'participating';
                       if (f === 'not participating') return s === 'not participating';
                       if (f === 'new') return s === 'new' || s === 'issued';
@@ -3031,6 +3169,9 @@ export default function Dashboard() {
                     });
                   }
                   const displayedTenders = filteredList;
+                  const repoTotalPages = Math.max(1, Math.ceil(displayedTenders.length / repoLimit));
+                  const safeRepoPage = Math.min(repoPage, repoTotalPages);
+                  const paginatedRepoTenders = displayedTenders.slice((safeRepoPage - 1) * repoLimit, safeRepoPage * repoLimit);
 
                   if (displayedTenders.length === 0) {
                     return (
@@ -3043,8 +3184,9 @@ export default function Dashboard() {
                   }
 
                   return (
-                    <div className="tender-list-container" style={{ maxHeight: '600px' }}>
-                      {displayedTenders.map(tender => (
+                    <>
+                      <div className="tender-list-container" style={{ maxHeight: '600px' }}>
+                        {paginatedRepoTenders.map(tender => (
                         <div key={tender.id} onClick={() => openTenderDetails(tender)} className="tender-item" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', cursor: 'pointer' }}>
                         <div className="tender-item-left">
                           <div className="tender-meta-row">
@@ -3067,11 +3209,14 @@ export default function Dashboard() {
                                 fontWeight: '700',
                                 padding: '3px 8px',
                                 borderRadius: '6px',
-                                backgroundColor: ((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'rgba(239, 68, 68, 0.15)' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                                color: ((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? '#ef4444' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? '#10b981' : '#f59e0b',
-                                border: '1px solid ' + (((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'rgba(239, 68, 68, 0.3)' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)')
+                                backgroundColor: ((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'rgba(239, 68, 68, 0.15)' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? 'rgba(16, 185, 129, 0.15)' : (tender.pricing_route === 'MIS' || tender.current_stage === 'MIS_PRICING') ? 'rgba(100, 116, 139, 0.15)' : (tender.pricing_route === 'TPC' || tender.current_stage === 'TPC_PRICING') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                color: ((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? '#ef4444' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? '#10b981' : (tender.pricing_route === 'MIS' || tender.current_stage === 'MIS_PRICING') ? '#94a3b8' : (tender.pricing_route === 'TPC' || tender.current_stage === 'TPC_PRICING') ? '#f59e0b' : 'var(--text-muted)',
+                                border: '1px solid ' + (((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'rgba(239, 68, 68, 0.3)' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? 'rgba(16, 185, 129, 0.3)' : (tender.pricing_route === 'MIS' || tender.current_stage === 'MIS_PRICING') ? 'rgba(100, 116, 139, 0.3)' : (tender.pricing_route === 'TPC' || tender.current_stage === 'TPC_PRICING') ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.1)')
                               }}>
-                                {((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'Rejected' : (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? `Quoted: ₹${Number(tender.tpc_purchase_price).toLocaleString('en-IN')}` : 'Pending'}
+                                {((tender.status as string) === 'Rejected' || tender.current_stage === 'REJECTED_TPC') ? 'Rejected' :
+                                 (tender.tpc_purchase_price && tender.tpc_purchase_price > 0) ? `Quoted: ₹${Number(tender.tpc_purchase_price).toLocaleString('en-IN')}` :
+                                 (tender.pricing_route === 'MIS' || tender.current_stage === 'MIS_PRICING') ? 'Direct MIS' :
+                                 (tender.pricing_route === 'TPC' || tender.current_stage === 'TPC_PRICING') ? 'Pending' : 'Not Routed'}
                               </span>
                             ) : (
                               <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
@@ -3148,10 +3293,95 @@ export default function Dashboard() {
                       </div>
                     ))}
                   </div>
-                );
-              })()}
-            </div>
-          )}
+
+                  {/* Tenders Repository Pagination Toolbar */}
+                  {displayedTenders.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                        padding: '14px 18px',
+                        borderRadius: '10px',
+                        backgroundColor: 'var(--bg-app)',
+                        border: '1px solid var(--border-color)',
+                        marginTop: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                          Showing <strong style={{ color: 'var(--text-primary)' }}>{Math.min((safeRepoPage - 1) * repoLimit + 1, displayedTenders.length)}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(safeRepoPage * repoLimit, displayedTenders.length)}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{displayedTenders.length}</strong> tenders
+                        </span>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Per page:</span>
+                          <select
+                            className="filter-select"
+                            value={repoLimit}
+                            onChange={(e) => {
+                              setRepoLimit(Number(e.target.value));
+                              setRepoPage(1);
+                            }}
+                            style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '6px' }}
+                          >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setRepoPage(1)}
+                          disabled={safeRepoPage === 1}
+                          style={{ padding: '6px 10px', fontSize: '12px', opacity: safeRepoPage === 1 ? 0.4 : 1 }}
+                          title="First Page"
+                        >
+                          &laquo;
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setRepoPage(p => Math.max(1, p - 1))}
+                          disabled={safeRepoPage === 1}
+                          style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', opacity: safeRepoPage === 1 ? 0.4 : 1 }}
+                        >
+                          <ChevronLeft size={14} /> Prev
+                        </button>
+
+                        <span style={{ fontSize: '13px', fontWeight: '600', padding: '0 8px', color: 'var(--text-primary)' }}>
+                          Page {safeRepoPage} of {repoTotalPages}
+                        </span>
+
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setRepoPage(p => Math.min(repoTotalPages, p + 1))}
+                          disabled={safeRepoPage >= repoTotalPages}
+                          style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', opacity: safeRepoPage >= repoTotalPages ? 0.4 : 1 }}
+                        >
+                          Next <ChevronRight size={14} />
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setRepoPage(repoTotalPages)}
+                          disabled={safeRepoPage >= repoTotalPages}
+                          style={{ padding: '6px 10px', fontSize: '12px', opacity: safeRepoPage >= repoTotalPages ? 0.4 : 1 }}
+                          title="Last Page"
+                        >
+                          &raquo;
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
 
             {/* TAB: VISUAL ANALYTICS */}
             {activeTab === 'analytics' && (
@@ -4328,7 +4558,7 @@ export default function Dashboard() {
             )}
 
             {/* TAB: APPROVALS CENTER */}
-            {activeTab === 'approvals' && (['Admin', 'MIS Team', 'MIS Executive'].includes(currentUser?.role ?? '')) && (
+            {activeTab === 'approvals' && (['Admin', 'MIS Team', 'Clearance Team', 'TPC Pricing Team'].includes(canonicalRole(currentUser?.role) || currentUser?.role || '')) && (
               <ApprovalsCenter
                 currentUser={currentUser}
                 fetchWithAuth={fetchWithAuth}
@@ -5579,7 +5809,7 @@ export default function Dashboard() {
                     <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                     Document Repository & Bid Generator
                   </h3>
-                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && (
                     <button 
                       className="btn btn-primary" 
                       style={{ padding: '6px 14px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -5602,6 +5832,18 @@ export default function Dashboard() {
                   }
                   
                   if (!Array.isArray(docList)) docList = [];
+
+                  if (selectedTender.final_tech_spec_filename) {
+                    const finalName = selectedTender.final_tech_spec_filename.toLowerCase();
+                    const finalStem = finalName.replace(/\.[^/.]+$/, '');
+                    docList = docList.filter((d: any) => {
+                      const fname = (d.filename || '').toLowerCase();
+                      const dname = (d.name || '').toLowerCase();
+                      const isSpec = fname.includes('spec') || dname.includes('spec') || fname.includes('combined_technical_data_sheet') || dname.includes('technical specification');
+                      if (!isSpec) return true;
+                      return fname.startsWith(finalStem) || fname === finalName || dname.includes('final') || (fname.includes('combined_technical_data_sheet') && (fname.endsWith('.pdf') || fname.endsWith('.docx') || fname.endsWith('.xlsx')));
+                    });
+                  }
 
                   const origUrl = selectedTender.document_url || selectedTender.documentUrl || selectedTender.original_url || selectedTender.originalUrl;
                   if (origUrl) {
@@ -5661,7 +5903,7 @@ export default function Dashboard() {
                             </div>
                             {(doc.local_path || doc.url) && (
                               <a 
-                                href={doc.local_path || doc.url} 
+                                href={getDocDownloadUrl(doc.local_path || doc.url)} 
                                 download={doc.filename}
                                 target="_blank"
                                 rel="noreferrer"
@@ -6065,6 +6307,35 @@ export default function Dashboard() {
                             <span>✅ Technical Specification document has been created and attached.</span>
                           </div>
 
+                          {/* Download Buttons for Executive Technical Specifications */}
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf`)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', textDecoration: 'none', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+                            >
+                              <FileText size={12} /> Spec PDF
+                            </a>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.docx`)}
+                              download={`Combined_Technical_Data_Sheet_${selectedTender.id}.docx`}
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', textDecoration: 'none', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#3b82f6' }}
+                            >
+                              <Download size={12} /> Spec DOCX
+                            </a>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.xlsx`)}
+                              download={`Combined_Technical_Data_Sheet_${selectedTender.id}.xlsx`}
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', textDecoration: 'none', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981' }}
+                            >
+                              <Download size={12} /> Spec XLSX
+                            </a>
+                          </div>
+
                           {selectedTender.spec_verification_status !== 'Pending' ? (
                             <>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -6139,42 +6410,178 @@ export default function Dashboard() {
                   )}
 
                   {/* Clearance Team Action Controls */}
-                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team') && selectedTender.spec_verification_status === 'Pending' && (
+                  {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
                     canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_spec) ? (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
-                        <button 
-                          className="btn btn-primary" 
-                          style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center', opacity: submittingApproveClearance ? 0.7 : 1 }}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(147, 51, 234, 0.25)' }}>
+                        
+                        {/* 1. VIEW GENERATED SPECS */}
+                        <div style={{ padding: '10px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '6px' }}>
+                            📄 Generated Technical Specifications (AI / Executive Output):
+                          </span>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf`)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-secondary"
+                              style={{ fontSize: '10.5px', padding: '4px 10px', textDecoration: 'none' }}
+                            >
+                              PDF Spec
+                            </a>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.docx`)}
+                              className="btn btn-secondary"
+                              style={{ fontSize: '10.5px', padding: '4px 10px', textDecoration: 'none' }}
+                            >
+                              Word DOCX
+                            </a>
+                            <a
+                              href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.xlsx`)}
+                              className="btn btn-secondary"
+                              style={{ fontSize: '10.5px', padding: '4px 10px', textDecoration: 'none' }}
+                            >
+                              Excel XLSX
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* 2. THREE OPTIONAL UPLOAD FIELDS (PDF, WORD, EXCEL) */}
+                        <div style={{ padding: '10px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                            Upload Clearance Documents (Optional — Superior Specification Files):
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                            None required. Uploaded files are superior and replace previous AI-generated docs.
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                            <div>
+                              <label style={{ fontSize: '10.5px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>
+                                PDF (.pdf)
+                              </label>
+                              <input
+                                type="file"
+                                accept=".pdf"
+                                onChange={e => setClearancePdfFile(e.target.files?.[0] || null)}
+                                style={{ fontSize: '10px', width: '100%' }}
+                              />
+                              {clearancePdfFile && <div style={{ fontSize: '9.5px', color: '#10b981', marginTop: '2px' }}>✓ {clearancePdfFile.name}</div>}
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '10.5px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>
+                                Word (.docx / .doc)
+                              </label>
+                              <input
+                                type="file"
+                                accept=".docx,.doc"
+                                onChange={e => setClearanceDocxFile(e.target.files?.[0] || null)}
+                                style={{ fontSize: '10px', width: '100%' }}
+                              />
+                              {clearanceDocxFile && <div style={{ fontSize: '9.5px', color: '#10b981', marginTop: '2px' }}>✓ {clearanceDocxFile.name}</div>}
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: '10.5px', fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>
+                                Excel (.xlsx / .xls)
+                              </label>
+                              <input
+                                type="file"
+                                accept=".xlsx,.xls"
+                                onChange={e => setClearanceXlsxFile(e.target.files?.[0] || null)}
+                                style={{ fontSize: '10px', width: '100%' }}
+                              />
+                              {clearanceXlsxFile && <div style={{ fontSize: '9.5px', color: '#10b981', marginTop: '2px' }}>✓ {clearanceXlsxFile.name}</div>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. TWO CLEARANCE OPTIONS: ALL COMPLY & COMPLY WITH DEVIATIONS */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <label style={{
+                            flex: 1, display: 'flex', gap: '6px', alignItems: 'center', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer',
+                            border: clearanceComplianceType === 'ALL COMPLY' ? '2px solid #10b981' : '1px solid var(--border-color)',
+                            background: clearanceComplianceType === 'ALL COMPLY' ? 'rgba(16, 185, 129, 0.12)' : 'transparent'
+                          }}>
+                            <input
+                              type="radio"
+                              name="clearanceComplianceDrawer"
+                              checked={clearanceComplianceType === 'ALL COMPLY'}
+                              onChange={() => setClearanceComplianceType('ALL COMPLY')}
+                            />
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#10b981' }}>ALL COMPLY</span>
+                          </label>
+
+                          <label style={{
+                            flex: 1, display: 'flex', gap: '6px', alignItems: 'center', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer',
+                            border: clearanceComplianceType === 'COMPLY WITH DEVIATIONS' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
+                            background: clearanceComplianceType === 'COMPLY WITH DEVIATIONS' ? 'rgba(245, 158, 11, 0.12)' : 'transparent'
+                          }}>
+                            <input
+                              type="radio"
+                              name="clearanceComplianceDrawer"
+                              checked={clearanceComplianceType === 'COMPLY WITH DEVIATIONS'}
+                              onChange={() => setClearanceComplianceType('COMPLY WITH DEVIATIONS')}
+                            />
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b' }}>COMPLY WITH DEVIATIONS</span>
+                          </label>
+                        </div>
+
+                        {/* 4. BUTTON NAMED "GRANT CLEARANCE" */}
+                        <button
+                          className="btn btn-primary"
+                          style={{
+                            width: '100%',
+                            padding: '10px 16px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            justifyContent: 'center',
+                            background: clearanceComplianceType === 'COMPLY WITH DEVIATIONS' ? '#d97706' : '#10b981',
+                            borderColor: clearanceComplianceType === 'COMPLY WITH DEVIATIONS' ? '#d97706' : '#10b981',
+                            opacity: submittingApproveClearance ? 0.7 : 1
+                          }}
                           disabled={submittingApproveClearance}
                           onClick={async () => {
                             if (submittingApproveClearance) return;
                             setSubmittingApproveClearance(true);
                             try {
+                              const formData = new FormData();
+                              formData.append('complianceType', clearanceComplianceType);
+                              const hasUploadedFiles = Boolean(clearancePdfFile || clearanceDocxFile || clearanceXlsxFile);
+                              const defaultComment = clearanceComplianceType === 'ALL COMPLY'
+                                ? (hasUploadedFiles ? 'All Comply. Clearance superior specification documents uploaded.' : 'All Comply. Technical specification verified.')
+                                : (hasUploadedFiles ? 'Comply with deviations. Clearance superior specification documents uploaded.' : 'Comply with deviations accepted.');
+                              formData.append('comment', defaultComment);
+                              if (clearancePdfFile) formData.append('pdfFile', clearancePdfFile);
+                              if (clearanceDocxFile) formData.append('docxFile', clearanceDocxFile);
+                              if (clearanceXlsxFile) formData.append('xlsxFile', clearanceXlsxFile);
+
                               const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/approve-clearance`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ comment: 'Technical specification verified and approved.' })
+                                body: formData
                               });
                               const data = await res.json();
-                              if (data.notification) {
-                                alert(data.notification);
+                              if (!data.success) {
+                                showToast(data.error || 'Failed to approve clearance.', 'error');
+                                alert('Error: ' + (data.error || 'Failed to approve clearance.'));
+                                return;
                               }
+                              showToast(data.message || `Clearance granted (${clearanceComplianceType})!`, 'success');
+                              alert(`Clearance granted (${clearanceComplianceType})! Tender returned to Tender Executive to prepare the standard bid package.`);
+                              setClearancePdfFile(null);
+                              setClearanceDocxFile(null);
+                              setClearanceXlsxFile(null);
+                              fetchData();
                             } catch (e) {
-                              console.error('Failed to notify backend on spec clearance:', e);
+                              console.error('Failed to grant clearance:', e);
+                              showToast('Failed to grant clearance.', 'error');
                             } finally {
                               setSubmittingApproveClearance(false);
                             }
-                            await updateTenderField({ spec_verification_status: 'Approved' });
                           }}
                         >
-                          {submittingApproveClearance ? '⏳ Approving...' : '✅ Approve Tech Spec'}
-                        </button>
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '11px', justifyContent: 'center' }}
-                          onClick={() => updateTenderField({ spec_verification_status: 'Rejected' })}
-                        >
-                          ❌ Reject Tech Spec
+                          {submittingApproveClearance ? '⏳ Granting Clearance...' : 'GRANT CLEARANCE'}
                         </button>
                       </div>
                     ) : (
@@ -6183,6 +6590,121 @@ export default function Dashboard() {
                         <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_spec || 'Clearance Team'}</strong></span>
                       </div>
                     )
+                  )}
+
+                  {/* 5. POST-CLEARANCE EXECUTIVE VIEW IN DRAWER */}
+                  {selectedTender.spec_verification_status === 'Approved' && (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                      marginTop: '12px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      background: selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.06)' : 'rgba(16, 185, 129, 0.06)',
+                      border: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          <CheckCircle2 size={16} style={{ color: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '#f59e0b' : '#10b981' }} />
+                          Specification Clearance Granted
+                        </div>
+                        <span style={{
+                          fontSize: '10.5px',
+                          fontWeight: '800',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          backgroundColor: selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                          color: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '#f59e0b' : '#10b981',
+                          border: `1px solid ${selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`
+                        }}>
+                          {selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'COMPLY WITH DEVIATIONS' : 'ALL COMPLY'}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {selectedTender.spec_compliance_type?.includes('DEVIAT')
+                          ? 'Clearance Team approved with deviations. Superior specification documents replaced AI specs.'
+                          : 'Clearance Team approved with All Comply. Specifications fully verified.'}
+                      </div>
+
+                      {/* Superior Cleared Spec Documents - Only files carried forward are displayed */}
+                      {(() => {
+                        let docList: any[] = [];
+                        const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                        if (rawDocs) {
+                          try {
+                            docList = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
+                          } catch {
+                            docList = [];
+                          }
+                        }
+                        if (!Array.isArray(docList)) docList = [];
+
+                        const clearanceDocs = docList.filter((d: any) => d && (
+                          d.superior === true || 
+                          (d.name && d.name.toLowerCase().includes('clearance superior'))
+                        ));
+
+                        let finalDocs: any[] = [];
+                        let isSuperior = false;
+
+                        if (clearanceDocs.length > 0) {
+                          finalDocs = clearanceDocs;
+                          isSuperior = true;
+                        } else if (selectedTender.final_tech_spec_uploaded_by && selectedTender.final_tech_spec_filename) {
+                          const fn = selectedTender.final_tech_spec_filename;
+                          const match = docList.find((d: any) => d && (d.filename === fn || d.local_path?.includes(fn)));
+                          finalDocs = match ? [match] : [{
+                            name: fn.endsWith('.docx') ? 'Word DOCX' : fn.endsWith('.xlsx') ? 'Excel XLSX' : 'PDF Spec',
+                            filename: fn,
+                            local_path: `/documents/${selectedTender.id}/${fn}`
+                          }];
+                          isSuperior = true;
+                        } else {
+                          const specDocs = docList.filter((d: any) => {
+                            if (!d) return false;
+                            const fn = (d.filename || d.local_path || d.name || '').toLowerCase();
+                            return fn.includes('combined_technical') || fn.includes('tech_spec') || fn.includes('technical_specification');
+                          });
+                          finalDocs = specDocs.length > 0 ? specDocs : [
+                            { name: 'PDF Spec', filename: 'Combined_Technical_Data_Sheet.pdf', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf` },
+                            { name: 'Word DOCX', filename: 'Combined_Technical_Data_Sheet.docx', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.docx` },
+                            { name: 'Excel XLSX', filename: 'Combined_Technical_Data_Sheet.xlsx', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.xlsx` }
+                          ];
+                        }
+
+                        return (
+                          <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                              {isSuperior ? 'Superior Cleared Specs (Clearance Team):' : 'Cleared Specs:'}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {finalDocs.map((doc: any, idx: number) => {
+                                const fn = (doc.filename || doc.name || doc.local_path || '').toLowerCase();
+                                const isPdf = fn.endsWith('.pdf');
+                                const isWord = fn.endsWith('.docx') || fn.endsWith('.doc');
+                                const isExcel = fn.endsWith('.xlsx') || fn.endsWith('.xls');
+                                const label = isPdf ? 'PDF Spec' : isWord ? 'Word DOCX' : isExcel ? 'Excel XLSX' : (doc.name || doc.filename);
+                                return (
+                                  <a
+                                    key={idx}
+                                    href={getDocDownloadUrl(doc.local_path || `/documents/${selectedTender.id}/${doc.filename}`)}
+                                    target={isPdf ? '_blank' : undefined}
+                                    rel="noreferrer"
+                                    download={!isPdf ? (doc.filename || undefined) : undefined}
+                                    className="btn btn-secondary"
+                                    style={{ fontSize: '10px', padding: '4px 8px', textDecoration: 'none' }}
+                                  >
+                                    {label}
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   )}
                 </div>
 
@@ -6233,7 +6755,7 @@ export default function Dashboard() {
                       /* TPC Team, MIS Team, Admin */
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {/* Section A: TPC Transfer Price */}
-                        {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || Boolean(selectedTender.tpc_purchase_price)) && (
+                        {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin' || Boolean(selectedTender.tpc_purchase_price)) && (
                           <div style={{ background: selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.06)' : 'rgba(147, 51, 234, 0.05)', padding: '10px 12px', borderRadius: '6px', border: `1px solid ${selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.2)' : 'rgba(147, 51, 234, 0.2)'}` }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: selectedTender.tpc_purchase_price ? '0' : '8px' }}>
                               <div>
@@ -6251,7 +6773,7 @@ export default function Dashboard() {
                               )}
                             </div>
 
-                            {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') && (
+                            {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || currentUser?.role === 'Admin') && (
                               <div style={{ marginTop: selectedTender.tpc_purchase_price ? '8px' : '0' }}>
                                 <div style={{ display: 'flex', gap: '6px' }}>
                                   <input
@@ -6302,9 +6824,9 @@ export default function Dashboard() {
                         )}
 
                         {/* If MIS Team / Admin and TPC price not yet entered */}
-                        {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
+                        {currentUser?.role === 'MIS Team' && !selectedTender.tpc_purchase_price && !selectedTender.mis_final_price && (
                           <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '11.5px', color: '#d97706' }}>
-                            ⏳ <strong>Awaiting TPC Transfer Price:</strong> TPC Team has not yet submitted total production cost. Once submitted, MIS Team & Admin can set Provided Price.
+                            ⏳ <strong>TPC Transfer Price not yet submitted (Optional):</strong> TPC pricing is optional. MIS Team & Admin can directly configure Provided Price below to unblock Bid Documents.
                           </div>
                         )}
 
@@ -6326,7 +6848,7 @@ export default function Dashboard() {
                                 </span>
                               ) : null}
                             </div>
-                            {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') ? (
+                            {currentUser?.role === 'MIS Team' ? (
                               <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
                                 <input
                                   type="number"
@@ -6412,23 +6934,8 @@ export default function Dashboard() {
                             <span>🔒</span>
                             <span><strong>Locked:</strong> Technical Specification Clearance from Clearance Team required. Current status: <em>{selectedTender.spec_verification_status || 'Not Started'}</em>.</span>
                           </div>
-                        ) : (!selectedTender.mis_final_price || Number(selectedTender.mis_final_price) <= 0) ? (
-                          <div style={{
-                            background: 'rgba(245, 158, 11, 0.05)',
-                            border: '1px solid rgba(245, 158, 11, 0.25)',
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            fontSize: '11.5px',
-                            color: '#d97706',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}>
-                            <span>🔒</span>
-                            <span><strong>Locked:</strong> Provided Price from MIS Team must be set before generating bid documents. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
-                          </div>
                         ) : (
-                          (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                          (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && (
                             <button 
                               className="btn btn-primary" 
                               style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
@@ -6477,7 +6984,7 @@ export default function Dashboard() {
                             📁 Working folder: <code>{selectedTender.working_path}</code>
                           </span>
                         )}
-                        {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive' || currentUser?.role === 'Admin') && (
+                        {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && (
                           <button 
                             className="btn btn-primary" 
                             style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -6509,7 +7016,7 @@ export default function Dashboard() {
                     </div>
 
                     <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 10px 0' }}>
-                      The MIS Team must review and authorize the generated Word & PDF bid document package before EMD payment can proceed.
+                      After EMD, the MIS Team verifies every document in the tender folder, not only the bid package. This runs at the same time as commercial pricing.
                     </p>
 
                     {/* Working Folder Path (Documents Store) */}
@@ -6599,7 +7106,7 @@ export default function Dashboard() {
 
                     {canRecordOperationalStages && selectedTender.verification_status === 'Pending' && (
                       <div style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#d97706', marginBottom: '12px' }}>
-                        ⏳ <strong>Awaiting MIS Review:</strong> Bid documents package has been submitted. EMD Payment will unlock once the MIS Team approves.
+                        ⏳ <strong>Awaiting MIS Review:</strong> The folder audit is with the MIS Team. Final submission unlocks when this audit and commercial pricing are both finished.
                       </div>
                     )}
 
@@ -6645,7 +7152,7 @@ export default function Dashboard() {
 
                     {selectedTender.verification_status === 'Approved' && (
                       <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#10b981', marginBottom: '12px' }}>
-                        ✅ <strong>Approved:</strong> Bid document package verified and approved by MIS Team. Proceed to Step 5: EMD Payment.
+                        ✅ <strong>Approved:</strong> MIS verified the documents in the tender folder. Final submission stays locked until commercial pricing is finished too.
                       </div>
                     )}
 
@@ -6695,7 +7202,7 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* 5. EMD Payment Card */}
+                {/* 4. EMD Payment — after the bid package. Pricing does not gate this step. */}
                 {isStage5Visible && (
                   <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -6712,7 +7219,7 @@ export default function Dashboard() {
                       </span>
                     </div>
 
-                    {selectedTender.verification_status !== 'Approved' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
+                    {!areDocsGenerated && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
                       <div style={{
                         background: 'rgba(239, 68, 68, 0.05)',
                         border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -6725,7 +7232,7 @@ export default function Dashboard() {
                         gap: '8px'
                       }}>
                         <span>🔒</span>
-                        <span><strong>Locked:</strong> Generated Bid Documents must be approved by the MIS Team in Step 4 before EMD Payment can be processed. (Current Bid Docs Status: <em>{selectedTender.verification_status || 'Pending Generation'}</em>).</span>
+                        <span><strong>Locked:</strong> Generate the bid package first. EMD comes after the package, and commercial pricing comes after EMD.</span>
                       </div>
                     ) : (
                       <>
@@ -6758,10 +7265,10 @@ export default function Dashboard() {
                             />
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Reference / Txn ID</label>
+                            <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Beneficiary Name</label>
                             <input 
                               type="text"
-                              placeholder="Ref / Txn No"
+                              placeholder="Beneficiary name"
                               value={emdPaymentRef}
                               onChange={(e) => setEmdPaymentRef(e.target.value)}
                               disabled={!canRecordOperationalStages || selectedTender.payment_status === 'Approved'}
@@ -6806,6 +7313,137 @@ export default function Dashboard() {
                             <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedMisMember}</span>
                           </div>
                         )}
+
+                                                {/* Confidential EMD Payment Receipt / Proof Attachment */}
+                        <div style={{
+                          marginTop: '8px',
+                          marginBottom: '12px',
+                          padding: '10px 12px',
+                          borderRadius: '6px',
+                          background: 'rgba(99, 102, 241, 0.05)',
+                          border: '1px solid rgba(99, 102, 241, 0.25)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '12px' }}>🔒</span>
+                              <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary-light, #a5b4fc)', letterSpacing: '0.4px' }}>
+                                EMD Payment Receipt / Proof <span style={{ fontWeight: 400, opacity: 0.8 }}>(Optional · Marked Confidential)</span>
+                              </label>
+                            </div>
+                            <span style={{ fontSize: '9.5px', padding: '2px 6px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 600 }}>
+                              🔒 Confidential
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                            Visible strictly to the assigned Executive, his MIS Team, and Admin.
+                          </div>
+
+                          {selectedTender.emd_receipt_doc_path ? (
+                            canViewConfidentialEmd ? (
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'var(--bg-app)',
+                                padding: '6px 10px',
+                                borderRadius: '4px',
+                                border: '1px solid rgba(16, 185, 129, 0.3)'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                  <FileText size={14} style={{ color: '#10b981', flexShrink: 0 }} />
+                                  <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {selectedTender.emd_receipt_doc_path.split('/').pop() || 'EMD_Payment_Receipt.pdf'}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <a
+                                    href={getDocDownloadUrl(selectedTender.emd_receipt_doc_path)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      background: 'rgba(16, 185, 129, 0.12)',
+                                      color: '#10b981',
+                                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      textDecoration: 'none'
+                                    }}
+                                  >
+                                    <ExternalLink size={11} /> View / Download
+                                  </a>
+                                  {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
+                                    <button
+                                      type="button"
+                                      onClick={handleRemoveEmdReceipt}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#ef4444',
+                                        fontSize: '10.5px',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        padding: '2px 4px'
+                                      }}
+                                    >
+                                      ✕ Remove
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Lock size={12} /> Payment receipt attached (Confidential: Access restricted)
+                              </div>
+                            )
+                          ) : (
+                            canRecordOperationalStages && selectedTender.payment_status !== 'Approved' ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="file"
+                                  ref={emdFileInputRef}
+                                  onChange={handleUploadEmdReceipt}
+                                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                  style={{ display: 'none' }}
+                                  id="emd-receipt-file-input-page"
+                                />
+                                <label
+                                  htmlFor="emd-receipt-file-input-page"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '5px 10px',
+                                    borderRadius: '4px',
+                                    border: '1px dashed rgba(99, 102, 241, 0.4)',
+                                    background: 'rgba(99, 102, 241, 0.08)',
+                                    color: 'var(--primary-light, #a5b4fc)',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    cursor: uploadingEmdReceipt ? 'wait' : 'pointer'
+                                  }}
+                                >
+                                  {uploadingEmdReceipt ? '⏳ Uploading...' : '📎 Attach Payment Proof (Optional)'}
+                                </label>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                  PDF, PNG, JPG accepted
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                No payment proof attached (Optional)
+                              </div>
+                            )
+                          )}
+                        </div>
 
                         {/* Action buttons */}
                         {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (

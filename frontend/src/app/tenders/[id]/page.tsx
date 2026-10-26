@@ -33,7 +33,7 @@ import {
   Lock
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
-import { canPerform, canReviewAssignment } from '@/lib/workflowAuthorization';
+import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
@@ -54,7 +54,9 @@ export default function TenderDetailPage() {
   const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
+  const isExecutiveRole = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
+  const isTpcRole = currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team';
   const isAdmin = currentUser?.role === 'Admin';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
@@ -96,6 +98,9 @@ export default function TenderDetailPage() {
   const [selectedMisMemberSubmission, setSelectedMisMemberSubmission] = useState('');
   const [misTeamMembers, setMisTeamMembers] = useState<string[]>([]);
   const [specTeamMembers, setSpecTeamMembers] = useState<string[]>([]);
+  const [selectedMisMemberTpc, setSelectedMisMemberTpc] = useState('');
+  const [selectedMisMemberPricingRoute, setSelectedMisMemberPricingRoute] = useState('');
+  const [routingPricing, setRoutingPricing] = useState(false);
   
   const [workingPath, setWorkingPath] = useState('');
   const [emdPaymentMode, setEmdPaymentMode] = useState('');
@@ -107,8 +112,71 @@ export default function TenderDetailPage() {
   const [misFinalPriceInput, setMisFinalPriceInput] = useState<number | ''>('');
   const [submittingTpcPrice, setSubmittingTpcPrice] = useState(false);
   const [submittingMisPrice, setSubmittingMisPrice] = useState(false);
+  const [submittingDocDecision, setSubmittingDocDecision] = useState(false);
   const [submittingSpecClearance, setSubmittingSpecClearance] = useState(false);
   const [submittingApproveClearance, setSubmittingApproveClearance] = useState(false);
+  const [clearanceMode, setClearanceMode] = useState<'ALL COMPLY' | 'COMPLY WITH DEVIATIONS'>('ALL COMPLY');
+  const [clearancePdfFile, setClearancePdfFile] = useState<File | null>(null);
+  const [clearanceDocxFile, setClearanceDocxFile] = useState<File | null>(null);
+  const [clearanceXlsxFile, setClearanceXlsxFile] = useState<File | null>(null);
+
+  const getDocDownloadUrl = (pathOrUrl: string) => {
+    if (!pathOrUrl) return '';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return pathOrUrl;
+    const separator = pathOrUrl.includes('?') ? '&' : '?';
+    return `${pathOrUrl}${separator}token=${encodeURIComponent(token)}`;
+  };
+
+  const [manifestDocs, setManifestDocs] = useState<any[]>([]);
+  const [loadingManifest, setLoadingManifest] = useState(false);
+  const [emdApplicableSelection, setEmdApplicableSelection] = useState<boolean>(true);
+  const [uploadingEmdReceipt, setUploadingEmdReceipt] = useState(false);
+  const emdFileInputRef = useRef<HTMLInputElement>(null);
+
+  const canViewConfidentialEmd = useMemo(() => {
+    return isAuthorizedForEmdReceipt(currentUser?.role, currentUser?.username, selectedTender);
+  }, [currentUser, selectedTender]);
+
+  const handleUploadEmdReceipt = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTender?.id) return;
+    try {
+      setUploadingEmdReceipt(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-emd-receipt`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success && data.emd_receipt_doc_path) {
+        showToast('EMD payment receipt attached successfully (marked confidential).', 'success');
+        setSelectedTender((prev: any) => prev ? {
+          ...prev,
+          emd_receipt_doc_path: data.emd_receipt_doc_path,
+          emd_receipt_confidential: true
+        } : prev);
+      } else {
+        showToast(data.error || 'Failed to upload EMD receipt.', 'error');
+      }
+    } catch (err: any) {
+      showToast('Error uploading EMD receipt: ' + err.message, 'error');
+    } finally {
+      setUploadingEmdReceipt(false);
+      if (emdFileInputRef.current) emdFileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveEmdReceipt = async () => {
+    if (!selectedTender?.id) return;
+    try {
+      await updateTenderField({ emd_receipt_doc_path: null });
+      setSelectedTender((prev: any) => prev ? { ...prev, emd_receipt_doc_path: null } : prev);
+      showToast('EMD receipt attachment removed.', 'success');
+    } catch (_) {}
+  };
+
   const [isParticipatingSubmitting, setIsParticipatingSubmitting] = useState(false);
   const [isTechSpecDragOver, setIsTechSpecDragOver] = useState(false);
 
@@ -116,6 +184,7 @@ export default function TenderDetailPage() {
   const [availableModels, setAvailableModels] = useState<Array<{ id: number; model_number: string; make: string; product_category: string; verified_specs?: number }>>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | ''>('');
   const [scheduleModels, setScheduleModels] = useState<Record<string, number>>({});
+
 
   // Editable Tender Specifications & Parameters State
   const [isEditingSpecs, setIsEditingSpecs] = useState(false);
@@ -458,6 +527,8 @@ export default function TenderDetailPage() {
         if (isFirstLoad) {
           setTpcPurchasePriceInput(tender.tpc_purchase_price !== undefined && tender.tpc_purchase_price !== null ? tender.tpc_purchase_price : '');
           setMisFinalPriceInput(tender.mis_final_price !== undefined && tender.mis_final_price !== null ? tender.mis_final_price : '');
+          setSelectedMisMemberTpc(tender.assigned_mis_member || '');
+          setSelectedMisMemberPricingRoute(tender.assigned_mis_member || '');
         }
         
         setDetailsSummary(data.summaries.detailsSummary);
@@ -514,6 +585,50 @@ export default function TenderDetailPage() {
       }
     } catch (err) {
       console.error('Error fetching users:', err);
+    }
+  };
+
+  const submitClearanceDecision = async (complianceOption: 'ALL COMPLY' | 'COMPLY WITH DEVIATIONS') => {
+    if (!selectedTender || submittingApproveClearance) return;
+    setSubmittingApproveClearance(true);
+    try {
+      const formData = new FormData();
+      formData.append('complianceType', complianceOption);
+      const hasUploadedFiles = Boolean(clearancePdfFile || clearanceDocxFile || clearanceXlsxFile);
+      const defaultComment = complianceOption === 'ALL COMPLY'
+        ? (hasUploadedFiles ? 'All Comply. Clearance superior specification documents uploaded.' : 'All Comply. Technical specification verified.')
+        : (hasUploadedFiles ? 'Comply with deviations. Clearance superior specification documents uploaded.' : 'Comply with deviations accepted.');
+      formData.append('comment', specCommentText.trim() || defaultComment);
+      if (clearancePdfFile) formData.append('pdfFile', clearancePdfFile);
+      if (clearanceDocxFile) formData.append('docxFile', clearanceDocxFile);
+      if (clearanceXlsxFile) formData.append('xlsxFile', clearanceXlsxFile);
+
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/approve-clearance`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showToast(data.error || 'Clearance could not be granted.', 'error');
+        alert('Error: ' + (data.error || 'Clearance could not be granted.'));
+        return;
+      }
+      showToast(data.message || `Clearance granted (${complianceOption})!`, 'success');
+      alert(`Clearance granted (${complianceOption})! Returned to Tender Executive to prepare the standard bid package.`);
+      setClearancePdfFile(null);
+      setClearanceDocxFile(null);
+      setClearanceXlsxFile(null);
+      setSelectedTender(prev => prev ? {
+        ...prev,
+        spec_verification_status: 'Approved',
+        spec_compliance_type: complianceOption,
+        current_stage: data.currentStage || 'BID_DOCS_PREPARATION'
+      } : prev);
+      fetchTenderDetails();
+    } catch {
+      showToast('Network error while granting clearance. Please try again.', 'error');
+    } finally {
+      setSubmittingApproveClearance(false);
     }
   };
 
@@ -595,6 +710,102 @@ export default function TenderDetailPage() {
     } catch (e) {
       showToast('Error communicating with server.', 'error');
       alert('Error communicating with server.');
+    }
+  };
+
+  const handleSelectPricingRoute = async (route: 'TPC' | 'MIS', misMember?: string) => {
+    if (!id || !selectedTender) return;
+    setRoutingPricing(true);
+    try {
+      const res = await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/route-pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route, misMember })
+      });
+      const data = await res.json();
+      if (data.success || data.tender) {
+        showToast(route === 'TPC' ? 'Tender routed to TPC Team for pricing.' : 'Tender routed directly to MIS Team for pricing (TPC bypassed).', 'success');
+        setSelectedTender((prev: any) => prev ? {
+          ...prev,
+          pricing_route: route,
+          current_stage: route === 'TPC' ? 'TPC_PRICING' : 'MIS_PRICING',
+          assigned_mis_member: misMember || prev.assigned_mis_member
+        } : null);
+        fetchTenderDetails(false);
+        fetchComments(id);
+      } else {
+        showToast(data.error || 'Failed to set pricing route', 'error');
+      }
+    } catch (e) {
+      showToast('Network error setting pricing route', 'error');
+    } finally {
+      setRoutingPricing(false);
+    }
+  };
+
+  const handleSubmitTpcPrice = async () => {
+    if (!selectedTender || !tpcPurchasePriceInput || Number(tpcPurchasePriceInput) <= 0) return;
+    setSubmittingTpcPrice(true);
+    try {
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/tpc-price`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tpcPurchasePrice: tpcPurchasePriceInput,
+          assignedMisMember: selectedMisMemberTpc || undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Transfer price saved and forwarded to MIS Team!', 'success');
+        setSelectedTender((prev: any) => prev ? {
+          ...prev,
+          tpc_purchase_price: Number(tpcPurchasePriceInput),
+          assigned_mis_member: selectedMisMemberTpc || prev.assigned_mis_member,
+          current_stage: 'MIS_PRICING'
+        } : null);
+        setTpcPurchasePriceInput('');
+        fetchTenderDetails(false);
+        fetchComments(id);
+      } else {
+        showToast(data.error || 'Failed to submit price', 'error');
+      }
+    } catch (e) {
+      showToast('Network error saving price', 'error');
+    } finally {
+      setSubmittingTpcPrice(false);
+    }
+  };
+
+  const handleSubmitMisPrice = async (priceToSubmit?: number) => {
+    if (!selectedTender) return;
+    const price = priceToSubmit !== undefined ? priceToSubmit : misFinalPriceInput;
+    if (!price || Number(price) <= 0) return;
+    setSubmittingMisPrice(true);
+    try {
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ misFinalPrice: price })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Commercial go-ahead price granted and sent to Executive!', 'success');
+        setSelectedTender((prev: any) => prev ? {
+          ...prev,
+          mis_final_price: Number(price),
+          pricing_status: 'Approved'
+        } : null);
+        setMisFinalPriceInput('');
+        fetchTenderDetails(false);
+        fetchComments(id);
+      } else {
+        showToast(data.error || 'Failed to update Provided Price', 'error');
+      }
+    } catch (e) {
+      showToast('Network error updating Provided Price', 'error');
+    } finally {
+      setSubmittingMisPrice(false);
     }
   };
 
@@ -1240,10 +1451,12 @@ export default function TenderDetailPage() {
         setIsBidDocFormOpen(false);
         setSelectedTender(prev => prev ? {
           ...prev,
-          current_stage: 'DOC_VERIFICATION',
-          verification_status: 'Pending'
+          current_stage: data.currentStage || prev.current_stage || 'EMD_PAYMENT',
+          payment_status: data.paymentStatus || prev.payment_status,
+          downloaded_docs: data.downloadedDocs || prev.downloaded_docs,
+          downloadedDocs: data.downloadedDocs || prev.downloadedDocs
         } : null);
-        fetchTenderDetails();
+        await fetchTenderDetails();
       } else {
         showToast(data.error || 'Failed to generate bid documents.', 'error');
       }
@@ -1271,21 +1484,70 @@ export default function TenderDetailPage() {
   // Sequential Pipeline Stage Visibility:
   // When a tender is at stage 1, do not show remaining stages in the frontend to any user.
   // The horizontal sections in the tender are only visible if previous required changes are completed.
-  const isStage1Complete = Boolean(selectedTender && selectedTender.spec_verification_status === 'Approved');
-  const isStage2Complete = (isStage1Complete && Boolean(selectedTender && selectedTender.mis_final_price && Number(selectedTender.mis_final_price) > 0)) || isOutcomeState;
-  const isStage3Complete = (isStage2Complete && areDocsGenerated) || isOutcomeState;
-  const isStage4Complete = (isStage3Complete && Boolean(selectedTender && selectedTender.verification_status === 'Approved')) || isOutcomeState;
-  const isStage5Complete = (isStage4Complete && Boolean(selectedTender && selectedTender.payment_status === 'Approved')) || isOutcomeState;
-  const isStage6Complete = (isStage5Complete && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
+  // Canonical 6-Step Workflow Milestones:
+  // Step 2: Spec Clearance
+  const isStep2Complete = Boolean(selectedTender && (
+    selectedTender.spec_verification_status === 'Approved' ||
+    selectedTender.final_tech_spec_filename
+  )) || isOutcomeState;
+
+  // Step 3: Executive Handover & Document Preparation (Bid Docs Prep)
+  // Returned to Executive immediately after clearance - NOT blocked on pricing!
+  const isStep3Complete = (isStep2Complete && areDocsGenerated) || isOutcomeState;
+
+  // Step 4: EMD Payment Step
+  const isEmdExempt = Boolean(
+    selectedTender?.emd_applicable === false ||
+    (selectedTender?.emd != null && Number(selectedTender.emd) === 0) ||
+    selectedTender?.payment_status === 'Exempt' ||
+    selectedTender?.emd_status === 'EXEMPT_SKIPPED'
+  );
+  const isStep4Complete = (isStep3Complete && (isEmdExempt || selectedTender?.payment_status === 'Approved')) || isOutcomeState;
+
+  // Step 5: Dual Track (Simultaneous Pricing + All-Path Document Verification)
+  const isPricingApproved = Boolean(
+    selectedTender?.pricing_status === 'Approved' ||
+    (selectedTender?.mis_final_price && Number(selectedTender.mis_final_price) > 0)
+  ) || isOutcomeState;
+
+  const isDocsVerified = Boolean(
+    selectedTender?.verification_status === 'Approved'
+  ) || isOutcomeState;
+
+  const isStep5Complete = (isStep4Complete && isPricingApproved && isDocsVerified) || isOutcomeState;
+
+  // Step 6: Final Submission (Unlocked ONLY when Dual Track passes!)
+  const isStep6Complete = (isStep5Complete && Boolean(
+    selectedTender?.submission_status === 'Approved' ||
+    selectedTender?.status === 'Submitted' ||
+    selectedTender?.status === 'Filed'
+  )) || isOutcomeState;
+
+  const canFinalSubmit = isStep5Complete && !isStep6Complete;
 
   const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
-  const isStage1Visible = true; // Stage 1 is always visible
-  const isStage2Visible = isOperationalRole && (isStage1Complete || isOutcomeState);
-  const isStage3Visible = isOperationalRole && (isStage2Complete || isOutcomeState);
-  const isStage4Visible = isOperationalRole && (isStage3Complete || isOutcomeState);
-  const isStage5Visible = isOperationalRole && (isStage4Complete || isOutcomeState);
-  const isStage6Visible = isOperationalRole && (isStage5Complete || isOutcomeState);
-  const isStage7Visible = isOperationalRole && (isStage6Complete || isOutcomeState);
+
+  // Section Visibility:
+  const isCard1Visible = true; // Step 2 (Tech Spec) is always visible
+  const isCard2Visible = isOperationalRole && (isStep2Complete || isOutcomeState); // Step 3 (Bid Docs Prep)
+  const isCard3Visible = isOperationalRole && (isStep3Complete || isOutcomeState); // Step 4 EMD opens after the bid package exists
+  const isCard4Visible = isOperationalRole && (isStep4Complete || isOutcomeState); // Step 5 (Dual Track)
+  const isCard5Visible = isOperationalRole && (isStep5Complete || isOutcomeState); // Step 6 (Final Submission)
+  const isCard6Visible = isOperationalRole && (isStep6Complete || isOutcomeState); // Step 7 (Outcome)
+
+  const isStage1Complete = isStep2Complete;
+  const isStage2Complete = isStep3Complete;
+  const isStage3Complete = isStep4Complete;
+  const isStage4Complete = isStep5Complete;
+  const isStage5Complete = isStep5Complete;
+  const isStage6Complete = isStep6Complete;
+  const isStage1Visible = isCard1Visible;
+  const isStage2Visible = isCard2Visible;
+  const isStage3Visible = isCard3Visible;
+  const isStage4Visible = isCard4Visible;
+  const isStage5Visible = isCard5Visible;
+  const isStage6Visible = isCard5Visible;
+  const isStage7Visible = isCard6Visible;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-app)', color: 'var(--text-primary)', padding: '24px' }}>
@@ -2524,14 +2786,14 @@ export default function TenderDetailPage() {
                 )}
               </div>
 
-              {/* 1. Technical Specification Clearance Card */}
+              {/* 2. Technical Specification Clearance Card */}
               <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
                   
                   {/* Left Panel: Controls */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>1. Technical Specification Clearance</h4>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>2. Technical Specification Clearance</h4>
                       <span style={{ 
                         fontSize: '11px', 
                         padding: '2px 8px', 
@@ -2545,7 +2807,7 @@ export default function TenderDetailPage() {
                     </div>
 
                     <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                      Review technical parameters and product specifications. Before bid documents can be generated, the Specification Team must verify and approve technical compliance.
+                      Choose All Comply to send this tender to the Tender Executive for EMD payment, or Comply with deviations and upload three replacement documents. Those new PDF, DOCX, and XLSX files replace the previous specification documents and continue through the rest of the tender.
                     </p>
 
                     {/* Tender Quantities Parameter Badges for Clearance Team Review */}
@@ -2796,42 +3058,221 @@ export default function TenderDetailPage() {
                     )}
 
                     {/* Clearance Team Verification Controls */}
-                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team') && selectedTender.spec_verification_status === 'Pending' && (
+                    {(currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'Admin') && selectedTender.spec_verification_status === 'Pending' && (
                       canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_spec) ? (
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(147, 51, 234, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(147, 51, 234, 0.2)' }}>
-                          <button 
-                            className="btn btn-primary" 
-                            style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center', opacity: submittingApproveClearance ? 0.7 : 1 }}
-                            disabled={submittingApproveClearance}
-                            onClick={async () => {
-                              if (submittingApproveClearance) return;
-                              setSubmittingApproveClearance(true);
-                              try {
-                                const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/approve-clearance`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ comment: 'Technical specification verified and approved.' })
-                                });
-                                const data = await res.json();
-                                if (data.notification) {
-                                  alert(data.notification);
-                                }
-                              } catch (e) {
-                                console.error('Failed to notify backend on spec clearance:', e);
-                              } finally {
-                                setSubmittingApproveClearance(false);
-                              }
-                              await updateTenderField({ spec_verification_status: 'Approved' });
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '14px', background: 'rgba(147, 51, 234, 0.05)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(147, 51, 234, 0.25)' }}>
+                          
+                          {/* 1. VIEW GENERATED SPECS (MANDATORY FOR CLEARANCE TEAM) */}
+                          <div style={{ padding: '12px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <FileText size={14} style={{ color: 'var(--primary)' }} />
+                                Generated Technical Specifications (from Executive &amp; AI):
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'var(--accent-green)', textTransform: 'uppercase', fontWeight: '700' }}>Ready for Review</span>
+                            </div>
+                            <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+                              Review the specification documents generated via Azure OpenAI before deciding compliance:
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <a
+                                href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf`)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-secondary"
+                                style={{ fontSize: '11px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <ExternalLink size={12} style={{ color: '#ef4444' }} /> View PDF Specification
+                              </a>
+                              <a
+                                href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.docx`)}
+                                className="btn btn-secondary"
+                                style={{ fontSize: '11px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <Download size={12} style={{ color: '#3b82f6' }} /> Download Word (DOCX)
+                              </a>
+                              <a
+                                href={getDocDownloadUrl(`/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.xlsx`)}
+                                className="btn btn-secondary"
+                                style={{ fontSize: '11px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <Download size={12} style={{ color: '#10b981' }} /> Download Excel (XLSX)
+                              </a>
+                            </div>
+                          </div>
+
+                          {/* 2. THREE OPTIONAL UPLOAD FIELDS (PDF, WORD, EXCEL) - NONE STRICTLY REQUIRED */}
+                          <div style={{ padding: '12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                              Upload Clearance Documents (Optional — Superior Specification Files):
+                            </div>
+                            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 12px 0', lineHeight: '1.4' }}>
+                              None of these fields are required. Any document uploaded here is superior and will replace the previous docs generated by the executive through AI (Azure API key).
+                            </p>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                              {/* PDF upload field */}
+                              <div style={{ padding: '10px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                                  1. PDF Document (.pdf)
+                                </label>
+                                <input
+                                  type="file"
+                                  accept=".pdf"
+                                  id="clearance-pdf-input"
+                                  onChange={e => setClearancePdfFile(e.target.files?.[0] || null)}
+                                  style={{ fontSize: '11px', width: '100%' }}
+                                />
+                                {clearancePdfFile && (
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>✓ {clearancePdfFile.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setClearancePdfFile(null);
+                                        const el = document.getElementById('clearance-pdf-input') as HTMLInputElement;
+                                        if (el) el.value = '';
+                                      }}
+                                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Word upload field */}
+                              <div style={{ padding: '10px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                                  2. Word Document (.docx / .doc)
+                                </label>
+                                <input
+                                  type="file"
+                                  accept=".docx,.doc"
+                                  id="clearance-docx-input"
+                                  onChange={e => setClearanceDocxFile(e.target.files?.[0] || null)}
+                                  style={{ fontSize: '11px', width: '100%' }}
+                                />
+                                {clearanceDocxFile && (
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>✓ {clearanceDocxFile.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setClearanceDocxFile(null);
+                                        const el = document.getElementById('clearance-docx-input') as HTMLInputElement;
+                                        if (el) el.value = '';
+                                      }}
+                                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Excel upload field */}
+                              <div style={{ padding: '10px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                                  3. Excel Document (.xlsx / .xls)
+                                </label>
+                                <input
+                                  type="file"
+                                  accept=".xlsx,.xls"
+                                  id="clearance-xlsx-input"
+                                  onChange={e => setClearanceXlsxFile(e.target.files?.[0] || null)}
+                                  style={{ fontSize: '11px', width: '100%' }}
+                                />
+                                {clearanceXlsxFile && (
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10.5px', color: '#10b981' }}>
+                                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>✓ {clearanceXlsxFile.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setClearanceXlsxFile(null);
+                                        const el = document.getElementById('clearance-xlsx-input') as HTMLInputElement;
+                                        if (el) el.value = '';
+                                      }}
+                                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 3. TWO CLEARANCE OPTIONS: ALL COMPLY & COMPLY WITH DEVIATIONS */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                              Clearance Compliance Decision:
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                              <label style={{
+                                display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 14px', borderRadius: '8px', cursor: 'pointer',
+                                border: clearanceMode === 'ALL COMPLY' ? '2px solid #10b981' : '1px solid var(--border-color)',
+                                background: clearanceMode === 'ALL COMPLY' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                                transition: 'all 0.2s ease'
+                              }}>
+                                <input
+                                  type="radio"
+                                  name="clearanceModeDetail"
+                                  checked={clearanceMode === 'ALL COMPLY'}
+                                  onChange={() => setClearanceMode('ALL COMPLY')}
+                                  style={{ marginTop: '3px' }}
+                                />
+                                <div>
+                                  <strong style={{ fontSize: '13px', color: '#10b981', display: 'block' }}>ALL COMPLY</strong>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '2px', lineHeight: '1.4' }}>
+                                    All specification requirements fully comply. Forwards to Tender Executive for Bid Document Preparation.
+                                  </span>
+                                </div>
+                              </label>
+
+                              <label style={{
+                                display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 14px', borderRadius: '8px', cursor: 'pointer',
+                                border: clearanceMode === 'COMPLY WITH DEVIATIONS' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
+                                background: clearanceMode === 'COMPLY WITH DEVIATIONS' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                                transition: 'all 0.2s ease'
+                              }}>
+                                <input
+                                  type="radio"
+                                  name="clearanceModeDetail"
+                                  checked={clearanceMode === 'COMPLY WITH DEVIATIONS'}
+                                  onChange={() => setClearanceMode('COMPLY WITH DEVIATIONS')}
+                                  style={{ marginTop: '3px' }}
+                                />
+                                <div>
+                                  <strong style={{ fontSize: '13px', color: '#f59e0b', display: 'block' }}>COMPLY WITH DEVIATIONS</strong>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '2px', lineHeight: '1.4' }}>
+                                    Accepted with deviations. Any uploaded clearance documents act as superior specifications.
+                                  </span>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* 4. BUTTON NAMED "GRANT CLEARANCE" */}
+                          <button
+                            className="btn btn-primary"
+                            style={{
+                              width: '100%',
+                              padding: '12px 20px',
+                              fontSize: '13px',
+                              fontWeight: '700',
+                              letterSpacing: '0.5px',
+                              justifyContent: 'center',
+                              background: clearanceMode === 'COMPLY WITH DEVIATIONS' ? '#d97706' : '#10b981',
+                              borderColor: clearanceMode === 'COMPLY WITH DEVIATIONS' ? '#d97706' : '#10b981',
+                              opacity: submittingApproveClearance ? 0.7 : 1,
+                              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+                              marginTop: '4px'
                             }}
+                            disabled={submittingApproveClearance}
+                            onClick={() => submitClearanceDecision(clearanceMode)}
                           >
-                            {submittingApproveClearance ? '⏳ Approving...' : '✅ Approve Technical Specs'}
-                          </button>
-                          <button 
-                            className="btn btn-secondary" 
-                            style={{ flex: 1, color: 'var(--accent-red)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-                            onClick={() => updateTenderField({ spec_verification_status: 'Rejected' })}
-                          >
-                            ❌ Reject Technical Specs
+                            {submittingApproveClearance ? '⏳ Granting Clearance...' : 'GRANT CLEARANCE'}
                           </button>
                         </div>
                       ) : (
@@ -2840,6 +3281,148 @@ export default function TenderDetailPage() {
                           <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_spec || 'Clearance Team'}</strong></span>
                         </div>
                       )
+                    )}
+
+                    {/* 5. EXECUTIVE & GENERAL VIEW: DISPLAYED WHEN SPEC CLEARANCE IS APPROVED */}
+                    {selectedTender.spec_verification_status === 'Approved' && (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        marginBottom: '16px',
+                        padding: '16px',
+                        borderRadius: '10px',
+                        background: selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.06)' : 'rgba(16, 185, 129, 0.06)',
+                        border: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <CheckCircle2 size={18} style={{ color: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '#f59e0b' : '#10b981' }} />
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                              Technical Specification Clearance Granted
+                            </span>
+                          </div>
+                          
+                          {/* Compliance decision badge known to Executive */}
+                          <span style={{
+                            fontSize: '11.5px',
+                            fontWeight: '800',
+                            letterSpacing: '0.5px',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            backgroundColor: selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                            color: selectedTender.spec_compliance_type?.includes('DEVIAT') ? '#f59e0b' : '#10b981',
+                            border: `1px solid ${selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'rgba(245, 158, 11, 0.45)' : 'rgba(16, 185, 129, 0.45)'}`
+                          }}>
+                            {selectedTender.spec_compliance_type?.includes('DEVIAT') ? 'COMPLY WITH DEVIATIONS' : 'ALL COMPLY'}
+                          </span>
+                        </div>
+
+                        {/* Executive informative description */}
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+                          {selectedTender.spec_compliance_type?.includes('DEVIAT') ? (
+                            <>
+                              The Clearance Team granted clearance with <strong style={{ color: '#f59e0b' }}>COMPLY WITH DEVIATIONS</strong>. Any superior documents uploaded by the Clearance Team have replaced previous specifications and are active for this tender.
+                            </>
+                          ) : (
+                            <>
+                              The Clearance Team granted clearance with <strong style={{ color: '#10b981' }}>ALL COMPLY</strong>. Specifications satisfy all tender clauses.
+                            </>
+                          )}
+                        </p>
+
+                        {/* Superior Cleared Specification Documents Links - Only files carried forward are displayed */}
+                        {(() => {
+                          let docList: any[] = [];
+                          const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                          if (rawDocs) {
+                            try {
+                              docList = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
+                            } catch {
+                              docList = [];
+                            }
+                          }
+                          if (!Array.isArray(docList)) docList = [];
+
+                          // Check for clearance superior docs
+                          const clearanceDocs = docList.filter((d: any) => d && (
+                            d.superior === true || 
+                            (d.name && d.name.toLowerCase().includes('clearance superior'))
+                          ));
+
+                          let finalDocs: any[] = [];
+                          let isSuperior = false;
+
+                          if (clearanceDocs.length > 0) {
+                            // ONLY things uploaded by clearance are carried forward and displayed
+                            finalDocs = clearanceDocs;
+                            isSuperior = true;
+                          } else if (selectedTender.final_tech_spec_uploaded_by && selectedTender.final_tech_spec_filename) {
+                            // Single file uploaded by clearance recorded in final_tech_spec_filename
+                            const fn = selectedTender.final_tech_spec_filename;
+                            const match = docList.find((d: any) => d && (d.filename === fn || d.local_path?.includes(fn)));
+                            finalDocs = match ? [match] : [{
+                              name: fn.endsWith('.docx') ? 'Final Spec (Word)' : fn.endsWith('.xlsx') ? 'Final Spec (Excel)' : 'Final Spec (PDF)',
+                              filename: fn,
+                              local_path: `/documents/${selectedTender.id}/${fn}`
+                            }];
+                            isSuperior = true;
+                          } else {
+                            // Standard clearance (0 uploads / All Comply): show available specification documents
+                            const specDocs = docList.filter((d: any) => {
+                              if (!d) return false;
+                              const fn = (d.filename || d.local_path || d.name || '').toLowerCase();
+                              return fn.includes('combined_technical') || fn.includes('tech_spec') || fn.includes('technical_specification');
+                            });
+                            finalDocs = specDocs.length > 0 ? specDocs : [
+                              { name: 'Final Spec (PDF)', filename: 'Combined_Technical_Data_Sheet.pdf', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf` },
+                              { name: 'Final Spec (Word)', filename: 'Combined_Technical_Data_Sheet.docx', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.docx` },
+                              { name: 'Final Spec (Excel)', filename: 'Combined_Technical_Data_Sheet.xlsx', local_path: `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.xlsx` }
+                            ];
+                          }
+
+                          return (
+                            <div style={{ marginTop: '4px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                {isSuperior ? 'Superior Cleared Specification Documents (Clearance Team):' : 'Cleared Specification Documents:'}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {finalDocs.map((doc: any, idx: number) => {
+                                  const fn = (doc.filename || doc.name || doc.local_path || '').toLowerCase();
+                                  const isPdf = fn.endsWith('.pdf');
+                                  const isWord = fn.endsWith('.docx') || fn.endsWith('.doc');
+                                  const isExcel = fn.endsWith('.xlsx') || fn.endsWith('.xls');
+                                  const label = isPdf ? 'Final Spec (PDF)' : isWord ? 'Final Spec (Word)' : isExcel ? 'Final Spec (Excel)' : (doc.name || doc.filename);
+                                  const icon = isPdf ? <FileText size={12} style={{ color: '#ef4444' }} />
+                                              : isWord ? <Download size={12} style={{ color: '#3b82f6' }} />
+                                              : <Download size={12} style={{ color: '#10b981' }} />;
+                                  return (
+                                    <a
+                                      key={idx}
+                                      href={getDocDownloadUrl(doc.local_path || `/documents/${selectedTender.id}/${doc.filename}`)}
+                                      target={isPdf ? '_blank' : undefined}
+                                      rel="noreferrer"
+                                      download={!isPdf ? (doc.filename || undefined) : undefined}
+                                      className="btn btn-secondary"
+                                      style={{ fontSize: '11px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                    >
+                                      {icon} {label}
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Sign-off metadata */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          <span>Cleared by: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.final_tech_spec_uploaded_by || selectedTender.assigned_mis_member_spec || 'Clearance Team'}</strong></span>
+                          {selectedTender.final_tech_spec_uploaded_at && (
+                            <span>Cleared on: {new Date(selectedTender.final_tech_spec_uploaded_at).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
 
@@ -2897,392 +3480,119 @@ export default function TenderDetailPage() {
                 </div>
               </div>
 
-              {/* 2. Pricing Review & Verification (TPC & MIS) Card */}
-              {isStage2Visible && (
-                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+              {/* 3. Executive Handover & Bid Document Preparation Card */}
+              {isCard2Visible && (
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                        2. Pricing Review & Verification (TPC & MIS)
+                        3. Executive Handover &amp; Document Preparation
                       </h4>
                     </div>
                     <span style={{
                       fontSize: '11px',
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      backgroundColor: selectedTender.mis_final_price ? 'rgba(16, 185, 129, 0.1)' : selectedTender.tpc_purchase_price ? 'rgba(59, 130, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                      color: selectedTender.mis_final_price ? '#10b981' : selectedTender.tpc_purchase_price ? '#3b82f6' : '#f59e0b',
+                      backgroundColor: areDocsGenerated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                      color: areDocsGenerated ? '#10b981' : '#f59e0b',
                       fontWeight: '600'
                     }}>
-                      {selectedTender.mis_final_price ? 'Provided Price Set' : selectedTender.tpc_purchase_price ? 'Awaiting Provided Price' : 'Pending TPC Review'}
+                      {areDocsGenerated ? 'Completed' : 'Pending Bid Package'}
                     </span>
                   </div>
 
-                  <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.4' }}>
-                    The TPC Team submits the Transfer Price (total production cost) to Admin & MIS Team. Admin or MIS Team then sets the Provided Price for the Tender Executive.
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
+                    After clearance, the Tender Executive prepares the bid package from the standard template. The cleared specification is the one that continues. EMD opens after this package is generated.
                   </p>
 
-                  {/* If user is Tender Executive: strictly hide TPC price per role security */}
-                  {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') ? (
-                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                      {selectedTender.mis_final_price ? (
-                        <div style={{ color: '#10b981', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>✅ Provided Price:</span>
-                          <span style={{ fontSize: '15px', color: '#10b981', fontWeight: '800' }}>₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}</span>
+                  {!areDocsGenerated ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: 0 }}>
+                        No bid documents have been generated yet. Compile the PDF and Word package from the standard template. Pricing is not required for this step.
+                      </p>
+
+                      {selectedTender.spec_verification_status !== 'Approved' ? (
+                        <div style={{
+                          background: 'rgba(239, 68, 68, 0.05)',
+                          border: '1px solid rgba(239, 68, 68, 0.2)',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          color: '#ef4444',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <Lock size={14} />
+                          <span><strong>Locked:</strong> Technical Specification Clearance from the Clearance Team is required before bid documents can be generated.</span>
                         </div>
-                      ) : selectedTender.current_stage === 'MIS_PRICING' ? (
-                        <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
-                          ⏳ TPC Team submitted Transfer Price. Awaiting Admin / MIS Team to configure Provided Price.
-                        </span>
-                      ) : selectedTender.spec_verification_status === 'Approved' ? (
-                        <span style={{ color: 'var(--accent-yellow)', fontWeight: '600' }}>
-                          ⏳ Specification cleared. Awaiting TPC Team to submit Transfer Price.
-                        </span>
                       ) : (
-                        <span>⏳ Waiting for Technical Specification Clearance before pricing review.</span>
+                        canPerform(currentUser?.role, 'generateBids') && (
+                          <button
+                            className="btn btn-primary"
+                            style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
+                            onClick={openBidDocForm}
+                          >
+                            📄 Generate Bid Documents Package
+                          </button>
+                        )
                       )}
                     </div>
                   ) : (
-                    /* For TPC Team, MIS Team, Admin */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {/* Section A: TPC Transfer Price (Total Production Cost) */}
-                      {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' || Boolean(selectedTender.tpc_purchase_price)) && (
-                        <div style={{ background: selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.06)' : 'rgba(147, 51, 234, 0.05)', padding: '14px 16px', borderRadius: '8px', border: `1px solid ${selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.2)' : 'rgba(147, 51, 234, 0.2)'}` }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: selectedTender.tpc_purchase_price ? '0' : '10px' }}>
-                            <div>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: '#9333ea', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                1. TPC Transfer Price (Total Production Cost)
-                              </span>
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                {selectedTender.tpc_purchase_price ? 'Verified by TPC Team & forwarded securely to Admin and MIS Team' : 'Confidential: Input total production cost for Admin and MIS Team review'}
-                              </span>
-                            </div>
-                            {selectedTender.tpc_purchase_price && (
-                              <span style={{ fontSize: '16px', fontWeight: '800', color: '#10b981' }}>
-                                ₹{Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* If TPC Team */}
-                          {(currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') && (
-                            <div style={{ marginTop: selectedTender.tpc_purchase_price ? '10px' : '0' }}>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                  type="number"
-                                  placeholder={selectedTender.tpc_purchase_price ? `Update transfer price (Current: ₹${Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')})` : "Enter total production cost / transfer price (₹)..."}
-                                  value={tpcPurchasePriceInput}
-                                  onChange={(e) => setTpcPurchasePriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                  style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12.5px' }}
-                                />
-                                <button
-                                  className="btn btn-primary"
-                                  disabled={submittingTpcPrice || !tpcPurchasePriceInput}
-                                  onClick={async () => {
-                                    if (!tpcPurchasePriceInput || Number(tpcPurchasePriceInput) <= 0) return;
-                                    setSubmittingTpcPrice(true);
-                                    try {
-                                      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/tpc-price`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ tpcPurchasePrice: tpcPurchasePriceInput })
-                                      });
-                                      const data = await res.json();
-                                      if (data.success) {
-                                        showToast(data.message || 'Transfer price submitted!', 'success');
-                                        setSelectedTender(prev => prev ? { ...prev, tpc_purchase_price: Number(tpcPurchasePriceInput), current_stage: 'MIS_PRICING' } : null);
-                                        setTpcPurchasePriceInput('');
-                                        alert(data.message || 'Transfer price forwarded securely to Admin & MIS Team.');
-                                      } else {
-                                        showToast(data.error || 'Failed to submit price', 'error');
-                                      }
-                                    } catch (e) {
-                                      showToast('Network error submitting price', 'error');
-                                    } finally {
-                                      setSubmittingTpcPrice(false);
-                                    }
-                                  }}
-                                  style={{ fontSize: '12px', padding: '8px 14px', background: '#9333ea', borderColor: '#9333ea' }}
-                                >
-                                  {submittingTpcPrice ? 'Submitting...' : '🚀 Send Transfer Price to Admin & MIS'}
-                                </button>
-                              </div>
-                              <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'block', marginTop: '6px' }}>
-                                🔒 Confidential: Sent to Admin and MIS Team. Not visible to Tender Executive.
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* If MIS Team or Admin and TPC price not yet entered */}
-                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && !selectedTender.tpc_purchase_price && (
-                        <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', fontSize: '12px', color: '#d97706' }}>
-                          ⏳ <strong>Awaiting TPC Transfer Price:</strong> The TPC Team has not yet submitted the total production cost. Once submitted, MIS Team & Admin can configure the Provided Price for the Tender Executive.
-                        </div>
-                      )}
-
-                      {/* Section B: Provided Price Configuration */}
-                      {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') && (
-                        <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <div>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: '#3b82f6', display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                2. Provided Price (For Tender Executive)
-                              </span>
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                This final provided price will be visible to the Tender Executive to unblock Bid Document generation.
-                              </span>
-                            </div>
-                            {selectedTender.mis_final_price ? (
-                              <span style={{ fontSize: '14px', color: '#10b981', fontWeight: '800' }}>
-                                ₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}
-                              </span>
-                            ) : null}
-                          </div>
-                          {(currentUser?.role === 'MIS Team' || currentUser?.role === 'Admin') ? (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                              <input
-                                type="number"
-                                placeholder={selectedTender.mis_final_price ? `Update Provided Price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Price (₹)"}
-                                value={misFinalPriceInput}
-                                onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12.5px' }}
-                              />
-                              <button
-                                className="btn btn-primary"
-                                disabled={submittingMisPrice || !misFinalPriceInput}
-                                onClick={async () => {
-                                  if (!misFinalPriceInput || Number(misFinalPriceInput) <= 0) return;
-                                  setSubmittingMisPrice(true);
-                                  try {
-                                    const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/mis-price`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ misFinalPrice: misFinalPriceInput })
-                                    });
-                                    const data = await res.json();
-                                    if (data.success) {
-                                      showToast(data.message || 'Provided price configured!', 'success');
-                                      setSelectedTender(prev => prev ? { ...prev, mis_final_price: Number(misFinalPriceInput), current_stage: 'BID_DOC_PENDING' } : null);
-                                      setMisFinalPriceInput('');
-                                      alert(data.message || 'Provided Price released to Tender Executive.');
-                                    } else {
-                                      showToast(data.error || 'Failed to update Provided Price', 'error');
-                                    }
-                                  } catch (e) {
-                                    showToast('Network error updating Provided Price', 'error');
-                                  } finally {
-                                    setSubmittingMisPrice(false);
-                                  }
-                                }}
-                                style={{ fontSize: '12px', padding: '8px 14px' }}
-                              >
-                                {submittingMisPrice ? 'Saving...' : 'Send Provided Price to Executive'}
-                              </button>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                              {selectedTender.mis_final_price ? (
-                                <span>Provided Price configured by MIS Team: <strong>₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}</strong> (View Only for Admin)</span>
-                              ) : (
-                                <span>Awaiting MIS Team to configure Provided Price (View Only for Admin).</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 3. Preparation & Bid Documents ("Docs Prep") Card */}
-              {isStage3Visible && (
-                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>3. Preparation & Bid Documents ("Docs Prep")</h4>
-                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '12px', backgroundColor: areDocsGenerated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: areDocsGenerated ? '#10b981' : '#f59e0b', fontWeight: '600' }}>
-                    {areDocsGenerated ? 'Completed' : 'Pending'}
-                  </span>
-                </div>
-                {!areDocsGenerated ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: 0 }}>
-                      No bid documents have been generated yet. Use the document builder to compile the PDF/DOCX bundle.
-                    </p>
-                    {selectedTender.spec_verification_status !== 'Approved' ? (
-                      <div style={{
-                        background: 'rgba(239, 68, 68, 0.05)',
-                        border: '1px solid rgba(239, 68, 68, 0.2)',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: '#ef4444',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginTop: '8px'
-                      }}>
-                        <span>🔒</span>
-                        <span><strong>Locked:</strong> Technical Specification Clearance from the Clearance Team is required before bid documents can be generated. Current status: <em>{selectedTender.spec_verification_status || 'Not Started'}</em>.</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', fontSize: '12px', fontWeight: '700' }}>
+                        <CheckCircle2 size={16} />
+                        <span>Bid document package compiled successfully in Word &amp; PDF formats.</span>
                       </div>
-                    ) : (!selectedTender.mis_final_price || Number(selectedTender.mis_final_price) <= 0) ? (
-                      <div style={{
-                        background: 'rgba(245, 158, 11, 0.05)',
-                        border: '1px solid rgba(245, 158, 11, 0.25)',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: '#d97706',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginTop: '8px'
-                      }}>
-                        <span>🔒</span>
-                        <span><strong>Locked:</strong> Provided Price from MIS Team is required before bid documents can be generated. (Specification Cleared ✅, Awaiting Provided Price ⏳).</span>
-                      </div>
-                    ) : (
-                      canPerform(currentUser?.role, 'generateBids') && (
-                        <button 
-                          className="btn btn-primary" 
-                          style={{ width: '100%', justifyContent: 'center', marginTop: '6px' }}
-                          onClick={openBidDocForm}
+
+                      {/* Download links */}
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <a
+                          href={getDocDownloadUrl(`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.docx`)}
+                          download={`Bid_Documents_${selectedTender.id}.docx`}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '11.5px', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
                         >
-                          Generate Bid Documents
-                        </button>
-                      )
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: 0 }}>
-                      Bid document package compiled successfully in Word & PDF formats.
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <a 
-                        href={`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.docx`} 
-                        download 
-                        className="btn btn-secondary" 
-                        style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        📄 Download Bid Documents (Word)
-                      </a>
-                      <a 
-                        href={`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.pdf`} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="btn btn-secondary" 
-                        style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        📑 View Bid Documents (PDF)
-                      </a>
-                      <a 
-                        href={`/documents/${selectedTender.id}/Technical_Specification_Sheet_${selectedTender.id}.pdf`} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="btn btn-secondary" 
-                        style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        📑 Tech Spec Sheet (PDF)
-                      </a>
-                    </div>
-                    {selectedTender.working_path && (
-                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                        📁 Working folder: <code>{selectedTender.working_path}</code>
-                      </span>
-                    )}
-                    {canPerform(currentUser?.role, 'generateBids') && (
-                      <button 
-                        className="btn btn-primary" 
-                        style={{ fontSize: '11px', padding: '6px 12px', alignSelf: 'flex-start', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                        onClick={openBidDocForm}
-                      >
-                        🔄 Re-Generate Bid Documents
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              )}
-
-              {/* 4. Generated Bid Documents Approval (MIS Team) Card */}
-              {isStage4Visible && (
-                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
-                    
-                    {/* Left Panel: Status & Actions */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>4. Generated Bid Documents Approval (MIS Team)</h4>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 8px', 
-                          borderRadius: '12px', 
-                          backgroundColor: selectedTender.verification_status === 'Approved' ? 'rgba(16, 185, 129, 0.1)' : selectedTender.verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.1)' : selectedTender.verification_status === 'Rejected' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)', 
-                          color: selectedTender.verification_status === 'Approved' ? '#10b981' : selectedTender.verification_status === 'Pending' ? '#f59e0b' : selectedTender.verification_status === 'Rejected' ? '#ef4444' : 'var(--text-muted)', 
-                          fontWeight: '600' 
-                        }}>
-                          {selectedTender.verification_status === 'Approved' ? 'Approved' : selectedTender.verification_status === 'Pending' ? 'Pending MIS Approval' : selectedTender.verification_status === 'Rejected' ? 'Changes Requested' : 'Not Started'}
-                        </span>
+                          <Download size={13} /> DOCX Package
+                        </a>
+                        <a
+                          href={getDocDownloadUrl(`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.pdf`)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-secondary"
+                          style={{ fontSize: '11.5px', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <FileText size={13} /> View PDF Bundle
+                        </a>
                       </div>
-
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                        Review generated Word & PDF bid document package. The MIS Team must verify and authorize documents before EMD payment can proceed.
-                      </p>
-
-                      {/* Download Links */}
-                      {areDocsGenerated && (
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                          <a 
-                            href={`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.docx`} 
-                            download 
-                            className="btn btn-secondary" 
-                            style={{ fontSize: '11.5px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <Download size={13} /> DOCX Package
-                          </a>
-                          <a 
-                            href={`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.pdf`} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="btn btn-secondary" 
-                            style={{ fontSize: '11.5px', padding: '6px 12px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
-                          >
-                            <FileText size={13} /> View PDF
-                          </a>
-                        </div>
-                      )}
 
                       {/* Working Folder Path (Documents Store) */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
                         <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>
-                          Working Folder Path (Optional Documents Store)
+                          Working Folder Path (Documents Store)
                         </label>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <input 
+                          <input
                             id="working-path-input"
-                            type="text" 
+                            type="text"
                             value={workingPath}
                             onChange={(e) => setWorkingPath(e.target.value)}
                             placeholder="e.g. /Shared/Tenders/2026/GEM-7324078"
-                            disabled={!canRecordOperationalStages || selectedTender.verification_status === 'Approved'}
-                            style={{ 
-                              flexGrow: 1, 
-                              padding: '8px 12px', 
-                              borderRadius: '6px', 
-                              background: 'var(--bg-app)', 
-                              border: '1px solid var(--border-color)', 
-                              color: 'var(--text-primary)', 
-                              fontSize: '13px',
-                              opacity: (!canRecordOperationalStages || selectedTender.verification_status === 'Approved') ? 0.6 : 1
+                            disabled={!canRecordOperationalStages || isStep6Complete}
+                            style={{
+                              flexGrow: 1,
+                              padding: '8px 12px',
+                              borderRadius: '6px',
+                              background: 'var(--bg-app)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-primary)',
+                              fontSize: '13px'
                             }}
                           />
-                          {canRecordOperationalStages && selectedTender.verification_status !== 'Approved' && (
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ padding: '8px 12px', fontSize: '12px' }}
+                          {canRecordOperationalStages && !isStep6Complete && (
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '8px 14px', fontSize: '12px' }}
                               onClick={() => updateTenderField({ working_path: workingPath })}
                             >
                               💾 Save Path
@@ -3291,203 +3601,177 @@ export default function TenderDetailPage() {
                         </div>
                       </div>
 
-                      {/* Display assigned MIS Team Representative */}
-                      {((selectedTender.verification_status === 'Pending' || selectedTender.verification_status === 'Approved' || !canRecordOperationalStages) && selectedTender.assigned_mis_member_docs) ? (
-                        <div style={{ marginBottom: '16px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                          <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs}</span>
-                        </div>
-                      ) : null}
-
-                      {(currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
-                            <select 
-                              value={selectedMisMemberDocs} 
-                              onChange={(e) => {
-                                setSelectedMisMemberDocs(e.target.value);
-                                updateTenderField({ assigned_mis_member_docs: e.target.value });
-                              }}
-                              style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
-                            >
-                              <option value="">-- Select MIS Member --</option>
-                              {misTeamMembers.map(m => (
-                                  <option key={m} value={m}>{m}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {!hasWorkingPathSaved(selectedTender) && !workingPath?.trim() && (
-                            <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#f59e0b' }}>
-                              ⚠️ <strong>Working Folder Path Required:</strong> Please enter and save the Working Folder Path above before submitting for MIS approval.
-                            </div>
-                          )}
-                          <button 
-                            className="btn btn-primary" 
-                            disabled={!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()}
-                            style={{ width: '100%', justifyContent: 'center', opacity: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 1 : 0.5, cursor: (hasWorkingPathSaved(selectedTender) || workingPath?.trim()) ? 'pointer' : 'not-allowed' }}
-                            onClick={() => {
-                              if (!selectedMisMemberDocs) {
-                                showToast('Please select a Target MIS Team Representative first.', 'error');
-                                alert('Please select a Target MIS Team Representative first.');
-                                return;
-                              }
-                              if (!hasWorkingPathSaved(selectedTender) && !workingPath?.trim()) {
-                                showToast('Please enter and save the Working Folder Path first.', 'error');
-                                return;
-                              }
-                              updateTenderField({ verification_status: 'Pending', working_path: workingPath, assigned_mis_member_docs: selectedMisMemberDocs, current_stage: 'DOC_VERIFICATION' });
-                            }}
+                      {/* Re-generate option */}
+                      {canPerform(currentUser?.role, 'generateBids') && !isStep6Complete && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            onClick={openBidDocForm}
                           >
-                            🚀 Submit Bid Documents for MIS Approval
+                            🔄 Re-generate Bid Documents
                           </button>
                         </div>
                       )}
-
-                      {selectedTender.verification_status === 'Pending' && (
-                        (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_docs || selectedTender.assigned_mis_member) && isMisRole) ? (
-                          <>
-                            {!hasWorkingPathSaved(selectedTender) ? (
-                              <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444', marginBottom: '12px' }}>
-                                ⚠️ <strong>Working Folder Path Required:</strong> The Tender Executive has not saved the Working Folder Path yet. Bid document approval will unlock once the Working Folder Path is saved.
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                                <button 
-                                  className="btn btn-primary" 
-                                  style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                                  onClick={() => updateTenderField({ verification_status: 'Approved', current_stage: 'PAYMENT_APPROVAL' })}
-                                >
-                                  ✅ Approve Bid Documents
-                                </button>
-                                <button 
-                                  className="btn btn-secondary" 
-                                  style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                                  onClick={() => updateTenderField({ verification_status: 'Rejected' })}
-                                >
-                                  ❌ Request Changes
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        ) : isMisRole ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginBottom: '12px' }}>
-                            <Shield size={14} style={{ color: 'var(--primary)' }} />
-                            <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs || selectedTender.assigned_mis_member || 'MIS Team'}</strong></span>
-                          </div>
-                        ) : null
-                      )}
                     </div>
-
-                    {/* Right Panel: Comment Discussion */}
-                    <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      {(() => {
-                        const phaseComments = comments.filter(c => c.phase === 'Verification');
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
-                            <div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                Verification Discussion ({phaseComments.length})
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px' }}>
-                                {phaseComments.length === 0 ? (
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No discussion messages yet.</span>
-                                ) : (
-                                  phaseComments.map((c, i) => (
-                                    <div key={i} style={{ background: 'rgba(255, 255, 255, 0.015)', padding: '6px 10px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid rgba(255, 255, 255, 0.02)' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '9px', marginBottom: '3px' }}>
-                                        <span style={{ fontWeight: '700' }}>{c.author || c.username} ({c.author_role})</span>
-                                        <span>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span>
-                                      </div>
-                                      <div style={{ color: 'var(--text-primary)' }}>{c.comment}</div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                            
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <input 
-                                type="text" 
-                                placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only" : "Discuss verification..."} 
-                                value={verificationCommentText} 
-                                onChange={(e) => setVerificationCommentText(e.target.value)} 
-                                disabled={currentUser?.role === 'Admin'}
-                                style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
-                              />
-                              <button 
-                                className="btn btn-primary" 
-                                style={{ padding: '6px 12px', fontSize: '11px' }}
-                                onClick={() => postComment('Verification')}
-                                disabled={currentUser?.role === 'Admin'}
-                              >
-                                Post
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                  </div>
+                  )}
                 </div>
               )}
 
-              {/* 5. EMD Payment Card */}
-              {isStage5Visible && (
-                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
+              {/* 4. EMD Payment Step Card */}
+              {isCard3Visible && (
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
                     
-                    {/* Left Panel: Fields */}
+                    {/* Left Panel: EMD Controls */}
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>5. EMD Payment Details</h4>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 8px', 
-                          borderRadius: '12px', 
-                          backgroundColor: selectedTender.payment_status === 'Approved' ? 'rgba(16, 185, 129, 0.1)' : selectedTender.payment_status === 'Pending' ? 'rgba(245, 158, 11, 0.1)' : selectedTender.payment_status === 'Rejected' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255, 255, 255, 0.05)', 
-                          color: selectedTender.payment_status === 'Approved' ? '#10b981' : selectedTender.payment_status === 'Pending' ? '#f59e0b' : selectedTender.payment_status === 'Rejected' ? '#ef4444' : 'var(--text-muted)', 
-                          fontWeight: '600' 
+                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                          4. EMD Payment Step
+                        </h4>
+                        <span style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: isEmdExempt ? 'rgba(16, 185, 129, 0.1)' : selectedTender.payment_status === 'Approved' ? 'rgba(16, 185, 129, 0.1)' : selectedTender.payment_status === 'Pending' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                          color: (isEmdExempt || selectedTender.payment_status === 'Approved') ? '#10b981' : selectedTender.payment_status === 'Pending' ? '#f59e0b' : 'var(--text-muted)',
+                          fontWeight: '600'
                         }}>
-                          {selectedTender.payment_status || 'Not Started'}
+                          {isEmdExempt ? 'Exempt / Not Applicable' : selectedTender.payment_status === 'Approved' ? 'Approved' : selectedTender.payment_status === 'Pending' ? 'Pending MIS Approval' : selectedTender.payment_status === 'Rejected' ? 'Changes Requested' : 'Pending Payment'}
                         </span>
                       </div>
 
-                      {selectedTender.verification_status !== 'Approved' && (!selectedTender.payment_status || selectedTender.payment_status === 'None') ? (
-                        <div style={{
-                          background: 'rgba(239, 68, 68, 0.05)',
-                          border: '1px solid rgba(239, 68, 68, 0.2)',
-                          padding: '12px 14px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          color: '#ef4444',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          <span>🔒</span>
-                          <span><strong>Locked:</strong> Generated Bid Documents must be approved by the MIS Team in Step 4 before EMD Payment can be processed. (Current Bid Docs Status: <em>{selectedTender.verification_status || 'Pending Generation'}</em>).</span>
+                      {/* Applicability Check: Toggle for Executive */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', background: 'rgba(99, 102, 241, 0.05)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', textTransform: 'uppercase' }}>
+                            EMD Requirement Check:
+                          </span>
+                          {isEmdExempt && (
+                            <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '2px 8px', borderRadius: '10px', fontWeight: '700' }}>
+                              ✓ EMD Exempt / Not Applicable
+                            </span>
+                          )}
+                        </div>
+                        
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+                          Specify whether Earnest Money Deposit (EMD) payment is mandatory for this tender or exempt / not applicable.
+                        </p>
+
+                        {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
+                          <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                            <button
+                              type="button"
+                              className={emdApplicableSelection ? "btn btn-primary" : "btn btn-secondary"}
+                              style={{ flex: 1, padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={() => setEmdApplicableSelection(true)}
+                            >
+                              💳 EMD is Required
+                            </button>
+                            <button
+                              type="button"
+                              className={!emdApplicableSelection ? "btn btn-primary" : "btn btn-secondary"}
+                              style={{ flex: 1, padding: '8px 12px', fontSize: '12px', justifyContent: 'center', background: !emdApplicableSelection ? '#10b981' : undefined, borderColor: !emdApplicableSelection ? '#10b981' : undefined, color: !emdApplicableSelection ? '#fff' : undefined }}
+                              onClick={async () => {
+                                setEmdApplicableSelection(false);
+                                try {
+                                  const res = await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/emd-applicability`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ applicable: false })
+                                  });
+                                  const data = await res.json();
+                                  if (!data.success) {
+                                    setEmdApplicableSelection(true);
+                                    showToast(data.error || 'Could not mark EMD as exempt.', 'error');
+                                    return;
+                                  }
+                                  setSelectedTender(prev => prev ? {
+                                    ...prev,
+                                    emd_applicable: false,
+                                    payment_status: 'Approved',
+                                    emd_status: 'EXEMPT_SKIPPED',
+                                    current_stage: data.stepName || 'DUAL_TRACK'
+                                  } : prev);
+                                  showToast(data.message || 'EMD marked as exempt. Dual track is now open.', 'success');
+                                  fetchTenderDetails();
+                                } catch {
+                                  setEmdApplicableSelection(true);
+                                  showToast('Network error. Please try again.', 'error');
+                                }
+                              }}
+                            >
+                              ⏩ EMD Not Applicable / Exempt (Skip to Dual Track)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isEmdExempt ? (
+                        <div style={{ background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '14px', borderRadius: '8px', fontSize: '12.5px', color: '#10b981' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', marginBottom: '4px' }}>
+                            <CheckCircle2 size={16} />
+                            <span>EMD Exempt / Not Applicable</span>
+                          </div>
+                          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '12px' }}>
+                            Earnest Money Deposit is not applicable for this tender. The workflow has automatically progressed to <strong>Step 5: Dual Track (Pricing + Document Verification)</strong>.
+                          </p>
+                          {canRecordOperationalStages && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setEmdApplicableSelection(true);
+                                try {
+                                  const res = await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/emd-applicability`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ applicable: true })
+                                  });
+                                  const data = await res.json();
+                                  if (!data.success) {
+                                    showToast(data.error || 'Could not mark EMD as required.', 'error');
+                                    return;
+                                  }
+                                  setSelectedTender(prev => prev ? {
+                                    ...prev,
+                                    emd_applicable: true,
+                                    payment_status: 'None',
+                                    emd_status: 'PENDING_INPUT',
+                                    current_stage: data.stepName || 'EMD_PAYMENT'
+                                  } : prev);
+                                  showToast(data.message || 'EMD marked as required.', 'success');
+                                  fetchTenderDetails();
+                                } catch {
+                                  showToast('Network error. Please try again.', 'error');
+                                }
+                              }}
+                              style={{ marginTop: '10px', background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '11.5px', fontWeight: '600', cursor: 'pointer', padding: 0 }}
+                            >
+                              ✏️ Change to EMD Required
+                            </button>
+                          )}
                         </div>
                       ) : (
+                        /* Form for when EMD is required */
                         <>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>EMD PAYMENT MODE</label>
-                              <input 
+                              <input
                                 id="emd-mode-input"
-                                type="text" 
+                                type="text"
                                 value={emdPaymentMode}
                                 onChange={(e) => setEmdPaymentMode(e.target.value)}
-                                placeholder="e.g. Online / DD / BG"
+                                placeholder="e.g. Online / DD / BG / RTGS"
                                 disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ACTUAL AMOUNT (₹)</label>
-                              <input 
+                              <input
                                 id="emd-amount-input"
-                                type="number" 
+                                type="number"
                                 value={emdAmountActual}
                                 onChange={(e) => setEmdAmountActual(e.target.value === '' ? '' : Number(e.target.value))}
                                 placeholder="e.g. 50000"
@@ -3496,22 +3780,22 @@ export default function TenderDetailPage() {
                               />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>REFERENCE / TXN ID</label>
-                              <input 
+                              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700' }}>BENEFICIARY NAME (TRANSFERRED TO)</label>
+                              <input
                                 id="emd-ref-input"
-                                type="text" 
+                                type="text"
                                 value={emdPaymentRef}
                                 onChange={(e) => setEmdPaymentRef(e.target.value)}
-                                placeholder="e.g. TXN-9402850"
+                                placeholder="e.g. Beneficiary Entity Name / Department"
                                 disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
                                 style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px' }}
                               />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>PAYMENT DATE</label>
-                              <input 
+                              <input
                                 id="emd-date-input"
-                                type="date" 
+                                type="date"
                                 value={emdPaymentDate}
                                 onChange={(e) => setEmdPaymentDate(e.target.value)}
                                 disabled={selectedTender.payment_status === 'Approved' || !canRecordOperationalStages}
@@ -3520,7 +3804,138 @@ export default function TenderDetailPage() {
                             </div>
                           </div>
 
-                          {/* Action buttons */}
+                          {/* Confidential Receipt Upload */}
+                          <div style={{
+                            marginTop: '12px',
+                            marginBottom: '16px',
+                            padding: '12px 14px',
+                            borderRadius: '8px',
+                            background: 'rgba(99, 102, 241, 0.05)',
+                            border: '1px solid rgba(99, 102, 241, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Lock size={13} style={{ color: 'var(--primary)' }} />
+                                <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--primary-light, #a5b4fc)', letterSpacing: '0.4px' }}>
+                                  EMD Payment Receipt / Proof <span style={{ fontWeight: 400, opacity: 0.8 }}>(Optional · Marked Confidential)</span>
+                                </label>
+                              </div>
+                              <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 600 }}>
+                                🔒 Strictly Confidential
+                              </span>
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Visible strictly to the assigned Executive, his MIS Team, and Admin.
+                            </div>
+
+                            {selectedTender.emd_receipt_doc_path ? (
+                              canViewConfidentialEmd ? (
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  background: 'var(--bg-app)',
+                                  padding: '8px 12px',
+                                  borderRadius: '6px',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                                    <FileText size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {selectedTender.emd_receipt_doc_path.split('/').pop() || 'EMD_Payment_Receipt.pdf'}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <a
+                                      href={getDocDownloadUrl(selectedTender.emd_receipt_doc_path)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 10px',
+                                        borderRadius: '4px',
+                                        background: 'rgba(16, 185, 129, 0.12)',
+                                        color: '#10b981',
+                                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                                        fontSize: '11.5px',
+                                        fontWeight: 600,
+                                        textDecoration: 'none'
+                                      }}
+                                    >
+                                      <ExternalLink size={12} /> View / Download
+                                    </a>
+                                    {canRecordOperationalStages && selectedTender.payment_status !== 'Approved' && (
+                                      <button
+                                        type="button"
+                                        onClick={handleRemoveEmdReceipt}
+                                        style={{
+                                          background: 'transparent',
+                                          border: 'none',
+                                          color: '#ef4444',
+                                          fontSize: '11px',
+                                          fontWeight: 600,
+                                          cursor: 'pointer',
+                                          padding: '4px 6px'
+                                        }}
+                                      >
+                                        ✕ Remove
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '11.5px', fontStyle: 'italic', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <Lock size={12} /> Payment receipt attached (Confidential: Access restricted)
+                                </div>
+                              )
+                            ) : (
+                              canRecordOperationalStages && selectedTender.payment_status !== 'Approved' ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <input
+                                    type="file"
+                                    ref={emdFileInputRef}
+                                    onChange={handleUploadEmdReceipt}
+                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                    style={{ display: 'none' }}
+                                    id="emd-receipt-file-input"
+                                  />
+                                  <label
+                                    htmlFor="emd-receipt-file-input"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      padding: '6px 12px',
+                                      borderRadius: '6px',
+                                      border: '1px dashed rgba(99, 102, 241, 0.4)',
+                                      background: 'rgba(99, 102, 241, 0.08)',
+                                      color: 'var(--primary-light, #a5b4fc)',
+                                      fontSize: '11.5px',
+                                      fontWeight: 600,
+                                      cursor: uploadingEmdReceipt ? 'wait' : 'pointer'
+                                    }}
+                                  >
+                                    {uploadingEmdReceipt ? '⏳ Uploading...' : '📎 Attach Payment Receipt / Proof (Optional)'}
+                                  </label>
+                                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                                    PDF, PNG, JPG accepted
+                                  </span>
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                  No payment proof attached (Optional)
+                                </div>
+                              )
+                            )}
+                          </div>
+
+                          {/* Submission buttons */}
                           {selectedTender.payment_status !== 'Approved' && canRecordOperationalStages && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -3570,7 +3985,8 @@ export default function TenderDetailPage() {
                                       emd_payment_ref: emdPaymentRef,
                                       emd_payment_date: emdPaymentDate,
                                       assigned_mis_member_emd: selectedMisMemberEmd,
-                                      payment_status: 'Pending'
+                                      payment_status: 'Pending',
+                                      current_stage: 'PAYMENT_APPROVAL'
                                     });
                                   }}
                                 >
@@ -3587,9 +4003,18 @@ export default function TenderDetailPage() {
                                 <button 
                                   className="btn btn-primary" 
                                   style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
-                                  onClick={() => updateTenderField({ payment_status: 'Approved', current_stage: 'SUBMISSION_PENDING' })}
+                                  onClick={async () => {
+                                    try {
+                                      await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/action`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'APPROVED', stage: 'PAYMENT_APPROVAL' })
+                                      });
+                                    } catch (e) {}
+                                    updateTenderField({ payment_status: 'Approved', current_stage: 'DUAL_TRACK' });
+                                  }}
                                 >
-                                  ✅ Approve Payment
+                                  ✅ Approve Payment (Begin Dual Track)
                                 </button>
                                 <button 
                                   className="btn btn-secondary" 
@@ -3664,154 +4089,766 @@ export default function TenderDetailPage() {
                 </div>
               )}
 
-              {/* 6. Submission Verification Card */}
-              {isStage6Visible && (
+              {/* 5. Dual Track (Pricing + Document Verification) Card */}
+              {isCard4Visible && (
                 <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
-                    
-                    {/* Left Panel: Status & Actions */}
+                  
+                  {/* Dual Track Banner Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>6. Submission Verification</h4>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          padding: '2px 8px', 
-                          borderRadius: '12px', 
-                          backgroundColor: selectedTender.submission_status === 'Approved' ? 'rgba(16, 185, 129, 0.1)' : selectedTender.submission_status === 'Pending' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255, 255, 255, 0.05)', 
-                          color: selectedTender.submission_status === 'Approved' ? '#10b981' : selectedTender.submission_status === 'Pending' ? '#f59e0b' : 'var(--text-muted)', 
-                          fontWeight: '600' 
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        5. Dual Track (Commercial Pricing &amp; Document Verification)
+                      </h4>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Track A (Commercial Pricing) and Track B (Document Verification) execute in parallel simultaneously. Both tracks must be approved before final submission unlocks.
+                      </p>
+                    </div>
+
+                    {/* Status Badges */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <span style={{
+                        fontSize: '11px', padding: '3px 10px', borderRadius: '12px',
+                        background: isPricingApproved ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                        color: isPricingApproved ? '#10b981' : '#f59e0b',
+                        border: `1px solid ${isPricingApproved ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                        fontWeight: '700'
+                      }}>
+                        Track A: Pricing {isPricingApproved ? '✓' : '⏳'}
+                      </span>
+                      <span style={{
+                        fontSize: '11px', padding: '3px 10px', borderRadius: '12px',
+                        background: isDocsVerified ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                        color: isDocsVerified ? '#10b981' : '#f59e0b',
+                        border: `1px solid ${isDocsVerified ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                        fontWeight: '700'
+                      }}>
+                        Track B: Docs {isDocsVerified ? '✓' : '⏳'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Dual Track Overall Outcome Callout */}
+                  {isStep5Complete ? (
+                    <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                      <CheckCircle2 size={16} />
+                      <span><strong>Dual Track Complete:</strong> Commercial quote price finalized and all folder documents verified. Step 6 (Final Submission) is now unlocked!</span>
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', color: 'var(--primary-light, #a5b4fc)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                      <span>⚡</span>
+                      <span>
+                        {!isPricingApproved && !isDocsVerified && 'Both Track A (Pricing) and Track B (Audit) are in progress simultaneously.'}
+                        {isPricingApproved && !isDocsVerified && 'Track A Approved ✓. Waiting on Track B (All-Path Document Verification).'}
+                        {!isPricingApproved && isDocsVerified && 'Track B Verified ✓. Waiting on Track A (Commercial Pricing Go-Ahead).'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Two Parallel Tracks Side-by-Side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '20px' }}>
+                    
+                    {/* ================= TRACK A: COMMERCIAL PRICING ================= */}
+                    <div style={{ background: 'rgba(147, 51, 234, 0.03)', border: '1px solid rgba(147, 51, 234, 0.2)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            Track A: Commercial Pricing
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            TPC Transfer Price (confidential) &amp; Final Provided Price (Quote)
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          {selectedTender.pricing_route && (
+                            <span style={{
+                              fontSize: '10px', padding: '2px 7px', borderRadius: '8px',
+                              background: selectedTender.pricing_route === 'MIS' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(147, 51, 234, 0.15)',
+                              color: selectedTender.pricing_route === 'MIS' ? '#3b82f6' : '#a855f7',
+                              fontWeight: '700'
+                            }}>
+                              {selectedTender.pricing_route === 'MIS' ? 'Route: Direct MIS' : 'Route: TPC Team'}
+                            </span>
+                          )}
+                          <span style={{
+                            fontSize: '10.5px', padding: '2px 8px', borderRadius: '10px',
+                            background: isPricingApproved ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                            color: isPricingApproved ? '#10b981' : '#f59e0b',
+                            fontWeight: '700'
+                          }}>
+                            {isPricingApproved ? 'Commercial Go-Ahead ✓' : (!selectedTender.pricing_route && !selectedTender.tpc_purchase_price && selectedTender.current_stage !== 'TPC_PRICING' && selectedTender.current_stage !== 'MIS_PRICING' ? 'Route Selection Required' : 'Pricing In Progress')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Track A Body */}
+                      {(() => {
+                        const effectiveRoute = selectedTender.pricing_route || (selectedTender.tpc_purchase_price || selectedTender.current_stage === 'TPC_PRICING' ? 'TPC' : (selectedTender.current_stage === 'MIS_PRICING' ? 'MIS' : null));
+                        const isRoutePending = !effectiveRoute && !isPricingApproved;
+
+                        // 1. Approved state: Commercial price finalized
+                        if (isPricingApproved) {
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '14px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ color: '#10b981', fontWeight: '700', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <CheckCircle2 size={16} /> Final Commercial Quote (Approved)
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Approved for portal submission</span>
+                                </div>
+                                <span style={{ fontSize: '18px', color: '#10b981', fontWeight: '800' }}>
+                                  ₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                              {!isExecutiveRole && selectedTender.tpc_purchase_price && (
+                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'var(--bg-app)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                                  <span>TPC Transfer Price (Confidential):</span>
+                                  <span style={{ fontWeight: '700', color: '#9333ea' }}>₹{Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // 2. Route selection pending: Executive must choose Option 1 or Option 2
+                        if (isRoutePending) {
+                          if (isExecutiveRole || isAdmin) {
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '12px 14px', borderRadius: '8px', fontSize: '12px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span>⚠️</span>
+                                  <span><strong>Select Commercial Pricing Route:</strong> Tenders do not always need to go to TPC. Choose Option 1 (Send to TPC) or Option 2 (Direct to MIS).</span>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                                  {/* Option 1: Send tender to TPC Team */}
+                                  <div style={{ background: 'var(--bg-app)', border: '1px solid rgba(147, 51, 234, 0.35)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#9333ea' }}>1. Send Tender to TPC Team</span>
+                                        <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '6px', background: 'rgba(147, 51, 234, 0.15)', color: '#9333ea', fontWeight: '700' }}>TPC Route</span>
+                                      </div>
+                                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                                        Send to TPC Team to add manufacturer transfer price. TPC will then forward it to an MIS team member of their choice for final quote.
+                                      </p>
+                                    </div>
+                                    <button
+                                      className="btn btn-primary"
+                                      disabled={routingPricing}
+                                      onClick={() => handleSelectPricingRoute('TPC')}
+                                      style={{ width: '100%', fontSize: '11.5px', padding: '8px 12px', background: '#9333ea', borderColor: '#9333ea', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                    >
+                                      {routingPricing ? 'Routing...' : '📤 Option 1: Send to TPC Team'}
+                                    </button>
+                                  </div>
+
+                                  {/* Option 2: Send tender to MIS Team for pricing */}
+                                  <div style={{ background: 'var(--bg-app)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px' }}>
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#3b82f6' }}>2. Send to MIS Team for Pricing</span>
+                                        <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: '700' }}>Direct MIS</span>
+                                      </div>
+                                      <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                                        Send directly to MIS Team to quote price. <strong>TPC bypassed:</strong> tender will NOT appear as pending on TPC's system.
+                                      </p>
+                                      <div style={{ marginTop: '8px' }}>
+                                        <label style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Assign MIS Member (Optional):</label>
+                                        <select
+                                          value={selectedMisMemberPricingRoute}
+                                          onChange={(e) => setSelectedMisMemberPricingRoute(e.target.value)}
+                                          style={{ width: '100%', padding: '6px 8px', borderRadius: '5px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '11px' }}
+                                        >
+                                          <option value="">-- Any Available MIS Member --</option>
+                                          {misTeamMembers.map((m) => (
+                                            <option key={m} value={m}>{m}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <button
+                                      className="btn btn-primary"
+                                      disabled={routingPricing}
+                                      onClick={() => handleSelectPricingRoute('MIS', selectedMisMemberPricingRoute)}
+                                      style={{ width: '100%', fontSize: '11.5px', padding: '8px 12px', background: '#3b82f6', borderColor: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                    >
+                                      {routingPricing ? 'Routing...' : '🚀 Option 2: Send Directly to MIS'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg-app)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>⏳</span>
+                              <span>Awaiting Executive pricing route selection (Option 1: TPC Team vs Option 2: Direct MIS).</span>
+                            </div>
+                          );
+                        }
+
+                        // 3. Option 1 Active: Routed to TPC
+                        if (effectiveRoute === 'TPC') {
+                          if (isExecutiveRole) {
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', background: 'var(--bg-app)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-yellow)', fontSize: '12px', marginBottom: '6px' }}>
+                                    <span>⏳</span>
+                                    <span><strong>Tender sent to TPC Team.</strong> Awaiting manufacturer purchase pricing &amp; MIS assignment. (Confidential Transfer Price masked).</span>
+                                  </div>
+                                  {selectedTender.tpc_purchase_price && (
+                                    <div style={{ fontSize: '11.5px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                      <CheckCircle2 size={14} /> TPC pricing added. Forwarded to MIS Team for final commercial quote.
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  <button
+                                    onClick={() => handleSelectPricingRoute('MIS')}
+                                    disabled={routingPricing}
+                                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '11px', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                                  >
+                                    ⇄ Switch route: Send directly to MIS instead
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              {/* TPC Transfer Price & MIS Assignment dropdown */}
+                              <div style={{ background: selectedTender.tpc_purchase_price ? 'rgba(16, 185, 129, 0.05)' : 'rgba(147, 51, 234, 0.03)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: '700', color: '#9333ea', textTransform: 'uppercase' }}>
+                                    1. TPC Transfer Price (Total Production Cost)
+                                  </label>
+                                  {selectedTender.tpc_purchase_price && (
+                                    <span style={{ fontSize: '14px', fontWeight: '800', color: '#10b981' }}>
+                                      ₹{Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')}
+                                    </span>
+                                  )}
+                                </div>
+                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '10px' }}>
+                                  🔒 Confidential: Visible only to TPC Team, MIS Team, and Admin. Masked from Tender Executive.
+                                </span>
+
+                                {(isTpcRole || isAdmin) && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                      <input
+                                        type="number"
+                                        placeholder={selectedTender.tpc_purchase_price ? `Update transfer price (Current: ₹${Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')})` : "Enter transfer price (₹)..."}
+                                        value={tpcPurchasePriceInput}
+                                        onChange={(e) => setTpcPurchasePriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                        style={{ flex: 1, minWidth: '160px', padding: '7px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                      />
+                                      {/* Forward to MIS Member Dropdown */}
+                                      <select
+                                        value={selectedMisMemberTpc}
+                                        onChange={(e) => setSelectedMisMemberTpc(e.target.value)}
+                                        style={{ minWidth: '180px', padding: '7px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                      >
+                                        <option value="">-- Forward to MIS Member --</option>
+                                        {misTeamMembers.map((m) => (
+                                          <option key={m} value={m}>{m}</option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        className="btn btn-primary"
+                                        disabled={submittingTpcPrice || !tpcPurchasePriceInput}
+                                        onClick={handleSubmitTpcPrice}
+                                        style={{ fontSize: '11px', padding: '7px 14px', background: '#9333ea', borderColor: '#9333ea', whiteSpace: 'nowrap' }}
+                                      >
+                                        {submittingTpcPrice ? 'Saving...' : '💾 Save & Forward to MIS'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {selectedTender.assigned_mis_member && (
+                                  <div style={{ marginTop: (isTpcRole || isAdmin) ? '8px' : '0px', fontSize: '11px', color: '#9333ea' }}>
+                                    👤 Assigned to MIS Member: <strong>{selectedTender.assigned_mis_member}</strong>
+                                  </div>
+                                )}
+
+                                {isMisRole && !selectedTender.tpc_purchase_price && (
+                                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '6px' }}>
+                                    ⏳ Awaiting TPC Team to enter manufacturer purchase price.
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* MIS Final Provided Price */}
+                              <div style={{ background: selectedTender.mis_final_price ? 'rgba(16, 185, 129, 0.05)' : 'rgba(59, 130, 246, 0.03)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: '700', color: '#3b82f6', textTransform: 'uppercase' }}>
+                                    2. Final Provided Price (Commercial Go-Ahead)
+                                  </label>
+                                  {selectedTender.mis_final_price && (
+                                    <span style={{ fontSize: '14px', fontWeight: '800', color: '#10b981' }}>
+                                      ₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}
+                                    </span>
+                                  )}
+                                </div>
+                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>
+                                  MIS can view TPC price and either adopt it directly or enter an updated commercial price.
+                                </span>
+
+                                {(isMisRole || isAdmin) ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {/* Option to send directly to executive using TPC price */}
+                                    {selectedTender.tpc_purchase_price && (
+                                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '10px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                        <span style={{ fontSize: '11.5px', color: '#10b981' }}>
+                                          TPC Price: <strong>₹{Number(selectedTender.tpc_purchase_price).toLocaleString('en-IN')}</strong>
+                                        </span>
+                                        <button
+                                          className="btn btn-primary"
+                                          disabled={submittingMisPrice}
+                                          onClick={() => handleSubmitMisPrice(Number(selectedTender.tpc_purchase_price))}
+                                          style={{ fontSize: '11px', padding: '6px 12px', background: '#10b981', borderColor: '#10b981' }}
+                                        >
+                                          {submittingMisPrice ? 'Submitting...' : '⚡ Use TPC Price & Send Directly to Executive'}
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {/* Custom price input */}
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <input
+                                        type="number"
+                                        placeholder={selectedTender.mis_final_price ? `Update Quote Price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Provided Quote Price (₹)"}
+                                        value={misFinalPriceInput}
+                                        onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                        style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                      />
+                                      <button
+                                        className="btn btn-primary"
+                                        disabled={submittingMisPrice || !misFinalPriceInput}
+                                        onClick={() => handleSubmitMisPrice()}
+                                        style={{ fontSize: '11px', padding: '7px 12px', background: '#3b82f6', borderColor: '#3b82f6' }}
+                                      >
+                                        {submittingMisPrice ? 'Saving...' : '✅ Save & Send to Executive'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    {!selectedTender.tpc_purchase_price ? 'Awaiting TPC transfer price submission.' : 'Forwarded to MIS Team for final commercial quote.'}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // 4. Option 2 Active: Routed directly to MIS (TPC Bypassed)
+                        if (effectiveRoute === 'MIS') {
+                          if (isExecutiveRole) {
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', background: 'var(--bg-app)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontSize: '12px' }}>
+                                    <span>🚀</span>
+                                    <span><strong>Tender sent directly to MIS Team for pricing.</strong> (TPC Bypassed). Awaiting MIS commercial quote.</span>
+                                  </div>
+                                  {selectedTender.assigned_mis_member && (
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                                      Assigned MIS Member: <strong>{selectedTender.assigned_mis_member}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  <button
+                                    onClick={() => handleSelectPricingRoute('TPC')}
+                                    disabled={routingPricing}
+                                    style={{ background: 'none', border: 'none', color: '#9333ea', fontSize: '11px', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                                  >
+                                    ⇄ Switch route: Send to TPC Team instead
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (isTpcRole) {
+                            return (
+                              <div style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg-app)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>ℹ️</span>
+                                <span><strong>Direct MIS Route:</strong> The Tender Executive sent this tender directly to the MIS Team for pricing. TPC review is not required.</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '14px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <label style={{ fontSize: '11px', fontWeight: '700', color: '#3b82f6', textTransform: 'uppercase' }}>
+                                    Direct MIS Commercial Pricing (TPC Bypassed)
+                                  </label>
+                                  {selectedTender.mis_final_price && (
+                                    <span style={{ fontSize: '14px', fontWeight: '800', color: '#10b981' }}>
+                                      ₹{Number(selectedTender.mis_final_price).toLocaleString('en-IN')}
+                                    </span>
+                                  )}
+                                </div>
+                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '10px' }}>
+                                  Executive assigned this tender directly to MIS. TPC transfer pricing was bypassed.
+                                </span>
+
+                                {(isMisRole || isAdmin) ? (
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input
+                                      type="number"
+                                      placeholder={selectedTender.mis_final_price ? `Update Quote Price (Current: ₹${Number(selectedTender.mis_final_price).toLocaleString('en-IN')})` : "Enter Final Commercial Quote (₹)..."}
+                                      value={misFinalPriceInput}
+                                      onChange={(e) => setMisFinalPriceInput(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                      style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                    />
+                                    <button
+                                      className="btn btn-primary"
+                                      disabled={submittingMisPrice || !misFinalPriceInput}
+                                      onClick={() => handleSubmitMisPrice()}
+                                      style={{ fontSize: '11px', padding: '7px 14px', background: '#10b981', borderColor: '#10b981' }}
+                                    >
+                                      {submittingMisPrice ? 'Saving...' : '✅ Commercial Go-Ahead & Send to Executive'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    Reserved for MIS Team review.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
+                    </div>
+
+                    {/* ================= TRACK B: ALL PATH DOCUMENT VERIFICATION ================= */}
+                    <div style={{ background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            Track B: Document Verification (All Path Docs)
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                            MIS Team verifies all documents in folder path (specs, bid docs, and downloaded notices)
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: '10.5px', padding: '2px 8px', borderRadius: '10px',
+                          background: isDocsVerified ? 'rgba(16, 185, 129, 0.15)' : selectedTender.verification_status === 'Pending' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                          color: isDocsVerified ? '#10b981' : selectedTender.verification_status === 'Pending' ? '#f59e0b' : 'var(--text-muted)',
+                          fontWeight: '700'
                         }}>
-                          {selectedTender.submission_status || 'Not Started'}
+                          {isDocsVerified ? 'All Documents Verified ✓' : selectedTender.verification_status === 'Pending' ? 'Pending MIS Audit' : selectedTender.verification_status === 'Rejected' ? 'Changes Requested' : 'Pending Verification'}
                         </span>
                       </div>
 
-                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                        Upload bid pack to the official portal (GeM / Tender247). Once submission screenshot is verified, mark the submission as complete.
-                      </p>
+                      {/* Complete All-Path Document Manifest List */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                          Folder Path Documents to Verify:
+                        </span>
 
-                      {canRecordOperationalStages && selectedTender.submission_status !== 'Approved' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ maxHeight: '170px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg-app)', padding: '8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                          {/* 1. Bid Package Documents */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', fontSize: '11.5px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <FileText size={13} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                Bid_Documents_{selectedTender.id}.docx / .pdf
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <a href={getDocDownloadUrl(`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.pdf`)} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', fontSize: '11px', textDecoration: 'none' }}>PDF</a>
+                              <span style={{ color: 'var(--border-color)' }}>|</span>
+                              <a href={getDocDownloadUrl(`/documents/${selectedTender.id}/Bid_Documents_${selectedTender.id}.docx`)} download style={{ color: '#10b981', fontSize: '11px', textDecoration: 'none' }}>DOCX</a>
+                            </div>
+                          </div>
+
+                          {/* 2. Clearance-Approved Technical Specification */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', fontSize: '11.5px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <FileText size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                {selectedTender.final_tech_spec_filename || 'Combined_Technical_Data_Sheet.pdf'} (Final Cleared Spec)
+                              </span>
+                            </div>
+                            <a href={getDocDownloadUrl(selectedTender.final_tech_spec_filename ? `/documents/${selectedTender.id}/${selectedTender.final_tech_spec_filename}` : `/documents/${selectedTender.id}/Combined_Technical_Data_Sheet.pdf`)} target="_blank" rel="noreferrer" style={{ color: '#10b981', fontSize: '11px', textDecoration: 'none' }}>View</a>
+                          </div>
+
+                          {/* 3. Original Notice or Downloaded Docs */}
+                          {(() => {
+                            let dlDocs: any[] = [];
+                            try {
+                              const raw = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                              if (raw) dlDocs = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                            } catch {}
+                            if (!Array.isArray(dlDocs)) dlDocs = [];
+                            return dlDocs.slice(0, 3).map((d: any, idx: number) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '4px', fontSize: '11.5px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                                  <FileText size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                                  <span style={{ color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                    {d.name || d.filename || 'Downloaded Tender Document'}
+                                  </span>
+                                </div>
+                                {d.local_path && (
+                                  <a href={getDocDownloadUrl(d.local_path)} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', fontSize: '11px', textDecoration: 'none' }}>Download</a>
+                                )}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* Assigned MIS Auditor & Submission Controls */}
+                      {((currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && selectedTender.verification_status !== 'Approved' && selectedTender.verification_status !== 'Pending') && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS TEAM REPRESENTATIVE</label>
+                            <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '600' }}>TARGET MIS AUDITOR</label>
                             <select 
-                              value={selectedMisMemberSubmission} 
+                              value={selectedMisMemberDocs} 
                               onChange={(e) => {
-                                setSelectedMisMemberSubmission(e.target.value);
-                                updateTenderField({ assigned_mis_member_submission: e.target.value });
+                                setSelectedMisMemberDocs(e.target.value);
+                                updateTenderField({ assigned_mis_member_docs: e.target.value });
                               }}
-                              style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' }}
+                              style={{ padding: '7px 10px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontSize: '12px', outline: 'none' }}
                             >
-                              <option value="">-- Select MIS Member --</option>
+                              <option value="">-- Select MIS Auditor --</option>
                               {misTeamMembers.map(m => (
                                 <option key={m} value={m}>{m}</option>
                               ))}
                             </select>
                           </div>
+
                           <button 
                             className="btn btn-primary" 
-                            style={{ width: '100%', justifyContent: 'center' }}
+                            style={{ width: '100%', justifyContent: 'center', fontSize: '12px', padding: '8px 12px' }}
                             onClick={() => {
-                              if (!selectedMisMemberSubmission) {
-                                showToast('Please select a Target MIS Team Representative first.', 'error');
-                                alert('Please select a Target MIS Team Representative first.');
+                              if (!selectedMisMemberDocs) {
+                                showToast('Please select a Target MIS Team Auditor first.', 'error');
+                                alert('Please select a Target MIS Team Auditor first.');
                                 return;
                               }
-                              updateTenderField({ submission_status: 'Pending', assigned_mis_member_submission: selectedMisMemberSubmission });
+                              updateTenderField({ verification_status: 'Pending', assigned_mis_member_docs: selectedMisMemberDocs, current_stage: 'DOC_VERIFICATION' });
                             }}
                           >
-                            🚀 Request Submission Verification
+                            🚀 Submit All Path Documents for MIS Audit
                           </button>
                         </div>
                       )}
 
-                      {(!canRecordOperationalStages || selectedTender.submission_status === 'Approved') && selectedTender.assigned_mis_member_submission && (
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                          <strong>Target MIS Representative:</strong> <span style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_submission}</span>
-                        </div>
-                      )}
-
-                      {selectedTender.submission_status === 'Pending' && (
-                        (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member) && isMisRole) ? (
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-                              onClick={() => updateTenderField({ submission_status: 'Approved', outcome_status: 'Pending', current_stage: 'WIN_LOSS_PENDING', status: 'Submitted' })}
+                      {/* MIS Team Verification Decision Controls.
+                          Dual track opens this decision with pricing. It does not wait for a separate
+                          executive "submit for audit" that would set verification_status to Pending. */}
+                      {!isDocsVerified && (
+                        (isMisRole && canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_docs)) ? (
+                          <div style={{ display: 'flex', gap: '8px', background: 'rgba(245, 158, 11, 0.05)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                            <button
+                              className="btn btn-primary"
+                              disabled={submittingDocDecision}
+                              style={{ flex: 1, background: 'var(--accent-green)', borderColor: 'var(--accent-green)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={async () => {
+                                setSubmittingDocDecision(true);
+                                try {
+                                  const res = await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/verify-all-documents`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remarks: 'All path documents verified.' })
+                                  });
+                                  const data = await res.json().catch(() => ({}));
+                                  if (!res.ok || data.success === false) {
+                                    showToast(data.error || 'Could not approve the documents.', 'error');
+                                    return;
+                                  }
+                                  showToast(data.message || 'All path documents verified.', 'success');
+                                  setSelectedTender(prev => prev ? { ...prev, verification_status: 'Approved' } : null);
+                                  fetchTenderDetails();
+                                } catch {
+                                  showToast('Network error verifying documents.', 'error');
+                                } finally {
+                                  setSubmittingDocDecision(false);
+                                }
+                              }}
                             >
-                              ✅ Verify & Mark Submitted
+                              {submittingDocDecision ? 'Saving...' : '✅ Approve Docs'}
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              disabled={submittingDocDecision}
+                              style={{ flex: 1, color: 'var(--accent-red)', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={async () => {
+                                setSubmittingDocDecision(true);
+                                try {
+                                  const res = await fetchWithAuth(`/api/v2/workflow/${selectedTender.id}/reject-documents`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ remarks: 'Changes requested on folder documents.' })
+                                  });
+                                  const data = await res.json().catch(() => ({}));
+                                  if (!res.ok || data.success === false) {
+                                    showToast(data.error || 'Could not request document changes.', 'error');
+                                    return;
+                                  }
+                                  showToast(data.message || 'Document changes requested.', 'success');
+                                  setSelectedTender(prev => prev ? { ...prev, verification_status: 'Rejected' } : null);
+                                  fetchTenderDetails();
+                                } catch {
+                                  showToast('Network error requesting document changes.', 'error');
+                                } finally {
+                                  setSubmittingDocDecision(false);
+                                }
+                              }}
+                            >
+                              ❌ Reject Docs
                             </button>
                           </div>
                         ) : isMisRole ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '500', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)', marginBottom: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', color: 'var(--primary-light, #a5b4fc)' }}>
                             <Shield size={14} style={{ color: 'var(--primary)' }} />
-                            <span>View-Only Access · Assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member || 'MIS Team'}</strong></span>
+                            <span>Audit assigned to: <strong style={{ color: 'var(--text-primary)' }}>{selectedTender.assigned_mis_member_docs || 'MIS Team'}</strong></span>
                           </div>
-                        ) : null
+                        ) : (
+                          <div style={{ fontSize: '11.5px', color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>⏳</span>
+                            <span>Awaiting MIS Team audit of all path documents.</span>
+                          </div>
+                        )
                       )}
-                    </div>
 
-                    {/* Right Panel: Comment Discussion */}
-                    <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      {(() => {
-                        const phaseComments = comments.filter(c => c.phase === 'Submission');
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
-                            <div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                Submission Discussion ({phaseComments.length})
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px' }}>
-                                {phaseComments.length === 0 ? (
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No discussion messages yet.</span>
-                                ) : (
-                                  phaseComments.map((c, i) => (
-                                    <div key={i} style={{ background: 'rgba(255, 255, 255, 0.015)', padding: '6px 10px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid rgba(255, 255, 255, 0.02)' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '9px', marginBottom: '3px' }}>
-                                        <span style={{ fontWeight: '700' }}>{c.author || c.username} ({c.author_role})</span>
-                                        <span>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span>
-                                      </div>
-                                      <div style={{ color: 'var(--text-primary)' }}>{c.comment}</div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                            
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <input 
-                                type="text" 
-                                placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only for Admin" : "Discuss submission..."} 
-                                value={submissionCommentText} 
-                                onChange={(e) => setSubmissionCommentText(e.target.value)} 
-                                disabled={currentUser?.role === 'Admin'}
-                                style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
-                              />
-                              <button 
-                                className="btn btn-primary" 
-                                style={{ padding: '6px 12px', fontSize: '11px' }}
-                                onClick={() => postComment('Submission')}
-                                disabled={currentUser?.role === 'Admin'}
-                              >
-                                Post
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
 
                   </div>
                 </div>
               )}
 
-              {/* 5. Final Outcome Declaration Card */}
-              {isStage7Visible && (() => {
+              {/* 6. Final Submission Card */}
+              {isCard5Visible && (
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      6. Final Submission on Portal
+                    </h4>
+                    <span style={{ 
+                      fontSize: '11px', 
+                      padding: '2px 8px', 
+                      borderRadius: '12px', 
+                      backgroundColor: isStep6Complete ? 'rgba(16, 185, 129, 0.1)' : selectedTender.submission_status === 'Pending' ? 'rgba(245, 158, 11, 0.1)' : canFinalSubmit ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
+                      color: isStep6Complete ? '#10b981' : selectedTender.submission_status === 'Pending' ? '#f59e0b' : canFinalSubmit ? '#3b82f6' : '#ef4444', 
+                      fontWeight: '600' 
+                    }}>
+                      {isStep6Complete ? 'Submitted & Confirmed' : selectedTender.submission_status === 'Pending' ? 'Pending MIS Audit' : canFinalSubmit ? 'Active (Ready to Submit)' : 'Locked'}
+                    </span>
+                  </div>
+
+                  {!canFinalSubmit && !isStep6Complete ? (
+                    <div style={{
+                      background: 'rgba(239, 68, 68, 0.05)',
+                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      color: '#ef4444',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <Lock size={14} />
+                      <span><strong>Locked:</strong> Final Portal Submission requires both Track A (Commercial Pricing Go-Ahead) and Track B (Full Document Verification) to be complete. (Pricing: <em>{isPricingApproved ? 'Approved ✓' : 'Pending ⏳'}</em> · Docs: <em>{isDocsVerified ? 'Approved ✓' : 'Pending ⏳'}</em>).</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+                        Both commercial pricing and document verification have cleared! The Tender Executive can now officially execute the submission on the government/e-procurement portal.
+                      </p>
+
+                      {/* If Not Yet Submitted and user is Executive */}
+                      {!isStep6Complete && (currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive') && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(16, 185, 129, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#10b981' }}>
+                            Executive Portal Submission Action:
+                          </span>
+                          <button
+                            className="btn btn-primary"
+                            style={{ background: '#10b981', borderColor: '#10b981', padding: '10px 18px', fontSize: '13px', fontWeight: '700', justifyContent: 'center' }}
+                            onClick={() => {
+                              updateTenderField({
+                                submission_status: 'Pending',
+                                current_stage: 'SUBMISSION_PENDING',
+                                status: 'Submitted'
+                              });
+                              showToast('Tender submitted on portal! Forwarded to MIS Team for filing audit.', 'success');
+                            }}
+                          >
+                            🚀 Submit Tender on Portal
+                          </button>
+                        </div>
+                      )}
+
+                      {/* If Pending MIS Audit */}
+                      {selectedTender.submission_status === 'Pending' && (
+                        (canReviewAssignment(currentUser?.role, currentUser?.username, selectedTender.assigned_mis_member_submission || selectedTender.assigned_mis_member) && isMisRole) ? (
+                          <div style={{ display: 'flex', gap: '8px', background: 'rgba(245, 158, 11, 0.05)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                            <button
+                              className="btn btn-primary"
+                              style={{ flex: 1, background: '#10b981', borderColor: '#10b981', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={() => {
+                                updateTenderField({
+                                  submission_status: 'Approved',
+                                  current_stage: 'WIN_LOSS_PENDING',
+                                  status: 'Submitted'
+                                });
+                                showToast('Portal filing confirmed! Tender is officially submitted.', 'success');
+                              }}
+                            >
+                              ✅ Confirm &amp; Audit Portal Filing
+                            </button>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ flex: 1, color: '#ef4444', padding: '8px 12px', fontSize: '12px', justifyContent: 'center' }}
+                              onClick={() => updateTenderField({ submission_status: 'Rejected' })}
+                            >
+                              ❌ Reject Filing
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '12px', color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>⏳</span>
+                            <span>Tender marked as filed by Executive. Awaiting MIS Team filing audit confirmation.</span>
+                          </div>
+                        )
+                      )}
+
+                      {/* If Submission Complete */}
+                      {isStep6Complete && (
+                        <div style={{ background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '12.5px' }}>
+                          <CheckCircle2 size={16} />
+                          <span><strong>Officially Submitted:</strong> Tender filing has been confirmed and audited by the MIS Team. Ready for outcome tracking.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 7. Final Outcome Declaration Card */}
+              {isCard6Visible && (() => {
                 const isWon = selectedTender.status === 'Awarded' || selectedTender.status === 'Won' || selectedTender.outcome_status === 'Won' || selectedTender.current_stage === 'WON';
                 const isLost = selectedTender.status === 'Not Awarded' || selectedTender.status === 'Lost' || selectedTender.outcome_status === 'Lost' || selectedTender.current_stage === 'LOST';
                 return (
                   <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>6. Final Bidding Outcome</h4>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>7. Final Bidding Outcome</h4>
                       <span style={{ 
                         fontSize: '11px', 
                         padding: '2px 8px', 
@@ -3828,7 +4865,7 @@ export default function TenderDetailPage() {
                             : '#f59e0b', 
                         fontWeight: '600' 
                       }}>
-                        {isWon ? 'Won' : isLost ? 'Lost' : 'Pending'}
+                        {isWon ? 'Won' : isLost ? 'Lost' : 'Pending Outcome'}
                       </span>
                     </div>
                     

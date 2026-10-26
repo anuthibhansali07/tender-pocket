@@ -30,14 +30,14 @@ export function canPerform(role: string | null | undefined, action: WorkflowActi
   if (!canonical) return false;
   if (action === 'viewTenders' || action === 'viewAudit') return true;
   if (canonical === 'Admin') {
-    return action === 'manageUsers' || action === 'viewTpcPrice' || action === 'setMisPrice' || action === 'generateBids';
+    return action === 'manageUsers' || action === 'viewTpcPrice' || action === 'setMisPrice';
   }
   switch (action) {
     case 'uploadSpecs':
     case 'generateBids': return canonical === 'Tender Executive' || canonical === 'Admin';
     case 'approveSpecs': return canonical === 'Clearance Team';
-    case 'setTpcPrice': return canonical === 'TPC Pricing Team';
-    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team';
+    case 'setTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';
+    case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';
     case 'setMisPrice': return canonical === 'MIS Team';
     case 'manageUsers': return true;
     case 'reviewBids':
@@ -72,7 +72,7 @@ export function reviewAction(stage: string): WorkflowAction | null {
   }
 }
 
-export function canReviewAssignment(role: string | null | undefined, username: string | null | undefined, assigned: unknown): boolean {
+export function canReviewAssignment(role: string | null | undefined, username: string | null | undefined, assigned: unknown, stage?: string): boolean {
   const canonical = canonicalRole(role);
   if (!canonical || canonical === 'Admin') return false; // Admin has view-only access in approvals reviews
   if (!username) return false;
@@ -80,21 +80,35 @@ export function canReviewAssignment(role: string | null | undefined, username: s
   if (typeof assigned !== 'string') return false;
   const value = assigned.trim().toLowerCase();
   if (value === username.trim().toLowerCase()) return true;
+  const normalized = value.replace(/_/g, ' ');
   const queues: Record<string, string[]> = {
     'MIS Team': ['misteam', 'mis team', 'mis executive', 'mis'],
     'Clearance Team': ['clearance', 'clearance team', 'specification team', 'specification'],
     'TPC Pricing Team': ['tpc', 'tpc team', 'tpc pricing team', 'tpc pricing'],
   };
-  return (queues[canonical] || []).includes(value);
+  if ((queues[canonical] || []).includes(value) || (queues[canonical] || []).includes(normalized)) {
+    return true;
+  }
+  // Stage ownership safeguard: MIS Team members always have review rights over pending MIS stages
+  if (canonical === 'MIS Team' && stage) {
+    const misStages = ['MIS_PRICING', 'DOC_VERIFICATION', 'PAYMENT_APPROVAL', 'PAYMENT_PENDING', 'SUBMISSION_PENDING', 'WIN_LOSS_PENDING'];
+    if (misStages.includes(stage)) {
+      return true;
+    }
+  }
+  if (canonical === 'TPC Pricing Team' && stage === 'TPC_PRICING') return true;
+  if (canonical === 'Clearance Team' && stage === 'SPEC_CLEARANCE') return true;
+  return false;
 }
 export function forbiddenPatchFields(role: string, body: Record<string, unknown>, old: Record<string, unknown>): string[] {
   const denied: string[] = [];
   const canonical = canonicalRole(role);
   if (!canonical) return Object.keys(body);
   if (canonical === 'Admin') {
-    const adminRestrictedFields = ['notes', 'mis_executive', 'bid_qty', 'quoted_qty', 'working_path', 'assigned_mis_member', 'assigned_mis_member_spec', 'assigned_mis_member_docs', 'assigned_mis_member_emd', 'assigned_mis_member_submission'];
-    for (const f of adminRestrictedFields) {
-      if (f in body && body[f] !== old[f]) denied.push(f);
+    for (const f of Object.keys(body)) {
+      if (f !== 'tpc_purchase_price' && f !== 'tpcPurchasePrice' && f !== 'id' && body[f] !== old[f]) {
+        denied.push(f);
+      }
     }
     return denied;
   }
@@ -102,14 +116,23 @@ export function forbiddenPatchFields(role: string, body: Record<string, unknown>
   const isExec = canonical === 'Tender Executive';
   const isMis = canonical === 'MIS Team';
 
-  // EMD details entry fields & submission assignments (editable ONLY by Tender Executive)
-  const emdFields = ['emd_amount_actual', 'emd_payment_mode', 'emd_payment_ref', 'emd_payment_date', 'assigned_mis_member_emd', 'assigned_mis_member_submission', 'assigned_mis_member_docs', 'assigned_mis_member', 'working_path'];
+  // EMD details entry fields (editable ONLY by Tender Executive)
+  const emdFields = ['emd_amount_actual', 'emd_payment_mode', 'emd_payment_ref', 'emd_payment_date', 'working_path', 'emd_receipt_doc_path', 'emd_receipt_confidential', 'emd_beneficiary_name', 'emd_applicable'];
   for (const f of emdFields) {
     if (f in body && !isExec) denied.push(f);
   }
 
+  // Operational workflow assignments (editable by Tender Executive or MIS Team)
+  const assignmentFields = ['assigned_mis_member_spec', 'assigned_mis_member_emd', 'assigned_mis_member_submission', 'assigned_mis_member_docs', 'assigned_mis_member'];
+  for (const f of assignmentFields) {
+    if (f in body && !isExec && !isMis) denied.push(f);
+  }
+
+  // Executive assignment: only MIS Team
+  if ('mis_executive' in body && !isMis) denied.push('mis_executive');
+
   // Pricing fields
-  if ('tpc_purchase_price' in body && canonical !== 'TPC Pricing Team') denied.push('tpc_purchase_price');
+  if ('tpc_purchase_price' in body && canonical !== 'TPC Pricing Team' && canonical !== 'MIS Team' && canonical !== 'Admin') denied.push('tpc_purchase_price');
   if ('mis_final_price' in body && !isMis) denied.push('mis_final_price');
 
   // Stage status reviews vs submissions
@@ -181,4 +204,31 @@ export function redactManufacturerPricing(value: unknown, role: string): unknown
     ]));
   }
   return redact(value);
+}
+
+
+export function isAuthorizedForEmdReceipt(
+  role: string | null | undefined,
+  username: string | null | undefined,
+  tender: Record<string, any> | null | undefined
+): boolean {
+  if (!role || !tender) return false;
+  const canonical = canonicalRole(role);
+  if (canonical === 'Admin') return true;
+
+  const u = (username || '').trim().toLowerCase();
+
+  // That particular executive:
+  const execUser = String(tender.mis_executive || tender.assigned_to || tender.created_by || tender.assignedExecutive || '').trim().toLowerCase();
+  if (canonical === 'Tender Executive' && (u === execUser || !execUser)) {
+    return true;
+  }
+
+  // His MIS team:
+  const misUser = String(tender.assigned_mis_member_emd || tender.assigned_mis_member || tender.assignedMisMember || '').trim().toLowerCase();
+  if (canonical === 'MIS Team' && (u === misUser || !misUser || misUser === 'misteam' || misUser === 'mis team')) {
+    return true;
+  }
+
+  return false;
 }

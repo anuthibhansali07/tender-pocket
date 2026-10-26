@@ -119,10 +119,10 @@ export default function DocumentPreviewPage() {
     const testCases: { name: string; company: 'me' | 'healthtech'; type: string; orient: 'portrait' | 'landscape'; sig?: boolean; st?: boolean }[] = [
       { name: 'Theme A (ME) - Full Bid Package Portrait', company: 'me', type: 'all', orient: 'portrait' },
       { name: 'Theme A (ME) - Full Bid Package Landscape', company: 'me', type: 'all', orient: 'landscape' },
-      { name: 'Theme A (ME) - Tech Spec Compliance Sheet (Landscape)', company: 'me', type: 'spec', orient: 'landscape' },
+      { name: 'Theme A (ME) - Tech Spec Compliance Sheet', company: 'me', type: 'spec', orient: 'portrait' },
       { name: 'Theme B (Healthtech) - Full Bid Package Portrait', company: 'healthtech', type: 'all', orient: 'portrait' },
       { name: 'Theme B (Healthtech) - Full Bid Package Landscape', company: 'healthtech', type: 'all', orient: 'landscape' },
-      { name: 'Theme B (Healthtech) - Tech Spec Compliance Sheet (Landscape)', company: 'healthtech', type: 'spec', orient: 'landscape' },
+      { name: 'Theme B (Healthtech) - Tech Spec Compliance Sheet', company: 'healthtech', type: 'spec', orient: 'portrait' },
       { name: 'Theme A (ME) - Unsigned / Unstamped Draft', company: 'me', type: 'all', orient: 'portrait', sig: false, st: false },
     ];
 

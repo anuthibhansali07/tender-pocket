@@ -129,9 +129,23 @@ class WorkflowPermissionsTest {
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("tpc_purchase_price", 100), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("spec_verification_status", "Approved"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("payment_status", "Approved"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("payment_status", "Exempt"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("payment_status", "Pending"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("current_stage", "WON"), "SPEC_CLEARANCE"));
         assertFalse(WorkflowPermissions.allowedPatch(Map.of("status", "Won"), "SPEC_CLEARANCE"));
         assertTrue(WorkflowPermissions.allowedPatch(Map.of("notes", "Operational note"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_spec", "clearance"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_docs", "misteam"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_emd", "misteam"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_submission", "misteam"), "SPEC_CLEARANCE"));
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("mis_executive", "exec2"), "SPEC_CLEARANCE"));
+
+        authenticate("Clearance Team");
+        assertFalse(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_spec", "clearance"), "SPEC_CLEARANCE"));
+
+        authenticate("MIS Team");
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("assigned_mis_member_spec", "clearance"), "SPEC_CLEARANCE"));
+        assertTrue(WorkflowPermissions.allowedPatch(Map.of("mis_executive", "exec2"), "SPEC_CLEARANCE"));
     }
 
     @Test void completedApprovalCannotBypassStageAuthorization() {

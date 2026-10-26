@@ -25,9 +25,13 @@ import sys
 import tempfile
 import unittest
 import gzip
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import json
+import re
 import subprocess
 import uuid
 from datetime import datetime
@@ -101,6 +105,8 @@ class PostgresBackupUnitTests(unittest.TestCase):
 
     def test_overlapping_run_prevention(self):
         """Test that a second backup process cannot acquire the lock while one is running."""
+        if not fcntl:
+            self.skipTest("fcntl not available on this platform")
         lock_file = "/tmp/test_backup_overlap.lock"
         with open(lock_file, "w") as f1:
             fcntl.flock(f1, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -562,8 +568,16 @@ class PostgresBackupDatabaseIntegrationTests(unittest.TestCase):
             dump_res = subprocess.run(dump_cmd, capture_output=True)
             self.assertEqual(dump_res.returncode, 0)
 
+            raw_dump = dump_res.stdout
+            if b"transaction_timeout" in raw_dump:
+                raw_dump = re.sub(
+                    rb"(?m)^\s*SET\s+transaction_timeout\s*=.*?;",
+                    b"-- [cross-version-compat] SET transaction_timeout ignored;",
+                    raw_dump
+                )
+
             # Compress and write sidecar metadata
-            compressed_data = gzip.compress(dump_res.stdout)
+            compressed_data = gzip.compress(raw_dump)
             with tempfile.NamedTemporaryFile(suffix=".sql.gz", delete=False) as tf:
                 tf.write(compressed_data)
                 temp_backup_file = tf.name

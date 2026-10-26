@@ -21,6 +21,11 @@ tenders.db
 
 # Generated documents, scratch & temporary files
 frontend/public/documents/
+public/documents/
+public/
+backend/backend/
+backend/frontend/
+frontend/backend/
 **/scratch/
 scratch/
 *.tmp
@@ -31,3 +36,16 @@ scratch/
 backups/
 **/__pycache__/
 *.sql.gz
+
+# ==============================================================================
+# Local Workflow Architecture Tests (Kept local, excluded from GitHub)
+# ==============================================================================
+backend/src/test/java/com/tenderpocket/workflow/
+backend/src/test/java/com/tenderpocket/localtests/
+test-local/
+scripts/test-workflow-sync-local.*
+frontend/scripts/test-workflow-sync-local.*
+scripts/run-local-workflow-tests.*
+
+# Local Cursor project memory (not for remote)
+.cursor/
