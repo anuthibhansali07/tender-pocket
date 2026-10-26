@@ -73,6 +73,7 @@ import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import ProductCatalogue from '@/app/components/ProductCatalogue';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
+import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
 
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'catalogue';
@@ -1829,7 +1830,7 @@ export default function Dashboard() {
         t.authority || 'N/A',
         t.place || 'N/A',
         t.state || 'N/A',
-        t.tender_type || 'Non GeM',
+        getClassificationLabel(t.tender_type || t.tenderType),
         t.ref_no || '', // TENDER ID is the ref_no (procurement reference number)
         t.original_url,
         t.publish_date || 'N/A',
@@ -2874,17 +2875,38 @@ export default function Dashboard() {
                               <div className="tender-meta-row">
                                 <span className="tender-id-badge">{tender.id}</span>
                                 <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
-                                <span style={{
-                                  fontSize: '10px',
-                                  fontWeight: '600',
-                                  padding: '2px 6px',
-                                  borderRadius: '6px',
-                                  backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                                  color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                                  border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
-                                }}>
-                                  {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
-                                </span>
+                                {(() => {
+                                  const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
+                                  const sourceLabel = getSourceBadgeLabel(tender.source);
+                                  return (
+                                    <>
+                                      <span style={{
+                                        fontSize: '10px',
+                                        fontWeight: '600',
+                                        padding: '2px 6px',
+                                        borderRadius: '6px',
+                                        backgroundColor: classification.bgColor,
+                                        color: classification.color,
+                                        border: `1px solid ${classification.borderColor}`
+                                      }}>
+                                        {classification.label}
+                                      </span>
+                                      {sourceLabel && (
+                                        <span style={{
+                                          fontSize: '10px',
+                                          fontWeight: '500',
+                                          padding: '2px 6px',
+                                          borderRadius: '6px',
+                                          backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                                          color: 'var(--text-muted, #6b7280)',
+                                          border: '1px solid rgba(107, 114, 128, 0.2)'
+                                        }}>
+                                          {sourceLabel}
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
                               </div>
                               <h4 className="tender-title" title={tender.title}>{tender.product_name_as_per_tender || tender.title}</h4>
@@ -3199,17 +3221,38 @@ export default function Dashboard() {
                             ) : (
                               <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
                             )}
-                            <span style={{
-                              fontSize: '10px',
-                              fontWeight: '600',
-                              padding: '2px 6px',
-                              borderRadius: '6px',
-                              backgroundColor: tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                              color: tender.source === 'GeM' ? '#10b981' : '#3b82f6',
-                              border: '1px solid ' + (tender.source === 'GeM' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)')
-                            }}>
-                              {tender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal'}
-                            </span>
+                             {(() => {
+                               const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
+                               const sourceLabel = getSourceBadgeLabel(tender.source);
+                               return (
+                                 <>
+                                   <span style={{
+                                     fontSize: '10px',
+                                     fontWeight: '600',
+                                     padding: '2px 6px',
+                                     borderRadius: '6px',
+                                     backgroundColor: classification.bgColor,
+                                     color: classification.color,
+                                     border: `1px solid ${classification.borderColor}`
+                                   }}>
+                                     {classification.label}
+                                   </span>
+                                   {sourceLabel && (
+                                     <span style={{
+                                       fontSize: '10px',
+                                       fontWeight: '500',
+                                       padding: '2px 6px',
+                                       borderRadius: '6px',
+                                       backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                                       color: 'var(--text-muted, #6b7280)',
+                                       border: '1px solid rgba(107, 114, 128, 0.2)'
+                                     }}>
+                                       {sourceLabel}
+                                     </span>
+                                   )}
+                                 </>
+                               );
+                             })()}
                             {tender.location && <span className="tender-authority">📍 {tender.location}</span>}
                             {tender.ref_no && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ref: {tender.ref_no}</span>}
                           </div>
@@ -5694,8 +5737,8 @@ export default function Dashboard() {
                     { label: 'Estimated Value', value: selectedTender.estimated_cost_raw || (selectedTender.estimated_cost ? `₹ ${selectedTender.estimated_cost.toLocaleString('en-IN')}` : 'N/A'), icon: DollarSign, highlight: true },
                     { label: 'Earnest Money Deposit (EMD)', value: selectedTender.emd_raw || 'N/A', icon: DollarSign },
                     { label: 'Tender Document Fee', value: selectedTender.document_fee_raw || 'N/A', icon: Tag },
-                    { label: 'Tender Type (GeM / Non GeM)', value: selectedTender.tender_type || 'GeM', icon: FileText, color: selectedTender.tender_type === 'GeM' ? '#10b981' : '#3b82f6' },
-                    { label: 'Source Portal', value: selectedTender.source === 'GeM' ? 'GeM Portal' : 'Tender247 Portal', icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : '#3b82f6' },
+                    { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
+                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
                     { label: 'Source ID', value: selectedTender.source_id || 'N/A', icon: Tag },
                     { label: 'Location / Region', value: selectedTender.location || 'N/A', icon: MapPin },
                     { label: 'Place', value: selectedTender.place || 'N/A', icon: MapPin },
