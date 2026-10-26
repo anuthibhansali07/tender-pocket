@@ -7905,7 +7905,7 @@ export default function Dashboard() {
                             <option value="landscape">📑 Landscape Mode (A4)</option>
                           </select>
                           <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '4px', fontStyle: 'italic' }}>
-                            * Tech specs sheet is generated in portrait mode (standard format)
+                            * Tech specs sheet is always generated in landscape mode
                           </div>
                         </div>
                       </div>

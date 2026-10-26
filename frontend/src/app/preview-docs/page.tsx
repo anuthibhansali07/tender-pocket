@@ -314,22 +314,24 @@ export default function DocumentPreviewPage() {
               </label>
               {docType === 'spec' && (
                 <span style={{ fontSize: '10.5px', color: '#38bdf8', fontWeight: 600 }}>
-                  (Portrait Mode)
+                  (Locked: Always Landscape)
                 </span>
               )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <button
                 onClick={() => setOrientation('portrait')}
+                disabled={docType === 'spec'}
                 style={{
                   padding: '8px 10px',
                   borderRadius: '6px',
-                  border: `2px solid ${(docType === 'spec' || orientation === 'portrait') ? '#38bdf8' : '#334155'}`,
-                  background: (docType === 'spec' || orientation === 'portrait') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
-                  color: (docType === 'spec' || orientation === 'portrait') ? '#38bdf8' : '#94a3b8',
+                  border: `2px solid ${(docType === 'spec' ? false : orientation === 'portrait') ? '#38bdf8' : '#334155'}`,
+                  background: (docType === 'spec' ? false : orientation === 'portrait') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
+                  color: (docType === 'spec' ? false : orientation === 'portrait') ? '#38bdf8' : '#94a3b8',
                   fontSize: '12px',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: docType === 'spec' ? 'not-allowed' : 'pointer',
+                  opacity: docType === 'spec' ? 0.45 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -344,13 +346,12 @@ export default function DocumentPreviewPage() {
                 style={{
                   padding: '8px 10px',
                   borderRadius: '6px',
-                  border: `2px solid ${(docType !== 'spec' && orientation === 'landscape') ? '#38bdf8' : '#334155'}`,
-                  background: (docType !== 'spec' && orientation === 'landscape') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
-                  color: (docType !== 'spec' && orientation === 'landscape') ? '#38bdf8' : '#94a3b8',
+                  border: `2px solid ${(docType === 'spec' || orientation === 'landscape') ? '#38bdf8' : '#334155'}`,
+                  background: (docType === 'spec' || orientation === 'landscape') ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
+                  color: (docType === 'spec' || orientation === 'landscape') ? '#38bdf8' : '#94a3b8',
                   fontSize: '12px',
                   fontWeight: 600,
-                  cursor: docType === 'spec' ? 'not-allowed' : 'pointer',
-                  opacity: docType === 'spec' ? 0.45 : 1,
+                  cursor: docType === 'spec' ? 'default' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -360,6 +361,11 @@ export default function DocumentPreviewPage() {
                 📑 Landscape
               </button>
             </div>
+            {docType === 'spec' && (
+              <div style={{ marginTop: '6px', fontSize: '11px', color: '#94a3b8' }}>
+                Technical Specification Compliance Sheets are strictly generated in Landscape mode.
+              </div>
+            )}
           </div>
 
           {/* Signature & Stamp Toggles */}
@@ -486,8 +492,8 @@ export default function DocumentPreviewPage() {
             srcDoc={htmlContent}
             title="A4 Document Preview"
             style={{
-              width: (docType !== 'spec' && orientation === 'landscape') ? '297mm' : '210mm',
-              minHeight: (docType !== 'spec' && orientation === 'landscape') ? '210mm' : '297mm',
+              width: (docType === 'spec' || orientation === 'landscape') ? '297mm' : '210mm',
+              minHeight: (docType === 'spec' || orientation === 'landscape') ? '210mm' : '297mm',
               height: '100%',
               border: 'none',
               borderRadius: '4px',

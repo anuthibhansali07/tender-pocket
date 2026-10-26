@@ -30,11 +30,11 @@ export function canPerform(role: string | null | undefined, action: WorkflowActi
   if (!canonical) return false;
   if (action === 'viewTenders' || action === 'viewAudit') return true;
   if (canonical === 'Admin') {
-    return action === 'manageUsers' || action === 'viewTpcPrice' || action === 'setTpcPrice';
+    return action === 'manageUsers' || action === 'viewTpcPrice' || action === 'setMisPrice';
   }
   switch (action) {
     case 'uploadSpecs':
-    case 'generateBids': return canonical === 'Tender Executive';
+    case 'generateBids': return canonical === 'Tender Executive' || canonical === 'Admin';
     case 'approveSpecs': return canonical === 'Clearance Team';
     case 'setTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';
     case 'viewTpcPrice': return canonical === 'TPC Pricing Team' || canonical === 'MIS Team' || canonical === 'Admin';

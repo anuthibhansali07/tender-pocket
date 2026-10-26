@@ -866,7 +866,7 @@ export function generateTechnicalSpecificationHtml(
   rawSpecs: { sr: number, parameter: string, value: string, offered?: string, compliance?: string, deviation?: string }[]
 ): string {
   const profile = getCompanyProfile(data.companyKey || data.companyName);
-  const renderer = new DocumentLayoutRenderer(profile);
+  const renderer = new DocumentLayoutRenderer(profile, 'landscape');
 
   const bidNumber = data.bidNumber || data.ref_no || 'GEM/2026/B/8015551';
   const bidDate = data.bidDate || '09-09-2026';
@@ -964,7 +964,7 @@ export function generateTechnicalSpecificationHtml(
       <meta charset="UTF-8">
       <title>Technical Specification Sheet - ${bidNumber}</title>
       <style>
-        ${renderer.getGlobalStyles()}
+        ${renderer.getGlobalStyles('landscape')}
       </style>
     </head>
     <body>

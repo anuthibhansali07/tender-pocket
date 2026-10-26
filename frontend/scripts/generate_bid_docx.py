@@ -1349,6 +1349,292 @@ def build_doc_20(doc, p, d, a):
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
 # ---------------------------------------------------------------------------
+# Technical Specification Compliance Sheet Generator (Always Landscape)
+# ---------------------------------------------------------------------------
+
+def generate_technical_specification_docx(template_path, output_path, p, d, a, specs):
+    """Generate technical specification sheet matching sample docx format in LANDSCAPE mode always."""
+    doc = docx.Document(template_path)
+    if doc.paragraphs:
+        p0 = doc.paragraphs[0]._element
+        p0.getparent().remove(p0)
+
+    sec = doc.sections[0]
+    sec.orientation = WD_ORIENT.LANDSCAPE
+    sec.page_width = Inches(11.69)
+    sec.page_height = Inches(8.27)
+
+    # Set comfortable margins
+    if a:
+        sec.top_margin = Pt(80)
+        sec.bottom_margin = Pt(28) # Clearance for 12pt footer bar
+        sec.left_margin = Pt(36)
+        sec.right_margin = Pt(36)
+    else:
+        sec.top_margin = Pt(65)
+        sec.bottom_margin = Pt(115) # Prevents table rows from overlapping 110pt footer bar
+        sec.left_margin = Pt(36)
+        sec.right_margin = Pt(36)
+
+    font_name = 'Cambria' # Matching sample document typography
+    hdr_color = 'FBE2D5' if a else '4F81BD'
+    hdr_text_color = RGBColor(0x00, 0x00, 0x00) if a else RGBColor(0xFF, 0xFF, 0xFF)
+
+    # 1. Document Title
+    p_title = doc.add_paragraph()
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_title.paragraph_format.space_before = Pt(0)
+    p_title.paragraph_format.space_after = Pt(8)
+    r_t = p_title.add_run("TECHNICAL SPECIFICATION COMPLIANCE DATA SHEET")
+    r_t.bold = True
+    r_t.font.name = font_name
+    r_t.font.size = Pt(13.5)
+
+    # 2. Buyer "To," Block
+    p_to = doc.add_paragraph()
+    p_to.paragraph_format.space_before = Pt(0)
+    p_to.paragraph_format.space_after = Pt(6)
+    p_to.paragraph_format.line_spacing = 1.2
+    r_to_lbl = p_to.add_run("To,\n")
+    r_to_lbl.bold = True
+    r_to_lbl.font.name = font_name
+    r_to_lbl.font.size = Pt(10)
+
+    auth_name = d.get('authorityName') or d.get('authority') or d.get('buyerName') or 'The Competent Authority'
+    auth_dept = d.get('authorityDept') or d.get('department') or ''
+    auth_addr = d.get('authorityAddress') or d.get('location') or ''
+
+    auth_lines = []
+    if auth_name:
+        for line in str(auth_name).split('\n'):
+            if line.strip(): auth_lines.append(line.strip())
+    if auth_dept and auth_dept.strip():
+        auth_lines.append(auth_dept.strip())
+    if auth_addr and auth_addr.strip():
+        auth_lines.append(auth_addr.strip())
+
+    for idx, l in enumerate(auth_lines):
+        r_l = p_to.add_run(l + ("\n" if idx < len(auth_lines) - 1 else ""))
+        if idx == 0:
+            r_l.bold = True
+        r_l.font.name = font_name
+        r_l.font.size = Pt(10)
+
+    # 3. Subject and Reference
+    prod_desc = d.get('productDescription') or d.get('productName') or d.get('title') or 'Specified Goods / Equipment'
+    bid_num = d.get('bidNumber') or d.get('ref_no') or d.get('refNo') or '-'
+    bid_date = d.get('bidDate') or d.get('date') or datetime.now().strftime('%d-%m-%Y')
+
+    p_sub = doc.add_paragraph()
+    p_sub.paragraph_format.space_before = Pt(2)
+    p_sub.paragraph_format.space_after = Pt(6)
+    p_sub.paragraph_format.line_spacing = 1.25
+
+    r_s1 = p_sub.add_run("Subject: ")
+    r_s1.bold = True
+    r_s1.font.name = font_name
+    r_s1.font.size = Pt(10)
+    r_s2 = p_sub.add_run(f"Technical Specification Compliance Data Sheet of {prod_desc}.\n")
+    r_s2.font.name = font_name
+    r_s2.font.size = Pt(10)
+
+    r_r1 = p_sub.add_run("Reference No: Bid No.: ")
+    r_r1.bold = True
+    r_r1.font.name = font_name
+    r_r1.font.size = Pt(10)
+    r_r2 = p_sub.add_run(f"{bid_num} Dated : {bid_date}")
+    r_r2.font.name = font_name
+    r_r2.font.size = Pt(10)
+
+    # 4. Product Details
+    qty = str(d.get('qty') or d.get('bid_qty') or d.get('quantity') or d.get('requiredQuantity') or '-')
+    make = d.get('offeredMake') or d.get('brand') or 'MarkEn'
+    model = d.get('offeredModel') or d.get('model') or '-'
+
+    p_meta = doc.add_paragraph()
+    p_meta.paragraph_format.space_before = Pt(2)
+    p_meta.paragraph_format.space_after = Pt(6)
+    p_meta.paragraph_format.line_spacing = 1.25
+
+    meta_items = [
+        ("Product Name", f": {prod_desc}"),
+        ("Required Quantity", f": {qty}"),
+        ("Make", f": {make}"),
+        ("Model", f": {model}")
+    ]
+    for idx, (label, val) in enumerate(meta_items):
+        r_lbl = p_meta.add_run(f"{label}\t")
+        r_lbl.bold = True
+        r_lbl.font.name = font_name
+        r_lbl.font.size = Pt(10)
+        r_v = p_meta.add_run(val + ("\n" if idx < len(meta_items) - 1 else ""))
+        r_v.bold = True
+        r_v.font.name = font_name
+        r_v.font.size = Pt(10)
+
+    # 5. Build Specification Table(s)
+    all_specs = specs if (specs and len(specs) > 0) else []
+    if not all_specs:
+        t_id = d.get('tenderId') or d.get('id') or bid_num
+        if t_id and t_id != '-':
+            try:
+                from extract_tender_specs import extract_tender_data_and_specs
+                ext = extract_tender_data_and_specs(t_id)
+                if ext.get('success') and ext.get('specs'):
+                    all_specs = ext['specs']
+            except Exception:
+                pass
+
+    if not all_specs:
+        all_specs = [{
+            'sr': 1,
+            'parameter': prod_desc,
+            'value': f"As per Bid Document / Tender Requirement" + (f" (Qty: {qty})" if qty != '-' else ""),
+            'compliance': 'Yes',
+            'offered': f"Fully compliant with all technical specifications and tender requirements for {prod_desc}",
+            'deviation': 'No Deviation',
+            'isAtc': False
+        }]
+
+    gem_specs = [s for s in all_specs if not s.get('isAtc')]
+    atc_specs = [s for s in all_specs if s.get('isAtc')]
+
+    # Column widths for 11.0 inch landscape table
+    widths = [Inches(0.6), Inches(2.3), Inches(3.2), Inches(1.2), Inches(2.5), Inches(1.2)]
+    headers_gem = ["Sr no", "GeM Specification", "Tender specification", "Compliance Yes / No", "Offered Specification", "Any Deviation"]
+    headers_atc = ["Sr no", "ATC Specification", "Tender specification", "Compliance Yes / No", "Offered Specification", "Any Deviation"]
+
+    def build_table_section(items, header_labels):
+        tbl = doc.add_table(rows=len(items) + 1, cols=6)
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl.autofit = False
+        set_repeat_header(tbl.rows[0])
+        set_row_cant_split(tbl.rows[0])
+
+        for idx, c in enumerate(tbl.rows[0].cells):
+            c.text = header_labels[idx]
+            c.width = widths[idx]
+            set_cell_shading(c, hdr_color)
+            set_cell_margins(c, top=35, bottom=35, left=45, right=45)
+            set_cell_border(c, top={'color': '000000', 'sz': 4}, bottom={'color': '000000', 'sz': 4}, left={'color': '000000', 'sz': 4}, right={'color': '000000', 'sz': 4})
+            for p_elem in c.paragraphs:
+                p_elem.alignment = WD_ALIGN_PARAGRAPH.CENTER if idx in (0, 3, 5) else WD_ALIGN_PARAGRAPH.LEFT
+                for r in p_elem.runs:
+                    r.bold = True
+                    r.font.name = font_name
+                    r.font.size = Pt(9.5)
+                    r.font.color.rgb = hdr_text_color
+
+        for r_i, s in enumerate(items):
+            row_cells = tbl.rows[r_i + 1].cells
+            set_row_cant_split(tbl.rows[r_i + 1])
+            vals = [
+                str(s.get('sr', r_i + 1)),
+                s.get('parameter', ''),
+                s.get('value', s.get('requirement', 'As per Bid')),
+                s.get('compliance', 'Yes'),
+                s.get('offered', s.get('value', 'Complied')),
+                s.get('deviation', 'No Deviation')
+            ]
+            for c_i, val in enumerate(vals):
+                c = row_cells[c_i]
+                c.text = val
+                c.width = widths[c_i]
+                set_cell_margins(c, top=35, bottom=35, left=45, right=45)
+                set_cell_border(c, bottom={'color': '000000', 'sz': 4}, top={'color': '000000', 'sz': 4}, left={'color': '000000', 'sz': 4}, right={'color': '000000', 'sz': 4})
+                for p_elem in c.paragraphs:
+                    p_elem.paragraph_format.line_spacing = 1.15
+                    p_elem.alignment = WD_ALIGN_PARAGRAPH.CENTER if c_i in (0, 3, 5) else WD_ALIGN_PARAGRAPH.LEFT
+                    for r in p_elem.runs:
+                        r.font.name = font_name
+                        r.font.size = Pt(9)
+                        if c_i == 1:
+                            r.bold = True
+                        elif c_i == 3:
+                            r.bold = True
+
+    # Build GeM specs table
+    build_table_section(gem_specs if gem_specs else all_specs, headers_gem)
+
+    # Build ATC specs table if present
+    if atc_specs:
+        p_atc_hdr = doc.add_paragraph()
+        p_atc_hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_atc_hdr.paragraph_format.space_before = Pt(4)
+        p_atc_hdr.paragraph_format.space_after = Pt(3)
+        p_atc_hdr.paragraph_format.keep_with_next = True
+        r_atc = p_atc_hdr.add_run("ADDITIONAL SPECIFICATION")
+        r_atc.bold = True
+        r_atc.italic = True
+        r_atc.font.name = font_name
+        r_atc.font.size = Pt(11.5)
+
+        build_table_section(atc_specs, headers_atc)
+
+    # 6. Authentic Closing Section matching sample document
+    p_thank = doc.add_paragraph()
+    p_thank.paragraph_format.space_before = Pt(2)
+    p_thank.paragraph_format.space_after = Pt(1)
+    p_thank.paragraph_format.keep_with_next = True
+    r_th = p_thank.add_run("Thanking you and assuring you of our best services at all the times.")
+    r_th.bold = True
+    r_th.italic = True
+    r_th.font.name = font_name
+    r_th.font.size = Pt(9.5)
+
+    p_faith = doc.add_paragraph()
+    p_faith.paragraph_format.space_before = Pt(1)
+    p_faith.paragraph_format.space_after = Pt(1)
+    p_faith.paragraph_format.keep_with_next = True
+    r_f = p_faith.add_run("Yours faithfully,")
+    r_f.bold = True
+    r_f.font.name = font_name
+    r_f.font.size = Pt(9.5)
+
+    # Combined stamp and signature image
+    stamp_sig_path = resolve_path([
+        os.path.join(d['root_dir'], 'public', 'images', 'me_stamp_sig.png' if a else 'healthtech_stamp_sig.png'),
+        os.path.join(d['root_dir'], 'frontend', 'public', 'images', 'me_stamp_sig.png' if a else 'healthtech_stamp_sig.png')
+    ])
+    if not stamp_sig_path or not os.path.exists(stamp_sig_path):
+        stamp_sig_path = p.get('sig_path')
+
+    if stamp_sig_path and os.path.exists(stamp_sig_path):
+        p_img = doc.add_paragraph()
+        p_img.paragraph_format.space_before = Pt(0)
+        p_img.paragraph_format.space_after = Pt(0)
+        p_img.paragraph_format.keep_with_next = True
+        r_img = p_img.add_run()
+        r_img.add_picture(stamp_sig_path, width=Inches(1.2))
+
+    # Signatory details
+    p_sig = doc.add_paragraph()
+    p_sig.paragraph_format.space_before = Pt(1)
+    p_sig.paragraph_format.space_after = Pt(0)
+    p_sig.paragraph_format.line_spacing = 1.1
+
+    company_line = f"On behalf of {p.get('short_name', 'M/s Mark Enterprises')} (Manufacturer)" if a else f"For and on behalf of {p.get('legal_name', 'Marken Healthtech Limited')}"
+    place_line = f"Place : {p.get('full_address', p.get('place', 'Nashik'))}"
+    mail_line = f"Mail id : info@markenworld.com"
+    doc_date = d.get('date', '26-09-2026' if a else '10-01-2026')
+
+    sig_lines = [
+        (company_line, False),
+        ("Authorized Signatory", False),
+        (f"Dated : {doc_date}", False),
+        (place_line, False),
+        (mail_line, False)
+    ]
+    for idx, (txt, is_b) in enumerate(sig_lines):
+        r_s = p_sig.add_run(txt + ("\n" if idx < len(sig_lines) - 1 else ""))
+        r_s.bold = is_b
+        r_s.font.name = font_name
+        r_s.font.size = Pt(9)
+
+    doc.save(output_path)
+    print(f"Technical Specification Sheet saved to: {output_path}")
+
+# ---------------------------------------------------------------------------
 # Main Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -1356,6 +1642,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Word documents for Tender Bids")
     parser.add_argument("--input", required=True, help="Path to input JSON file")
     parser.add_argument("--output-bid", required=True, help="Path to output bid documents docx")
+    parser.add_argument("--output-spec", help="Path to output technical specifications docx")
     parser.add_argument("--orientation", choices=['portrait', 'landscape'], default=None, help="Page orientation")
     args = parser.parse_args()
 
@@ -1398,6 +1685,8 @@ def main():
     else:
         template_path = me_portrait_template if is_theme_a else ht_portrait_template
 
+    # Technical specifications MUST ALWAYS use the landscape template!
+    spec_template_path = me_landscape_template if is_theme_a else ht_landscape_template
 
     if not template_path or not os.path.exists(template_path):
         print(f"Error: Letterhead template not found: {template_path}", file=sys.stderr)
@@ -1555,6 +1844,11 @@ def main():
     doc.save(args.output_bid)
     print(f"Bid Documents successfully generated: {args.output_bid}")
 
+    # 2. Build Technical Specification Sheet if requested (Always Landscape)
+    if args.output_spec:
+        os.makedirs(os.path.dirname(os.path.abspath(args.output_spec)), exist_ok=True)
+        specs = data.get('specs', [])
+        generate_technical_specification_docx(spec_template_path, args.output_spec, profile, data, is_theme_a, specs)
 
 if __name__ == '__main__':
     main()
