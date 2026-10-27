@@ -1678,25 +1678,11 @@ public class TenderController {
             String docDownloadUrl = "/documents/" + id + "/" + docFileName;
             persistDocument(id, docFileName, docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-            // Generate Technical Specification PDF
-            byte[] techPdfBytes = documentGeneratorService.generateTechSpecPdf(body);
-            String techPdfFileName = "Technical_Specification_Sheet_" + id + ".pdf";
-            String techPdfDownloadUrl = "/documents/" + id + "/" + techPdfFileName;
-            persistDocument(id, techPdfFileName, techPdfBytes, "application/pdf");
-
-            // Generate Technical Specification DOCX
-            byte[] techDocxBytes = documentGeneratorService.generateTechSpecDocx(body);
-            String techDocFileName = "Technical_Specification_Sheet_" + id + ".docx";
-            String techDocDownloadUrl = "/documents/" + id + "/" + techDocFileName;
-            persistDocument(id, techDocFileName, techDocxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-
             // Update downloaded_docs field metadata without overwriting existing files (e.g. GeM Bid PDF)
             String createdDate = LocalDate.now().toString();
             List<Map<String, String>> newDocs = List.of(
                     Map.of("name", "Generated Bid Documents (PDF)", "filename", pdfFileName, "local_path", pdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (PDF)", "filename", techPdfFileName, "local_path", techPdfDownloadUrl, "created_date", createdDate),
-                    Map.of("name", "Technical Specification Sheet (Word DOCX)", "filename", techDocFileName, "local_path", techDocDownloadUrl, "created_date", createdDate)
+                    Map.of("name", "Generated Bid Documents (Word DOCX)", "filename", docFileName, "local_path", docDownloadUrl, "created_date", createdDate)
             );
             tender.setDownloadedDocs(appendOrUpdateDownloadedDocs(tender.getDownloadedDocs(), newDocs));
             boolean emdExempt = (tender.getEmd() != null && tender.getEmd() == 0.0)

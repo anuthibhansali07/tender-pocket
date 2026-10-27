@@ -475,20 +475,8 @@ export default function Dashboard() {
           local_path: data.pdfDownloadUrl, 
           created_date: new Date().toLocaleDateString('en-IN') 
         };
-        const newSpecWord = {
-          name: "Technical Specification Sheet (Word DOCX)",
-          filename: `Technical_Specification_Sheet_${selectedTender.id}.docx`,
-          local_path: data.specDownloadUrl,
-          created_date: new Date().toLocaleDateString('en-IN')
-        };
-        const newSpecPdf = {
-          name: "Technical Specification Sheet (PDF)",
-          filename: `Technical_Specification_Sheet_${selectedTender.id}.pdf`,
-          local_path: data.specPdfDownloadUrl,
-          created_date: new Date().toLocaleDateString('en-IN')
-        };
-        const generatedPaths = [data.downloadUrl, data.pdfDownloadUrl, data.specDownloadUrl, data.specPdfDownloadUrl].filter(Boolean);
-        const docsToAdd = [newDocWord, newDocPdf, newSpecWord, newSpecPdf].filter(d => Boolean(d.local_path));
+        const docsToAdd = [newDocWord, newDocPdf].filter(d => Boolean(d.local_path));
+        const generatedPaths = [data.downloadUrl, data.pdfDownloadUrl].filter(Boolean);
 
         setTenders(prev => prev.map(t => {
           if (t.id === selectedTender.id) {
@@ -6950,15 +6938,6 @@ export default function Dashboard() {
                             style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
                           >
                             📑 View Bid Documents (PDF)
-                          </a>
-                          <a 
-                            href={`/documents/${selectedTender.id}/Technical_Specification_Sheet_${selectedTender.id}.pdf`} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="btn btn-secondary" 
-                            style={{ fontSize: '11px', padding: '6px 10px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            📑 Tech Spec Sheet (PDF)
                           </a>
                         </div>
                         {selectedTender.working_path && (

@@ -169,16 +169,14 @@ public class TenderControllerStorageTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        // Verify all 4 documents were uploaded to S3
+        // Verify both documents (PDF & Word) were uploaded to S3
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> typeCaptor = ArgumentCaptor.forClass(String.class);
-        verify(objectStorageService, times(4)).upload(keyCaptor.capture(), any(InputStream.class), typeCaptor.capture(), anyLong());
+        verify(objectStorageService, times(2)).upload(keyCaptor.capture(), any(InputStream.class), typeCaptor.capture(), anyLong());
 
         List<String> uploadedKeys = keyCaptor.getAllValues();
         assertTrue(uploadedKeys.contains("tenders/" + tenderId + "/Bid_Documents_" + tenderId + ".pdf"));
         assertTrue(uploadedKeys.contains("tenders/" + tenderId + "/Bid_Documents_" + tenderId + ".docx"));
-        assertTrue(uploadedKeys.contains("tenders/" + tenderId + "/Technical_Specification_Sheet_" + tenderId + ".pdf"));
-        assertTrue(uploadedKeys.contains("tenders/" + tenderId + "/Technical_Specification_Sheet_" + tenderId + ".docx"));
 
         List<String> contentTypes = typeCaptor.getAllValues();
         assertTrue(contentTypes.contains("application/pdf"));
@@ -240,8 +238,6 @@ public class TenderControllerStorageTest {
         // Verify files exist locally
         assertTrue(Files.exists(testDocsDir.resolve("Bid_Documents_" + tenderId + ".pdf")));
         assertTrue(Files.exists(testDocsDir.resolve("Bid_Documents_" + tenderId + ".docx")));
-        assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".pdf")));
-        assertTrue(Files.exists(testDocsDir.resolve("Technical_Specification_Sheet_" + tenderId + ".docx")));
     }
 
     @Test

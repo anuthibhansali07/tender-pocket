@@ -237,7 +237,7 @@ async function generatePdfFile(htmlContent: string, outputPath: string, isLandsc
 function generateDocxWithPython(
   payload: any,
   docFilePath: string,
-  specDocFilePath: string,
+  specDocFilePath?: string,
   orientation: string = 'portrait'
 ): boolean {
   const tempJsonPath = path.join(os.tmpdir(), `bid_data_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
@@ -258,14 +258,17 @@ function generateDocxWithPython(
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     // Clean up destination files first so stale files from prior runs don't cause false positives
     try { if (fs.existsSync(docFilePath)) fs.unlinkSync(docFilePath); } catch (_) {}
-    try { if (fs.existsSync(specDocFilePath)) fs.unlinkSync(specDocFilePath); } catch (_) {}
+    if (specDocFilePath) {
+      try { if (fs.existsSync(specDocFilePath)) fs.unlinkSync(specDocFilePath); } catch (_) {}
+    }
 
-    execSync(`"${pythonCmd}" "${scriptPath}" --input "${tempJsonPath}" --output-bid "${docFilePath}" --output-spec "${specDocFilePath}" --orientation "${orientation}"`, {
+    const specArg = specDocFilePath ? `--output-spec "${specDocFilePath}"` : '';
+    execSync(`"${pythonCmd}" "${scriptPath}" --input "${tempJsonPath}" --output-bid "${docFilePath}" ${specArg} --orientation "${orientation}"`, {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    if (fs.existsSync(docFilePath) && fs.existsSync(specDocFilePath)) {
+    if (fs.existsSync(docFilePath)) {
       console.log(`[generateDocxWithPython] Successfully generated high-fidelity Word documents: ${docFilePath}`);
       return true;
     }
@@ -473,24 +476,12 @@ export async function POST(
     const htmlContent = generateHtmlTemplates(enrichedTemplateData);
     await generatePdfFile(htmlContent, pdfFilePath, isLandscape);
 
-    // 2. Generate and save Technical Specification Sheet PDF (ALWAYS LANDSCAPE)
-    const specPdfFileName = `Technical_Specification_Sheet_${id}.pdf`;
-    const specPdfFilePath = path.join(docDir, specPdfFileName);
-    const specPdfDownloadPath = localDocumentUrl(id, specPdfFileName);
-    const specHtml = generateTechnicalSpecificationHtml(enrichedTemplateData, finalSpecs);
-    // Technical Specification Sheet MUST ALWAYS be generated in landscape mode!
-    await generatePdfFile(specHtml, specPdfFilePath, true);
-
-    // 3. Generate Word documents (.docx) using high-fidelity Python letterhead generator
+    // 2. Generate Word documents (.docx) using high-fidelity Python letterhead generator
     const docFileName = `Bid_Documents_${id}.docx`;
     const docFilePath = path.join(docDir, docFileName);
     const docDownloadPath = localDocumentUrl(id, docFileName);
 
-    const specDocFileName = `Technical_Specification_Sheet_${id}.docx`;
-    const specDocFilePath = path.join(docDir, specDocFileName);
-    const specDocDownloadPath = localDocumentUrl(id, specDocFileName);
-
-    const pythonSuccess = generateDocxWithPython(enrichedTemplateData, docFilePath, specDocFilePath, orientation);
+    const pythonSuccess = generateDocxWithPython(enrichedTemplateData, docFilePath, undefined, orientation);
 
     if (!pythonSuccess) {
       console.log(`[API Generate Bid Docs] Python generator bypassed/failed. Executing HTMLtoDOCX fallback.`);
@@ -522,37 +513,12 @@ export async function POST(
         }
       };
 
-      const specDocxOptions = {
-        table: { row: { cantSplit: true } },
-        header: true,
-        footer: true,
-        orientation: 'landscape' as const,
-        pageSize: {
-          width: 16838,
-          height: 11906
-        },
-        font: 'Cambria',
-        fontSize: 22,
-        margins: {
-          top: 600,
-          bottom: 600,
-          left: 650,
-          right: 650,
-          header: 280,
-          footer: 280
-        }
-      };
-
       const docxRaw = await HTMLtoDOCX(cleanHtmlForDocx(htmlContent, companyKey), docxHeaderHtml, bidDocxOptions, docxFooterHtml);
       const docxBuffer = await sanitizeDocxBuffer(docxRaw);
       fs.writeFileSync(docFilePath, docxBuffer);
-
-      const specDocxRaw = await HTMLtoDOCX(cleanHtmlForDocx(specHtml, companyKey), docxHeaderHtml, specDocxOptions, docxFooterHtml);
-      const specDocxBuffer = await sanitizeDocxBuffer(specDocxRaw);
-      fs.writeFileSync(specDocFilePath, specDocxBuffer);
     }
 
-    // 4. Update database downloaded_docs metadata
+    // 3. Update database downloaded_docs metadata
     const bidDocsMeta = {
       name: "Generated Bid Documents (Word DOCX)",
       filename: docFileName,
@@ -567,20 +533,6 @@ export async function POST(
       created_date: new Date().toLocaleDateString('en-IN')
     };
 
-    const specDocsMeta = {
-      name: "Technical Specification Sheet (Word DOCX)",
-      filename: specDocFileName,
-      local_path: specDocDownloadPath,
-      created_date: new Date().toLocaleDateString('en-IN')
-    };
-
-    const specPdfMeta = {
-      name: "Technical Specification Sheet (PDF)",
-      filename: specPdfFileName,
-      local_path: specPdfDownloadPath,
-      created_date: new Date().toLocaleDateString('en-IN')
-    };
-
     let currentDocs = [];
     try {
       const rawDocs = tender.downloaded_docs || tender.downloadedDocs || '[]';
@@ -590,17 +542,16 @@ export async function POST(
       currentDocs = [];
     }
 
-    // Filter out previous versions of both bid documents and specification sheets to prevent duplicates
+    // Filter out previous versions of bid documents and legacy spec sheets to prevent duplicates
     currentDocs = currentDocs.filter((d: any) => 
       d.local_path !== docDownloadPath && 
-      d.local_path !== pdfDownloadPath && 
-      d.local_path !== specDocDownloadPath && 
-      d.local_path !== specPdfDownloadPath
+      d.local_path !== pdfDownloadPath &&
+      d.name !== 'Technical Specification Sheet (Word DOCX)' &&
+      d.name !== 'Technical Specification Sheet (PDF)' &&
+      !d.filename?.startsWith('Technical_Specification_Sheet_')
     );
     currentDocs.push(bidDocsMeta);
     currentDocs.push(bidPdfMeta);
-    currentDocs.push(specDocsMeta);
-    currentDocs.push(specPdfMeta);
 
     const emdValue = tender.emd ?? tender.emdAmount;
     const emdExempt = tender.emd_applicable === false || tender.emdApplicable === false
@@ -685,8 +636,8 @@ export async function POST(
         : 'Bid package generated. Enter EMD payment details next. Pricing starts after EMD.',
       downloadUrl: docDownloadPath,
       pdfDownloadUrl: pdfDownloadPath,
-      specDownloadUrl: specDocDownloadPath,
-      specPdfDownloadUrl: specPdfDownloadPath,
+      specDownloadUrl: null,
+      specPdfDownloadUrl: null,
       currentStage: nextStage,
       paymentStatus: nextPayment,
       downloadedDocs: JSON.stringify(currentDocs),
