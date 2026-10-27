@@ -2013,11 +2013,13 @@ public class TenderController {
                             complianceProgressService.update(id, stage, message, percent,
                                     completed, total, clauses), conversionMetrics);
 
-            // 4. Evidence Matching: Match clauses against verified product specifications from catalogue
-            if (productCatalogueService != null && extractedClauses != null && !extractedClauses.isEmpty() && !AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {
-                complianceProgressService.update(id, "MATCHING_EVIDENCE",
-                        "Matching requirements against verified product specifications.", 79, 0, 0, extractedClauses.size());
-                extractedClauses = productCatalogueService.matchTenderClausesWithEvidence(tender, extractedClauses);
+            // Column 4 (Offered Specification) should always be blank
+            if (extractedClauses != null) {
+                for (String[] row : extractedClauses) {
+                    if (row.length > 2) {
+                        row[2] = ""; // Column 4 strictly blank
+                    }
+                }
             }
 
             if (AISpecificationIntelligenceService.isCompletedEmpty(extractedClauses)) {

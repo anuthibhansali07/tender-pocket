@@ -472,25 +472,25 @@ public class TenderControllerTest {
 
     @Test
     void testPatchTenderTypeAcceptsUnverifiedAndValidEnums() {
-        authenticate("admin", "Admin");
+        authenticate("exec", "Executive");
 
         // Test Unverified is accepted
-        ResponseEntity<?> resUnverified = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Unverified"));
+        ResponseEntity<?> resUnverified = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "Unverified"));
         assertEquals(HttpStatus.OK, resUnverified.getStatusCode());
         assertEquals("Unverified", tender1.getTenderType());
 
         // Test Non GeM is accepted
-        ResponseEntity<?> resNonGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "Non GeM"));
+        ResponseEntity<?> resNonGem = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "Non GeM"));
         assertEquals(HttpStatus.OK, resNonGem.getStatusCode());
         assertEquals("Non GeM", tender1.getTenderType());
 
         // Test GeM is accepted
-        ResponseEntity<?> resGem = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "GeM"));
+        ResponseEntity<?> resGem = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "GeM"));
         assertEquals(HttpStatus.OK, resGem.getStatusCode());
         assertEquals("GeM", tender1.getTenderType());
 
         // Test invalid value is rejected with 400 Bad Request
-        ResponseEntity<?> resInvalid = tenderController.updateTender("Admin", "admin", "T1", Map.of("tender_type", "InvalidType"));
+        ResponseEntity<?> resInvalid = tenderController.updateTender("Executive", "exec", "T1", Map.of("tender_type", "InvalidType"));
         assertEquals(HttpStatus.BAD_REQUEST, resInvalid.getStatusCode());
         Map<?, ?> body = (Map<?, ?>) resInvalid.getBody();
         Map<?, ?> errors = (Map<?, ?>) body.get("errors");
@@ -1293,7 +1293,6 @@ public class TenderControllerTest {
         assertEquals("Tender247", newTender.getSource(), "Explicit source must be preserved");
         verify(tenderRepository).save(newTender);
     }
-}
 
     @Test
     void testAdminOnlyHasPermissionToProvideTpcPrice() {
