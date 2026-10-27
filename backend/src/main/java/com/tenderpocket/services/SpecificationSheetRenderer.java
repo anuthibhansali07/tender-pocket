@@ -50,7 +50,7 @@ final class SpecificationSheetRenderer {
         if (combined) products = List.of(SpecificationSheetContent.combined(products));
         StringBuilder out = new StringBuilder("""
             <!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-            @page { size:A4 landscape; margin:25mm 8mm 10mm;
+            @page { size:A4 landscape; margin:36mm 8mm 10mm;
               @top-center { content:element(letterhead); }
               @bottom-center { content:"Page " counter(page); font-family:Cambria,serif; font-size:9pt; } }
             body { font-family:Cambria,serif; font-size:10pt; line-height:1.15; color:#000; margin:0; padding:0; }
@@ -58,6 +58,7 @@ final class SpecificationSheetRenderer {
               border-bottom:1pt solid #000; padding-bottom:3pt; margin-bottom:2pt; }
             .letterhead table { width:100%; border-collapse:collapse; }
             .letterhead td { border:0; vertical-align:top; padding:0 3pt; }
+            .letterhead img { max-height:52pt; }
             .company { font-size:20pt; color:#4472c4; font-weight:bold; }
             .contact { font-size:9pt; line-height:1.15; }
             .doc-title { font-size:12pt; font-weight:bold; text-align:center; margin:4pt 0 10pt; text-transform:uppercase; letter-spacing:0.5pt; }
@@ -75,7 +76,7 @@ final class SpecificationSheetRenderer {
             .sheet td { border:0.5pt solid #000; padding:3pt 4pt; vertical-align:top; font-size:9pt; word-wrap:break-word; line-height:1.15; }
             .sheet tr { page-break-inside:avoid; }
             .sheet tr.long { page-break-inside:auto; }
-            .sheet thead { display:table-header-group; }
+            .sheet thead { display:table-row-group; }
             .sheet .heading { font-weight:bold; background-color:#fff2ec; page-break-after:avoid; }
             .reference { text-align:center; font-weight:bold; }
             .compliance-cell { text-align:center; font-weight:bold; }
@@ -212,7 +213,7 @@ final class SpecificationSheetRenderer {
                 String offeredSpec = row.offeredSpecification().isBlank() ? "" : escape(row.offeredSpecification()).replace("\n", "<br/>");
                 String deviations = row.deviations().isBlank() ? "" : escape(row.deviations());
                 out.append("<tr").append(row.heading() ? " class=\"heading\""
-                                : row.wording().length() > 1200 ? " class=\"long\"" : "")
+                                : row.wording().length() > 2000 ? " class=\"long\"" : "")
                         .append("><td class=\"reference\">").append(escape(reference))
                         .append("</td><td>").append(cleanWording)
                         .append("</td><td class=\"compliance-cell\">").append(compliance)
