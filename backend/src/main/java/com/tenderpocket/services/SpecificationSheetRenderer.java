@@ -54,26 +54,26 @@ final class SpecificationSheetRenderer {
               @top-center { content:element(letterhead); }
               @bottom-center { content:"Page " counter(page); font-family:Cambria,serif; font-size:9pt; } }
             body { font-family:Cambria,serif; font-size:10pt; line-height:1.15; color:#000; margin:0; padding:0; }
-            .letterhead { position:running(letterhead); width:100%; font-family:Calibri,sans-serif;
+            .letterhead { position:running(letterhead); width:100%; font-family:Cambria,serif;
               border-bottom:1pt solid #000; padding-bottom:3pt; margin-bottom:2pt; }
             .letterhead table { width:100%; border-collapse:collapse; }
             .letterhead td { border:0; vertical-align:top; padding:0 3pt; }
-            .letterhead img { max-height:52pt; }
-            .company { font-size:20pt; color:#4472c4; font-weight:bold; }
-            .contact { font-size:9pt; line-height:1.15; }
-            .doc-title { font-size:12pt; font-weight:bold; text-align:center; margin:4pt 0 10pt; text-transform:uppercase; letter-spacing:0.5pt; }
-            .meta-block { width:100%; margin-bottom:10pt; font-size:10pt; page-break-after:avoid; }
+            .letterhead img { max-height:66pt; }
+            .company { font-family:Cambria,serif; font-size:22pt; color:#4472c4; font-weight:bold; }
+            .contact { font-size:10pt; line-height:1.17; }
+            .doc-title { font-size:16pt; font-weight:bold; text-align:center; margin:6pt 0 12pt; text-transform:uppercase; }
+            .meta-block { width:100%; margin-bottom:10pt; font-size:12pt; font-weight:bold; page-break-after:avoid; }
             .meta-block table { width:100%; border-collapse:collapse; }
             .meta-block td { border:0; vertical-align:top; padding:1.5pt 2pt; font-family:Cambria,serif; }
             .meta-label { width:22%; font-weight:bold; white-space:nowrap; }
             .meta-sep { width:2%; text-align:center; font-weight:bold; }
             .meta-val { width:76%; }
-            .recipient-block { margin-bottom:8pt; line-height:1.2; font-size:10pt; }
+            .recipient-block { margin-bottom:8pt; line-height:1.2; font-size:12pt; font-weight:bold; }
             h2 { font-size:11pt; margin:8pt 0; page-break-after:avoid; }
             .sheet { width:100%; border-collapse:collapse; table-layout:fixed; -fs-table-paginate:paginate; margin-top:4pt; }
             .sheet th { background-color:#f6c5ac; color:#000; font-weight:bold; border:0.5pt solid #000;
-              padding:4pt 3pt; vertical-align:middle; text-align:center; font-size:9.5pt; word-wrap:break-word; }
-            .sheet td { border:0.5pt solid #000; padding:3pt 4pt; vertical-align:top; font-size:9pt; word-wrap:break-word; line-height:1.15; }
+              padding:4pt 3pt; vertical-align:middle; text-align:center; font-size:12pt; word-wrap:break-word; }
+            .sheet td { border:0.5pt solid #000; padding:3pt 4pt; vertical-align:top; font-size:12pt; word-wrap:break-word; line-height:1.17; }
             .sheet tr { page-break-inside:avoid; }
             .sheet tr.long { page-break-inside:auto; }
             .sheet thead { display:table-row-group; }
@@ -94,14 +94,14 @@ final class SpecificationSheetRenderer {
         String companyContact = data.getOrDefault("companyContact", "");
 
         out.append("<div class=\"letterhead\"><table><tr><td style=\"width:12%\">")
-                .append(image(logo, 62)).append("</td><td>");
+                .append(image(logo, 74)).append("</td><td>");
         if (!companyName.isBlank()) {
             out.append("<div class=\"company\">")
                     .append(escape(companyName.toUpperCase(Locale.ROOT)))
                     .append("</div>");
         }
         out.append("<div class=\"contact\">");
-        if (!companyAddress.isBlank()) out.append(escape(companyAddress)).append("<br/>");
+        if (!companyAddress.isBlank()) out.append(escape(companyAddress).replace("\n", "<br/>")).append("<br/>");
         if (!companyEmail.isBlank() || !companyWebsite.isBlank()) {
             if (!companyEmail.isBlank()) out.append("Email ID: ").append(escape(companyEmail));
             if (!companyWebsite.isBlank()) out.append(" URL: ").append(escape(companyWebsite));
@@ -109,7 +109,7 @@ final class SpecificationSheetRenderer {
         }
         if (!companyContact.isBlank()) out.append("Contact No.: ").append(escape(companyContact));
         out.append("</div></td><td style=\"width:20%;text-align:right\">")
-                .append(image(partner, 82)).append("</td></tr></table></div>");
+                .append(image(partner, 96)).append("</td></tr></table></div>");
 
         int ordinal = 0;
         for (var product : products) {
@@ -208,7 +208,7 @@ final class SpecificationSheetRenderer {
                     continue;
                 }
                 String reference = displayedReference(row, ++displayPosition);
-                String cleanWording = combined ? emphasize(row.wording()).replace("\n", "<br/>") : emphasize(row.wording());
+                String cleanWording = combined ? labelEmphasize(row.wording()).replace("\n", "<br/>") : labelEmphasize(row.wording());
                 String compliance = row.compliance().isBlank() ? "" : escape(row.compliance());
                 String offeredSpec = row.offeredSpecification().isBlank() ? "" : escape(row.offeredSpecification()).replace("\n", "<br/>");
                 String deviations = row.deviations().isBlank() ? "" : escape(row.deviations());
@@ -654,14 +654,15 @@ final class SpecificationSheetRenderer {
         return bytes == null ? "" : "<img style=\"width:" + width + "pt\" src=\"data:image/png;base64,"
                 + Base64.getEncoder().encodeToString(bytes) + "\"/>";
     }
-    private static String emphasize(String text) {
-        Matcher matcher = SpecificationSheetContent.EMPHASIS.matcher(text);
-        StringBuilder result = new StringBuilder(); int at = 0;
-        while (matcher.find()) {
-            result.append(escape(text.substring(at, matcher.start()))).append("<strong>")
-                    .append(escape(matcher.group())).append("</strong>"); at = matcher.end();
+    /** Bold a leading "Label:" prefix like the approved Technical Compliance Data Sheet; the
+     *  remaining text (including numbers and standards) stays regular. A colon preceded by a
+     *  sentence period is treated as mid-sentence punctuation, not a label, so nothing is bolded. */
+    private static String labelEmphasize(String text) {
+        int colon = text.indexOf(':');
+        if (colon > 0 && colon <= 80 && text.lastIndexOf('.', colon) < 0) {
+            return "<strong>" + escape(text.substring(0, colon + 1)) + "</strong>" + escape(text.substring(colon + 1));
         }
-        return result.append(escape(text.substring(at))).toString();
+        return escape(text);
     }
     private static String escape(String text) {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
