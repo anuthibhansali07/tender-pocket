@@ -1704,6 +1704,7 @@ public class DocumentGeneratorService {
 
     /** Below this, a page is treated as scanned and routed through OCR rather than trusted as text. */
     private static final int MIN_PAGE_TEXT_CHARS = 80;
+    private static final long MIN_SCANNED_IMAGE_PIXELS = 300L * 300;
 
     /** Caps OCR work so a large scanned bid document cannot stall the upload request indefinitely. */
     private static final int MAX_OCR_PAGES = 60;
@@ -2562,19 +2563,22 @@ public class DocumentGeneratorService {
         var stripper = new PDFTextStripper();
         stripper.setStartPage(page + 1); stripper.setEndPage(page + 1);
         return cleanExtractedText(stripper.getText(document)).length() < MIN_PAGE_TEXT_CHARS
-                && hasLargeImage(document.getPage(page).getResources(), 0);
+                && imagePixelArea(document.getPage(page).getResources(), 0) >= MIN_SCANNED_IMAGE_PIXELS;
     }
 
-    private boolean hasLargeImage(org.apache.pdfbox.pdmodel.PDResources resources, int depth) throws IOException {
-        if (resources == null || depth > 4) return false;
+    /** Sums image area rather than requiring one large image: some print-to-PDF drivers store a
+     *  scanned page as dozens of thin full-width strips, none of which is large on its own. */
+    private long imagePixelArea(org.apache.pdfbox.pdmodel.PDResources resources, int depth) throws IOException {
+        if (resources == null || depth > 4) return 0;
+        long area = 0;
         for (var name : resources.getXObjectNames()) {
             var object = resources.getXObject(name);
-            if (object instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image
-                    && image.getWidth() >= 300 && image.getHeight() >= 300) return true;
-            if (object instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject form
-                    && hasLargeImage(form.getResources(), depth + 1)) return true;
+            if (object instanceof org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject image)
+                area += (long) image.getWidth() * image.getHeight();
+            else if (object instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject form)
+                area += imagePixelArea(form.getResources(), depth + 1);
         }
-        return false;
+        return area;
     }
 
     private void addSizedBatch(org.apache.pdfbox.pdmodel.PDDocument source, int start, int end,

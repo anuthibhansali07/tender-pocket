@@ -63,6 +63,47 @@ class ComplianceSheetConversionTest {
     }
 
     @Test
+    void scansStoredAsThinImageStripsAreStillIsolated() throws Exception {
+        // "Microsoft: Print To PDF" stores each scanned page as dozens of full-width strips only
+        // ~50px tall; no single strip reaches the large-image threshold.
+        byte[] bytes;
+        try (var source = new PDDocument(); var out = new ByteArrayOutputStream()) {
+            var strip = new java.awt.image.BufferedImage(600, 60, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            for (int page = 1; page <= 5; page++) {
+                var pdfPage = new PDPage(); source.addPage(pdfPage);
+                try (var stream = new PDPageContentStream(source, pdfPage)) {
+                    if (page == 3 || page == 4) {
+                        for (int row = 0; row < 12; row++) {
+                            var embedded = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory
+                                    .createFromImage(source, strip);
+                            stream.drawImage(embedded, 0, 720 - row * 60, 600, 60);
+                        }
+                    } else {
+                        stream.beginText(); stream.setFont(PDType1Font.HELVETICA, 12);
+                        stream.newLineAtOffset(30, 700);
+                        stream.showText("Source requirements, page " + page + ". All numbers and conditions must be retained.");
+                        stream.endText();
+                    }
+                }
+            }
+            source.save(out); bytes = out.toByteArray();
+        }
+        Method create = DocumentGeneratorService.class.getDeclaredMethod("createPdfBatches", byte[].class, int.class);
+        create.setAccessible(true);
+        List<?> batches = (List<?>) create.invoke(generator, bytes, 1);
+        assertEquals(4, batches.size());
+        int[] starts = {1, 3, 4, 5}, counts = {2, 1, 1, 1};
+        for (int i = 0; i < batches.size(); i++) {
+            var batch = batches.get(i);
+            var start = batch.getClass().getDeclaredField("firstPhysicalPage");
+            var count = batch.getClass().getDeclaredField("pageCount");
+            start.setAccessible(true); count.setAccessible(true);
+            assertEquals(starts[i], start.getInt(batch));
+            assertEquals(counts[i], count.getInt(batch));
+        }
+    }
+
+    @Test
     void rotatedScanRecoveryUsesUprightImageWithPhysicalPageContext() throws Exception {
         byte[] bytes;
         try (var document = new PDDocument(); var out = new ByteArrayOutputStream()) {
@@ -554,8 +595,10 @@ class ComplianceSheetConversionTest {
         assertFalse(html.contains("To Be Assessed During Bid Evaluation"));
         assertFalse(html.contains("Not provided"));
         assertFalse(html.contains("Source Clarifications"));
-        assertTrue(html.contains("Capacity shall be <strong>100 litres</strong>."));
-        assertTrue(html.contains("Capacity shall be <strong>120 litres</strong>."));
+        // Matches the approved sheet: only a leading "Label:" is bold; quantities stay regular.
+        assertTrue(html.contains("Capacity shall be 100 litres."));
+        assertTrue(html.contains("Capacity shall be 120 litres."));
+        assertFalse(html.contains("<strong>100 litres</strong>"));
         assertTrue(html.contains("Pump Alpha"));
         assertTrue(html.contains("Custom Device Beta"));
         assertFalse(html.contains("comply fully"));
