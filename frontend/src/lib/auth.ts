@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 
-// NOTE: Never commit a real secret here. Set JWT_SECRET in your .env.local / deployment environment.
-// The fallback below is for local dev convenience only — override it in production.
-const JWT_SECRET = process.env.JWT_SECRET || '9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5';
+// JWT_SECRET must come from the environment (.env.local / deployment config); never hardcode it.
+// Without it, token signatures cannot be verified locally.
+const JWT_SECRET = process.env.JWT_SECRET || '';
+if (!JWT_SECRET) {
+  console.warn('[auth] JWT_SECRET is not set; JWT signatures will not be verified by the frontend.');
+}
 
 export interface AuthInfo {
   username: string;
@@ -66,14 +69,13 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
         if (['HS256', 'HS384', 'HS512'].includes(headerObj.alg)) {
           const alg = headerObj.alg === 'HS512' ? 'sha512' : headerObj.alg === 'HS384' ? 'sha384' : 'sha256';
 
-          const expectedSig = crypto
-            .createHmac(alg, JWT_SECRET)
-            .update(`${parts[0]}.${parts[1]}`)
-            .digest('base64url');
+          const expectedSig = JWT_SECRET
+            ? crypto.createHmac(alg, JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64url')
+            : '';
 
           const supplied = Buffer.from(parts[2]);
           const expected = Buffer.from(expectedSig);
-          if (supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
+          if (expectedSig && supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected)) {
             const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
             const now = Math.floor(Date.now() / 1000);
             if (payload.nbf !== undefined && (!Number.isFinite(payload.nbf) || payload.nbf > now)) return null;

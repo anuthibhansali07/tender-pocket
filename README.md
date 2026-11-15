@@ -237,7 +237,7 @@ Key environment variables:
 PORT=8085
 NEXT_PUBLIC_APP_URL=http://localhost:8085
 BACKEND_URL=http://localhost:8090
-JWT_SECRET=9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5
+JWT_SECRET=<same long random secret on frontend and backend>
 DATABASE_PATH=./tenders.db
 ```
 
@@ -248,8 +248,8 @@ PORT=8090
 SPRING_PORT=8090
 DATABASE_URL=jdbc:postgresql://localhost:5432/tenderpocket
 DATABASE_USERNAME=postgres
-DATABASE_PASSWORD=postgres
-JWT_SECRET=9a6156a5c2d3a3f5a2f8c5b8e9b6a1c8d5e6f3b2a5c8d3e4f5a8b9c1d2e3f4a5
+DATABASE_PASSWORD=<your-postgres-password>
+JWT_SECRET=<same long random secret on frontend and backend>
 ```
 
 ---
@@ -296,15 +296,15 @@ The Spring Boot backend will bind to: 👉 **[http://localhost:8090](http://loca
 
 ## 👥 Default User Accounts
 
-The database auto-seeds the following role-based test accounts upon startup:
+On startup the app seeds the following role-based accounts. Each password is read from its environment variable (see `.env.example`); an account whose variable is unset is not seeded or changed.
 
-| Username                | Role                       | Default Password | Dashboard & Functional Responsibility                                     |
+| Username                | Role                       | Password Variable | Dashboard & Functional Responsibility                                     |
 | :---------------------- | :------------------------- | :--------------- | :------------------------------------------------------------------------ |
-| **`admin`**     | **Admin**            | `Marken@123$`  | Full system oversight, audit logs, user management, overrides.            |
-| **`executive`** | **Tender Executive** | `executive123` | Specification uploads, bid document prep (DOCX/PDF).                      |
-| **`clearance`** | **Clearance Team**   | `clearance123` | Technical specification reviews, approvals, and rework feedback.          |
-| **`tpc`**       | **TPC Pricing Team** | `tpc123`       | OEM quotes, manufacturer pricing (confidential).                          |
-| **`misteam`**   | **MIS Team**         | `misteam`      | Final pricing, doc verification, EMD payments, GeM submissions, outcomes. |
+| **`admin`**     | **Admin**            | `ADMIN_DEFAULT_PASSWORD`  | Full system oversight, audit logs, user management, overrides.            |
+| **`executive`** | **Tender Executive** | `EXECUTIVE_DEFAULT_PASSWORD` | Specification uploads, bid document prep (DOCX/PDF).                      |
+| **`clearance`** | **Clearance Team**   | `CLEARANCE_DEFAULT_PASSWORD` | Technical specification reviews, approvals, and rework feedback.          |
+| **`tpc`**       | **TPC Pricing Team** | `TPC_DEFAULT_PASSWORD`       | OEM quotes, manufacturer pricing (confidential).                          |
+| **`misteam`**   | **MIS Team**         | `MISTEAM_DEFAULT_PASSWORD` | Final pricing, doc verification, EMD payments, GeM submissions, outcomes. |
 
 ---
 
