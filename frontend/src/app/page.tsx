@@ -74,7 +74,7 @@ import { FolderOpen } from 'lucide-react';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
-import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, STATE_PORTAL_OPTIONS, isStatePortalSource, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
@@ -212,6 +212,7 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [sectorFilter, setSectorFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [misExecutiveFilter, setMisExecutiveFilter] = useState('');
   const [sortBy, setSortBy] = useState('scraped_at');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -586,7 +587,7 @@ export default function Dashboard() {
   // Reset Tender Repository pagination on filter changes
   useEffect(() => {
     setRepoPage(1);
-  }, [statusFilter, searchQuery, locationFilter, sectorFilter, corrigendumFilter, misExecutiveFilter]);
+  }, [statusFilter, searchQuery, locationFilter, sectorFilter, sourceFilter, corrigendumFilter, misExecutiveFilter]);
 
   useEffect(() => {
     if (mounted && currentUser) {
@@ -708,6 +709,7 @@ export default function Dashboard() {
         status: activeStatus,
         location: activeLoc,
         sector: activeSec,
+        source: sourceFilter,
         sortBy,
         order: sortOrder,
         mis_executive: activeExec
@@ -948,7 +950,7 @@ export default function Dashboard() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter]);
+  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter]);
 
   // Background Auto-Sync Poll for Dashboard
   useEffect(() => {
@@ -962,6 +964,7 @@ export default function Dashboard() {
           status: statusFilter,
           location: locationFilter,
           sector: sectorFilter,
+          source: sourceFilter,
           sortBy,
           order: sortOrder,
           mis_executive: misExecutiveFilter,
@@ -1039,7 +1042,7 @@ export default function Dashboard() {
     }, 1500); // Poll every 1.5 seconds for instant real-time sync across sessions
 
     return () => clearInterval(interval);
-  }, [mounted, currentUser, searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, activeTab, misExecutiveFilter]);
+  }, [mounted, currentUser, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, misExecutiveFilter]);
 
 
   const toggleTheme = () => {
@@ -3070,6 +3073,21 @@ export default function Dashboard() {
                     <option value="">All Sectors</option>
                     {filters.sectors.map((sec) => (
                       <option key={sec} value={sec}>{sec}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="filter-select"
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    aria-label="Filter by source portal"
+                  >
+                    <option value="">All Sources</option>
+                    <option value="GeM">GeM Portal</option>
+                    <option value="Tender247">Tender247 Portal</option>
+                    <option value="STATE">All State &amp; Central Portals</option>
+                    {STATE_PORTAL_OPTIONS.map((p) => (
+                      <option key={p.code} value={p.source}>{p.label}</option>
                     ))}
                   </select>
 
@@ -5725,7 +5743,7 @@ export default function Dashboard() {
                     { label: 'Earnest Money Deposit (EMD)', value: selectedTender.emd_raw || 'N/A', icon: DollarSign },
                     { label: 'Tender Document Fee', value: selectedTender.document_fee_raw || 'N/A', icon: Tag },
                     { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
-                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
+                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : (isStatePortalSource(selectedTender.source) ? STATE_PORTAL_COLOR : 'var(--text-muted)')) },
                     { label: 'Source ID', value: selectedTender.source_id || 'N/A', icon: Tag },
                     { label: 'Location / Region', value: selectedTender.location || 'N/A', icon: MapPin },
                     { label: 'Place', value: selectedTender.place || 'N/A', icon: MapPin },

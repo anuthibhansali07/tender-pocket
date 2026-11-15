@@ -35,8 +35,9 @@ import {
 import { Tender } from '@/lib/db';
 import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
+import PortalDocumentFetcher, { type PortalDocsResult } from '@/app/components/PortalDocumentFetcher';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
-import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, isStatePortalSource, portalDocsNeedCaptcha, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
 interface Toast {
   message: string;
@@ -1394,6 +1395,18 @@ export default function TenderDetailPage() {
     setIsBidDocFormOpen(true);
   };
 
+  /** Called by PortalDocumentFetcher once the portal documents are stored on the server. */
+  const handlePortalDocsDownloaded = async (data: PortalDocsResult) => {
+    setSelectedTender(prev => prev ? {
+      ...prev,
+      downloaded_docs: data.downloadedDocs || prev.downloaded_docs,
+      downloadedDocs: data.downloadedDocs || prev.downloadedDocs,
+      document_url: data.documentUrl || prev.document_url,
+      documentUrl: data.documentUrl || prev.documentUrl
+    } : null);
+    await fetchTenderDetails();
+  };
+
   const handleGenerateBidDocs = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTender) return;
@@ -1945,6 +1958,9 @@ export default function TenderDetailPage() {
                           <option value="">Not Specified</option>
                           <option value="GeM">GeM Portal</option>
                           <option value="Tender247">Tender247 Portal</option>
+                          {isStatePortalSource(specForm.source) && (
+                            <option value={specForm.source}>{getSourceBadgeLabel(specForm.source)}</option>
+                          )}
                         </select>
                       </div>
 
@@ -2381,7 +2397,7 @@ export default function TenderDetailPage() {
                         { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
                         { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
                         { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
-                        { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
+                        { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : (isStatePortalSource(selectedTender.source) ? STATE_PORTAL_COLOR : 'var(--text-muted)')) },
                         { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
                         { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
                         { label: 'Place', value: selectedTender.place, icon: MapPin },
@@ -2453,7 +2469,27 @@ export default function TenderDetailPage() {
                   <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                   Document Repository
                 </h3>
-                
+
+                {isStatePortalSource(selectedTender.source) && (() => {
+                  let hasPortalDocs = false;
+                  try {
+                    const raw = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                    const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                    hasPortalDocs = Array.isArray(list) && list.some((d: any) => d && d.source === 'portal');
+                  } catch { hasPortalDocs = false; }
+                  return (
+                    <PortalDocumentFetcher
+                      tenderId={selectedTender.id}
+                      portalLabel={getStatePortal(selectedTender.source)?.label || 'state eProcurement portal'}
+                      hasPortalDocs={hasPortalDocs}
+                      needsCaptcha={portalDocsNeedCaptcha(selectedTender.source)}
+                      fetchWithAuth={fetchWithAuth}
+                      onDownloaded={handlePortalDocsDownloaded}
+                      showToast={showToast}
+                    />
+                  );
+                })()}
+
                 {(() => {
                   let docList: any[] = [];
                   const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
@@ -2466,9 +2502,13 @@ export default function TenderDetailPage() {
                   }
                   if (!Array.isArray(docList)) docList = [];
 
-                  // Ensure Original Tender Document PDF is always present if document_url / original_url is available
-                  const origUrl = selectedTender.document_url || selectedTender.documentUrl || selectedTender.original_url || selectedTender.originalUrl;
-                  if (origUrl) {
+                  // Ensure Original Tender Document PDF is always present if document_url / original_url is available.
+                  // State-portal tenders only have a real document once it is fetched (their original_url is the portal's listing page).
+                  const fromStatePortal = isStatePortalSource(selectedTender.source);
+                  const origUrl = fromStatePortal
+                    ? (selectedTender.document_url || selectedTender.documentUrl)
+                    : (selectedTender.document_url || selectedTender.documentUrl || selectedTender.original_url || selectedTender.originalUrl);
+                  if (origUrl && !fromStatePortal) {
                     const hasOriginal = docList.some((d: any) => 
                       d.local_path === origUrl || 
                       (d.name && (d.name.toLowerCase().includes('original') || d.name.toLowerCase().includes('gem bid'))) || 

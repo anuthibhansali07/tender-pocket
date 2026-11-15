@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.utils.TenderClassifier;
+import com.tenderpocket.utils.TenderKeywords;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -101,39 +102,8 @@ public class GeMScraperService {
     private String cachedCookieHeader = null;
     private String cachedCsrfHash = null;
 
-    private static final List<String> RAW_KEYWORDS = Arrays.asList(
-            "EXAMINATION TABLE", "Active Cold Box", "BIPAP", "Blood Bag Sealer", "Blood Bag Tube Sealer", 
-            "Boyle's Machine", "C-ARM Machine", "Cautery Machine", "Cell Counter", "Chemistry Analyser", 
-            "Colorimeter", "Colour Doppler", "CPAP", "Crash Cart", "CTG Machine", "Defibrillator", 
-            "Ward Plain Bed", "Dielectric Sealer", "Digital Analytical Balance", "Digital X-Ray", 
-            "Double Pan Balance", "Dressing Drum", "Dressing Trolley", "DVT Pump", "ECG Machine", 
-            "Electric Bed", "Electro Surgical Unit", "Electrolyte", "Electrosurgical Device", 
-            "Examination Couch", "Fetal Doppler", "Fogger Machine", "Foot Step", "Four Seater Chair Cushion", 
-            "Fowler Bed", "Gel Card Incubator", "Haematology Analyzer", "Hematology Analyzer", 
-            "Hemoglobin Analyzer", "Hemoglobinometer", "Holder Machine", "Hospital Bed", "Hospital Chair", 
-            "Hospital Furniture", "Hospital Table", "Hospital Trolley", "ICU Bed", "Instrument Trolley", 
-            "IV Rod", "Modular Operation Theatre", "Laminar Cabinet", "Laparoscopy Set", "Laparoscopy Trolley", 
-            "LDR Bed", "Mattress for ICU", "Mattress for Semi Fowler", "Medical Equipment", 
-            "Medical Gas Pipeline System", "Medical Hospital Lamps", "Microscope", "Modular Multipara Monitor", 
-            "Office Chair", "Operating Theatre Pendant", "Operation Table", "OT LED Light Double Dome", 
-            "OT Pendant", "OT Table Electric cum Manual", "Over Bed Table", "Oxygen Concentrator", 
-            "Patient Monitor", "Pediatric Bed", "PH Meter", "Plain Bed", "Pulse Oximeter", "Radiant Warmer", 
-            "Radiology & Imaging", "Recovery Trolley Hydraulic", "Revolving Stool", "RH View Box", 
-            "Rolling Hypothermia Treatment Carts", "Fradi", "Semi Auto Analyser", "Semi Fowler Bed", 
-            "Sterile Connecting Device", "Stretcher", "Suction Machine", "Syringe Pump", "Thermometer", 
-            "Three Seater Chair", "TMT Machine", "Tube Stripper", "Ultrasonic Cleaner", "Ultrasound Machine", 
-            "Ultrasound USG Machine", "USG Machine", "VDRL Shaker", "Ventilator", "Visi Cooler", 
-            "Visual Light Box", "Volumetric Infusion Pump", "Weighing Scale", "X-Ray Machine", "IVD Pathology", 
-            "Laproscopy and endoscopy", "Commercial Refrigeration", "Freezer / Deep Freezer", "Chest Freezer", 
-            "Chiller", "Insulated Truck / Vehicles", "Insulated Van / Vehicles", "Refrigerated Vans / Trucks / Vehicles", 
-            "Refrigerator", "Remote Temperature Monitoring Device (WHO Tested)", 
-            "Solar Walk In Cooler and Freezer / Cold Room", "Walk-In-Freezer / Cold Room", "Steel Cupboards & Funriture Range", 
-            "3 door steel cupboards", "2 door steel cupboards", "Office steel cupboards", 
-            "Particle Board Box bed Particle Board", "Particle Board Single Bed", "Particle Board Double Bed", 
-            "Particle Board Diwan", "Particle Board 3 Door Cupboard", "Particle Board 2 Door Cupboard", 
-            "Particle Board Dressing Table", "Particle Board TV Showcase", "Particle Board Office Table", 
-            "Steel Funriture", "ALMIRAH"
-    );
+    /** Shared with the state portal crawler; see {@link TenderKeywords}. */
+    private static final List<String> RAW_KEYWORDS = TenderKeywords.RAW_KEYWORDS;
 
     public int syncTenders(boolean allDates, List<String> customKeywords) throws Exception {
         List<String> keywords = customKeywords != null && !customKeywords.isEmpty() ? customKeywords : RAW_KEYWORDS;
@@ -777,21 +747,6 @@ public class GeMScraperService {
     }
 
     public static int countMatchingKeywords(String content, List<String> keywords) {
-        if (content == null || content.trim().isEmpty() || keywords == null || keywords.isEmpty()) {
-            return 0;
-        }
-        String lowerContent = content.toLowerCase();
-        Set<String> matchedKeywords = new HashSet<>();
-
-        for (String kw : keywords) {
-            if (kw == null) continue;
-            String trimmedKw = kw.trim().toLowerCase();
-            if (trimmedKw.length() < 3) continue;
-
-            if (lowerContent.contains(trimmedKw)) {
-                matchedKeywords.add(trimmedKw);
-            }
-        }
-        return matchedKeywords.size();
+        return TenderKeywords.countMatchingKeywords(content, keywords);
     }
 }

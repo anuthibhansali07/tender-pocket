@@ -71,6 +71,12 @@ public class TenderController {
     @Autowired
     private com.tenderpocket.services.EmailSyncService emailSyncService;
 
+    @Autowired(required = false)
+    private com.tenderpocket.services.state.StateTenderSyncService stateTenderSyncService;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.state.StateDocumentService stateDocumentService;
+
     @Autowired
     private com.tenderpocket.services.EmailNotificationService emailNotificationService;
 
@@ -247,6 +253,101 @@ public class TenderController {
         }
     }
 
+    /**
+     * Starts a background sync of the NIC state/central eProcurement portals.
+     * Optional query params: portals=MH,UP (codes from state-portals.json; default all enabled)
+     * and dryRun=true (fetch and filter, but write nothing).
+     */
+    @PostMapping("/sync-state")
+    public ResponseEntity<?> syncStatePortals(
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestParam(value = "portals", required = false) String portals,
+            @RequestParam(value = "dryRun", required = false, defaultValue = "false") boolean dryRun) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
+        }
+        if (stateTenderSyncService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "State portal sync is not available"));
+        }
+        List<String> codes = portals == null || portals.isBlank()
+                ? Collections.emptyList()
+                : Arrays.asList(portals.split(","));
+        boolean started = stateTenderSyncService.startAsync(codes, dryRun);
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "error", "A state portal sync is already running"));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "dryRun", dryRun,
+                "message", "State portal sync started in the background. Check /api/tenders/sync-state/status for progress."));
+    }
+
+    /**
+     * Step 1 of fetching a state-portal tender's documents: opens the tender on its portal and
+     * returns the portal's CAPTCHA image for the executive to read (or the files, if the portal
+     * did not ask for one).
+     */
+    @PostMapping("/{id}/portal-documents/captcha")
+    public ResponseEntity<?> startPortalDocumentDownload(@PathVariable("id") String id) {
+        ResponseEntity<?> denied = denyPortalDocumentAccess();
+        if (denied != null) return denied;
+        var result = stateDocumentService.start(id);
+        return ResponseEntity.status("ERROR".equals(result.status()) ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK)
+                .body(result.toMap());
+    }
+
+    /** Step 2: submits what the executive typed; on success the documents are stored like GeM bid documents. */
+    @PostMapping("/{id}/portal-documents/captcha/{token}")
+    public ResponseEntity<?> submitPortalDocumentCaptcha(@PathVariable("id") String id,
+                                                         @PathVariable("token") String token,
+                                                         @RequestBody(required = false) Map<String, String> body) {
+        ResponseEntity<?> denied = denyPortalDocumentAccess();
+        if (denied != null) return denied;
+        String answer = body != null ? body.get("answer") : null;
+        var result = stateDocumentService.submit(id, token, answer);
+        if ("DOWNLOADED".equals(result.status())) {
+            String username = WorkflowPermissions.username();
+            activityLogRepository.save(new ActivityLog(
+                    username, WorkflowPermissions.role(), "Downloaded Portal Tender Documents", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    result.files().size() + " file(s) downloaded from the state eProcurement portal"));
+        }
+        return ResponseEntity.status("ERROR".equals(result.status()) ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK)
+                .body(result.toMap());
+    }
+
+    private ResponseEntity<?> denyPortalDocumentAccess() {
+        if (stateDocumentService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Portal document download is not available"));
+        }
+        String role = WorkflowPermissions.role();
+        if (!WorkflowPermissions.allowed(UPLOAD_SPEC) && !"MIS Team".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Only Tender Executives, MIS Team or Admin can fetch portal documents"));
+        }
+        return null;
+    }
+
+    @GetMapping("/sync-state/status")
+    public ResponseEntity<?> statePortalSyncStatus() {
+        if (stateTenderSyncService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "State portal sync is not available"));
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("success", true);
+        body.put("running", stateTenderSyncService.isRunning());
+        body.put("enabledPortals", stateTenderSyncService.getPortals().stream()
+                .filter(com.tenderpocket.services.state.GepnicPortal::enabled)
+                .map(com.tenderpocket.services.state.GepnicPortal::code).toList());
+        var last = stateTenderSyncService.getLastRun();
+        body.put("lastRun", last != null ? last.toMap() : null);
+        return ResponseEntity.ok(body);
+    }
+
     @PostMapping("/sync-emails")
     public ResponseEntity<?> syncEmails(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
         userRole = resolveUserRole(userRole);
@@ -291,6 +392,7 @@ public class TenderController {
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "location", required = false) String location,
             @RequestParam(value = "sector", required = false) String sector,
+            @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "mis_executive", required = false) String misExecutive,
             @RequestParam(value = "minCost", required = false) Double minCost,
             @RequestParam(value = "maxCost", required = false) Double maxCost,
@@ -418,6 +520,17 @@ public class TenderController {
                 continue;
             }
 
+            // Filter by source: "STATE" matches every state/central eProcurement portal (GePNIC-* and STATE-*)
+            if (source != null && !source.isEmpty()) {
+                String ts = t.getSource() == null ? "" : t.getSource().trim();
+                boolean match = "STATE".equalsIgnoreCase(source)
+                        ? (ts.startsWith("GePNIC-") || ts.startsWith("STATE-"))
+                        : "Tender247".equalsIgnoreCase(source)
+                            ? ts.equalsIgnoreCase("Tender247") || ts.equalsIgnoreCase("Tender 247")
+                            : ts.equalsIgnoreCase(source);
+                if (!match) continue;
+            }
+
             // Filter by minCost & maxCost
             if (minCost != null && (t.getEstimatedCost() == null || t.getEstimatedCost() < minCost)) {
                 continue;
@@ -507,7 +620,7 @@ public class TenderController {
             Double maxCost,
             String sortBy,
             String order) {
-        return getTenders(userRole, username, search, status, location, sector, misExecutive, minCost, maxCost, sortBy, order, null, null);
+        return getTenders(userRole, username, search, status, location, sector, null, misExecutive, minCost, maxCost, sortBy, order, null, null);
     }
 
     private Tender createSummaryResponseCopy(Tender source) {
