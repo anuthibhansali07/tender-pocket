@@ -37,7 +37,7 @@ class GeMScraperDeduplicationEnrichmentTest {
     }
 
     @Test
-    @DisplayName("Existing tender from Tender247 with provisional Non GeM is enriched with authoritative GeM classification by GeM scraper")
+    @DisplayName("Existing Tender247 tender with a GEM Organization Tender ID is enriched by GeM scraper and saved as GeM")
     void testExistingTenderEnrichedByGeMScraper() throws Exception {
         // Pre-existing tender created by Tender247 email
         Tender existing = new Tender();
@@ -66,13 +66,14 @@ class GeMScraperDeduplicationEnrichmentTest {
 
         enrichMethod.invoke(geMScraperService, existing, "GEM/2026/B/7570015", "GEM/2026/B/7570015",
                 "https://bidplus.gem.gov.in/showbidDocument/7458129", docNode);
+        existing.applyTenderType(); // runs when the tender is saved
 
         // Assert tender identity and stage preserved
         assertEquals("100575724", existing.getId());
         assertEquals("NEW", existing.getCurrentStage());
         assertEquals("Issued", existing.getStatus());
 
-        // Assert authoritative GeM classification and official GeM URL updated
+        // Tender type follows the GEM ref_no; official GeM URL updated
         assertEquals("GeM", existing.getTenderType());
         assertEquals("GEM/2026/B/7570015", existing.getRefNo());
         assertEquals("https://bidplus.gem.gov.in/showbidDocument/7458129", existing.getOriginalUrl());
@@ -190,5 +191,58 @@ class GeMScraperDeduplicationEnrichmentTest {
         // Verify newGeM has documentUrl updated while existingT247 is untouched
         assertEquals("/documents/gem-7458129/Bid_Document_gem-7458129.pdf", newGeM.getDocumentUrl());
         assertNull(existingT247.getDocumentUrl(), "Unrelated Tender247 record must remain untouched");
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // GeM has no T247 ID: source_id is never written, the RA number goes to the notes
+    // ---------------------------------------------------------------------------------------------
+
+    private void enrichFromGeM(Tender existing, String officialRefNo, String bidNo) throws Exception {
+        Method enrichMethod = GeMScraperService.class.getDeclaredMethod("enrichExistingRecordFromGeM",
+                Tender.class, String.class, String.class, String.class, com.fasterxml.jackson.databind.JsonNode.class);
+        enrichMethod.setAccessible(true);
+        enrichMethod.invoke(geMScraperService, existing, officialRefNo, bidNo,
+                "https://bidplus.gem.gov.in/showbidDocument/7458129", objectMapper.createObjectNode());
+    }
+
+    @Test
+    @DisplayName("GeM enrichment never writes the GeM bid number into the T247 ID")
+    void testGemEnrichmentLeavesT247IdAlone() throws Exception {
+        Tender noT247 = new Tender();
+        noT247.setId("7458129");
+        noT247.setSource("GeM");
+        enrichFromGeM(noT247, "GEM/2026/B/7570015", "GEM/2026/B/7570015");
+        assertNull(noT247.getSourceId(), "GeM has no T247 ID");
+        assertEquals("GEM/2026/B/7570015", noT247.getRefNo());
+
+        Tender withT247 = new Tender();
+        withT247.setId("100575724");
+        withT247.setSourceId("100575724");
+        enrichFromGeM(withT247, "GEM/2026/B/7570015", "GEM/2026/B/7570015");
+        assertEquals("100575724", withT247.getSourceId(), "An existing T247 ID is kept");
+    }
+
+    @Test
+    @DisplayName("GeM RA number is kept in the notes once, not in the T247 ID")
+    void testGemRaNumberGoesToNotes() throws Exception {
+        Tender existing = new Tender();
+        existing.setId("7458129");
+        existing.setRefNo("GEM/2026/B/7570015");
+        existing.setNotes("Imported automatically.");
+
+        enrichFromGeM(existing, "GEM/2026/B/7570015", "GEM/2026/R/123456");
+        enrichFromGeM(existing, "GEM/2026/B/7570015", "GEM/2026/R/123456");
+
+        assertNull(existing.getSourceId());
+        assertEquals("Imported automatically.\nGeM RA number: GEM/2026/R/123456", existing.getNotes(),
+                "RA number added once, below the existing notes");
+    }
+
+    @Test
+    @DisplayName("withGemRaNumberNote adds nothing when the bid number is the stored one or a placeholder")
+    void testWithGemRaNumberNoteSkipsSameNumber() {
+        assertEquals("", GeMScraperService.withGemRaNumberNote(null, "GEM/2026/B/1", "GEM/2026/B/1"));
+        assertEquals("x", GeMScraperService.withGemRaNumberNote("x", "GEM/2026/B/1", "N/A"));
+        assertEquals("GeM RA number: GEM/2026/R/9", GeMScraperService.withGemRaNumberNote("", "GEM/2026/B/1", "GEM/2026/R/9"));
     }
 }

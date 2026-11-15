@@ -165,9 +165,6 @@ public class EmailSyncService {
                         }
                     }
 
-                    // Evidence-based platform classification
-                    String classifiedType = TenderClassifier.classify(refNo, link, nameofWebsite, title);
-
                     // Cross-source deduplication check:
                     // 1) Match by official refNo (e.g. GeM bid number) if available and not a placeholder
                     // 2) Match by primary key id (Tender247 ID) ONLY if existing record belongs to Tender247 namespace or refNo matches
@@ -191,7 +188,7 @@ public class EmailSyncService {
 
                     if (existingOpt.isPresent()) {
                         Tender existing = existingOpt.get();
-                        enrichExistingRecordFromTender247(existing, tData, refNo, classifiedType, link);
+                        enrichExistingRecordFromTender247(existing, tData, refNo, link);
                         tenderRepository.save(existing);
                         System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
                                 existing.getId(), existing.getRefNo(), existing.getTenderType()));
@@ -226,7 +223,6 @@ public class EmailSyncService {
                     tender.setScrapedAt(new Date().toString());
                     tender.setEntryDate(LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")));
                     tender.setSource("Tender247");
-                    tender.setTenderType(classifiedType);
 
                     tenderRepository.save(tender);
                     tendersImported++;
@@ -371,6 +367,21 @@ public class EmailSyncService {
                     String bidNo = TenderClassifier.extractGemBidNumber(title, cell0Text);
                     if (bidNo != null && !bidNo.isBlank()) {
                         t.put("ref_no", bidNo);
+                    } else {
+                        // The email table only carries the T247 ID. Ask Tender247's detail endpoint for the
+                        // Organization Tender ID (and portal / amounts) so non-GeM numbers are not lost.
+                        Map<String, String> detail = fetchTenderDetailSafe(id, "", null);
+                        String tenderNumber = detail.getOrDefault("tender_number", "").trim();
+                        if (!tenderNumber.isEmpty() && !TenderClassifier.isPlaceholderRefNo(tenderNumber)) {
+                            t.put("ref_no", tenderNumber);
+                        }
+                        String website = detail.getOrDefault("nameof_website", "").trim();
+                        if (!website.isEmpty()) {
+                            t.put("nameof_website", website);
+                        }
+                        for (String key : List.of("emd_raw", "document_fee_raw")) {
+                            if (detail.containsKey(key)) t.put(key, detail.get(key));
+                        }
                     }
 
                     // Extract due date & cost from cell2
@@ -557,7 +568,12 @@ public class EmailSyncService {
                 return true;
             }
         }
-        // 2. Same source namespace ("Tender247")
+        // 2. The tender already carries this T247 ID (source_id only ever holds T247 IDs, whichever
+        //    portal the tender first came from)
+        if (isT247Id(t247Id) && existing.getSourceId() != null && t247Id.equals(existing.getSourceId().trim())) {
+            return true;
+        }
+        // 3. Same source namespace ("Tender247")
         if ("Tender247".equalsIgnoreCase(existing.getSource())) {
             if (t247Id != null && (t247Id.equalsIgnoreCase(existing.getId()) || t247Id.equalsIgnoreCase(existing.getSourceId()))) {
                 return true;
@@ -567,58 +583,29 @@ public class EmailSyncService {
         return false;
     }
 
-    void enrichExistingRecordFromTender247(Tender existing, Map<String, String> tData, String refNo, String classifiedType, String link) {
-        // 1. Official reference / bid number
+    /** Tender247's own tender number (T247 ID) is always numeric. */
+    static boolean isT247Id(String value) {
+        return value != null && value.trim().matches("^\\d{1,50}$");
+    }
+
+    void enrichExistingRecordFromTender247(Tender existing, Map<String, String> tData, String refNo, String link) {
+        // 1. Official reference / bid number (Organization Tender ID)
         if ((existing.getRefNo() == null || existing.getRefNo().isBlank() || TenderClassifier.isPlaceholderRefNo(existing.getRefNo()))
                 && !TenderClassifier.isPlaceholderRefNo(refNo)) {
             existing.setRefNo(refNo);
         }
 
-        // 2. Classification enrichment & precedence:
-        // - Verified official source evidence takes precedence.
-        // - Strong incoming Non-GeM evidence can correct an unverified or erroneously defaulted "GeM" record,
-        //   provided the existing record does NOT have verified GeM evidence (valid GeM bid number or official GeM domain).
-        // - Strong incoming GeM evidence upgrades existing records unless the existing record has verified Non-GeM evidence.
-        // - Direct conflict between verified official sources resolves to "Unverified".
-        // - Weak or unverified incoming evidence never overwrites existing verified classifications.
-        boolean existingHasVerifiedGem = TenderClassifier.isValidGemBidNumber(existing.getRefNo())
-                || TenderClassifier.isOfficialGemDomain(existing.getOriginalUrl());
-        boolean existingHasVerifiedNonGem = TenderClassifier.isVerifiedNonGemDomain(existing.getOriginalUrl())
-                || TenderClassifier.isVerifiedNonGemDomain(existing.getSector());
-
-        boolean incomingHasVerifiedGem = "GeM".equalsIgnoreCase(classifiedType)
-                && (TenderClassifier.isValidGemBidNumber(refNo)
-                || TenderClassifier.isOfficialGemDomain(link)
-                || TenderClassifier.isOfficialGemDomain(tData.get("nameof_website")));
-        boolean incomingHasVerifiedNonGem = "Non GeM".equalsIgnoreCase(classifiedType)
-                && (TenderClassifier.isVerifiedNonGemDomain(link)
-                || TenderClassifier.isVerifiedNonGemDomain(tData.get("nameof_website")));
-
-        if (incomingHasVerifiedGem && existingHasVerifiedNonGem) {
-            existing.setTenderType("Unverified");
-        } else if (incomingHasVerifiedNonGem && existingHasVerifiedGem) {
-            existing.setTenderType("Unverified");
-        } else if (incomingHasVerifiedGem) {
-            existing.setTenderType("GeM");
-        } else if (incomingHasVerifiedNonGem) {
-            if (!existingHasVerifiedGem) {
-                existing.setTenderType("Non GeM");
-            }
-        } else if ("GeM".equalsIgnoreCase(classifiedType)) {
-            if (!existingHasVerifiedNonGem && (existing.getTenderType() == null || existing.getTenderType().isBlank() || "Unverified".equalsIgnoreCase(existing.getTenderType()))) {
-                existing.setTenderType("GeM");
-            }
-        } else if ("Non GeM".equalsIgnoreCase(classifiedType)) {
-            if (!existingHasVerifiedGem && (existing.getTenderType() == null || existing.getTenderType().isBlank() || "Unverified".equalsIgnoreCase(existing.getTenderType()))) {
-                existing.setTenderType("Non GeM");
-            }
-        } else if (existing.getTenderType() == null || existing.getTenderType().isBlank()) {
-            existing.setTenderType(classifiedType);
+        // 1b. T247 ID. A tender that first came from GeM (or was added by hand) has none yet, so save it now.
+        //     A T247 ID already on the tender is kept.
+        String t247Id = tData.get("id");
+        if (isT247Id(t247Id) && !isT247Id(existing.getSourceId())) {
+            existing.setSourceId(t247Id.trim());
         }
 
-        // 3. Original URL enrichment:
-        // If incoming has an official portal URL (e.g. gem.gov.in) and existing is an aggregator link or blank
-        if (TenderClassifier.isOfficialGemDomain(link) || TenderClassifier.isVerifiedNonGemDomain(link)) {
+        // 2. Tender type is not decided here: the Tender entity sets it from the Organization Tender ID (ref_no).
+
+        // 3. Original URL: fill it only when the tender has none yet
+        if ((existing.getOriginalUrl() == null || existing.getOriginalUrl().isBlank()) && link != null && !link.isBlank()) {
             existing.setOriginalUrl(link);
         }
 

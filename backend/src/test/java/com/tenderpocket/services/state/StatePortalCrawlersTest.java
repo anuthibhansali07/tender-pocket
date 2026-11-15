@@ -264,7 +264,6 @@ class StatePortalCrawlersTest {
     void savesNonNicTendersWithPortalPrefixedIds() {
         TenderRepository repo = Mockito.mock(TenderRepository.class);
         Mockito.when(repo.findById(anyString())).thenReturn(Optional.empty());
-        Mockito.when(repo.findFirstBySourceId(anyString())).thenReturn(Optional.empty());
         Mockito.when(repo.findFirstByRefNo(anyString())).thenReturn(Optional.empty());
         Mockito.when(repo.save(any(Tender.class))).thenAnswer(i -> i.getArgument(0));
         StateTenderSyncService svc = new StateTenderSyncService();
@@ -292,7 +291,7 @@ class StatePortalCrawlersTest {
         Tender t = saved.getValue();
         assertEquals("st-ts-747415", t.getId());
         assertEquals("STATE-TS", t.getSource());
-        assertEquals("TS-747415", t.getSourceId());
+        assertNull(t.getSourceId(), "source_id is kept for the T247 ID");
         assertEquals("TGMSIDC/EQP/2026", t.getRefNo());
         assertEquals("747415", t.getEprocurementPortalId());
         assertEquals("Non GeM", t.getTenderType());

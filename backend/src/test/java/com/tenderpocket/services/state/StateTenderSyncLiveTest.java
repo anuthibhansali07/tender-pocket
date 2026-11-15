@@ -24,7 +24,7 @@ class StateTenderSyncLiveTest {
         String codes = System.getenv().getOrDefault("STATE_LIVE_PORTALS", "GA,TR,MH");
 
         TenderRepository repo = Mockito.mock(TenderRepository.class);
-        Mockito.when(repo.findFirstBySourceId(anyString())).thenReturn(Optional.empty());
+        Mockito.when(repo.findFirstByEprocurementPortalId(anyString())).thenReturn(Optional.empty());
         Mockito.when(repo.findFirstByRefNo(anyString())).thenReturn(Optional.empty());
 
         StateTenderSyncService service = new StateTenderSyncService();
@@ -107,7 +107,6 @@ class StateTenderSyncLiveTest {
         com.tenderpocket.models.Tender t = new com.tenderpocket.models.Tender();
         t.setId("gep-mh-" + tenderId.toLowerCase());
         t.setSource("GePNIC-MH");
-        t.setSourceId(tenderId);
         t.setEprocurementPortalId(tenderId);
         t.setAuthority(authority);
 

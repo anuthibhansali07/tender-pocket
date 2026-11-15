@@ -45,7 +45,7 @@ class StateTenderSyncServiceTest {
         // The fixtures are from 2026-11-12; a very long window keeps the test date-independent.
         ReflectionTestUtils.setField(service, "lookbackDays", 100_000);
         ReflectionTestUtils.setField(service, "maxDetailsPerPortal", 400);
-        when(tenderRepository.findFirstBySourceId(anyString())).thenReturn(Optional.empty());
+        when(tenderRepository.findFirstByEprocurementPortalId(anyString())).thenReturn(Optional.empty());
         when(tenderRepository.findFirstByRefNo(anyString())).thenReturn(Optional.empty());
         when(tenderRepository.save(any(Tender.class))).thenAnswer(inv -> inv.getArgument(0));
         fetcher = new FixtureFetcher();
@@ -71,7 +71,8 @@ class StateTenderSyncServiceTest {
         Tender bloodBank = tenders.stream().filter(t -> "2026_DHS_1352679_1".equals(t.getRefNo())).findFirst().orElseThrow();
         assertEquals("gep-mh-2026_dhs_1352679_1", bloodBank.getId());
         assertEquals("GePNIC-MH", bloodBank.getSource());
-        assertEquals("2026_DHS_1352679_1", bloodBank.getSourceId());
+        assertEquals("2026_DHS_1352679_1", bloodBank.getEprocurementPortalId());
+        assertNull(bloodBank.getSourceId(), "source_id is kept for the T247 ID");
         assertEquals("2026_DHS_1352679_1", bloodBank.getEprocurementPortalId());
         assertEquals("E-5/GHAmt/DPDC/Blood Bank/Equip/2026-27", bloodBank.getOfficialReferenceNumber());
         assertEquals("Non GeM", bloodBank.getTenderType());
@@ -130,7 +131,7 @@ class StateTenderSyncServiceTest {
     void skipsKnownTenders() {
         Tender known = new Tender();
         known.setSource("GePNIC-MH");
-        when(tenderRepository.findFirstBySourceId(anyString())).thenReturn(Optional.of(known));
+        when(tenderRepository.findFirstByEprocurementPortalId(anyString())).thenReturn(Optional.of(known));
 
         StateTenderSyncService.PortalResult result = service.syncPortal(MH, fetcher, false);
 

@@ -328,6 +328,7 @@ export interface Tender {
   assigned_at?: string | null;
   source?: string | null;
   source_id?: string | null;
+  eprocurement_portal_id?: string | null;
   vertical_name?: string | null;
   place?: string | null;
   state?: string | null;

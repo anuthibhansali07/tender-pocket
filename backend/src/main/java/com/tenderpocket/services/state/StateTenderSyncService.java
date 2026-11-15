@@ -419,13 +419,12 @@ public class StateTenderSyncService {
     }
 
     /**
-     * Same tender already stored? Non-NIC tender ids are bare numbers that could equal a Tender247
-     * id, so lookups use our own id and portal-prefixed source id, plus the free-text reference
-     * when the department also matches.
+     * Same tender already stored? Non-NIC tender ids are bare numbers that could repeat across
+     * portals, so lookups use our own portal-prefixed id, plus the free-text reference when the
+     * department also matches.
      */
     Optional<Tender> findExistingOnListPortal(GepnicPortal portal, PortalListCrawler.ListedTender t) {
         Optional<Tender> found = tenderRepository.findById((portal.idPrefix() + t.tenderId()).toLowerCase(Locale.ROOT));
-        if (found.isEmpty()) found = tenderRepository.findFirstBySourceId(listSourceId(portal, t.tenderId()));
         if (found.isEmpty() && t.referenceNumber() != null && t.referenceNumber().length() >= 6
                 && !TenderClassifier.isPlaceholderRefNo(t.referenceNumber())) {
             Optional<Tender> byRef = tenderRepository.findFirstByRefNo(t.referenceNumber());
@@ -449,11 +448,12 @@ public class StateTenderSyncService {
 
     /**
      * Finds a record for the same tender from any source. The GePNIC Tender ID is unique per
-     * portal and is what Tender247 usually stores as the tender number. The free-text reference is
-     * reused across departments, so it only counts together with a matching department.
+     * portal; we keep it in eprocurement_portal_id and Tender247 usually stores it as the
+     * Organization Tender ID (ref_no). The free-text reference is reused across departments, so it
+     * only counts together with a matching department.
      */
     Optional<Tender> findExisting(GepnicParser.TenderRow row) {
-        Optional<Tender> t = tenderRepository.findFirstBySourceId(row.tenderId());
+        Optional<Tender> t = tenderRepository.findFirstByEprocurementPortalId(row.tenderId());
         if (t.isEmpty()) t = tenderRepository.findFirstByRefNo(row.tenderId());
         if (t.isEmpty() && row.referenceNumber() != null && row.referenceNumber().length() >= 6
                 && !TenderClassifier.isPlaceholderRefNo(row.referenceNumber())) {
@@ -482,14 +482,13 @@ public class StateTenderSyncService {
     Tender buildTender(GepnicPortal portal, GepnicParser.TenderRow row, Map<String, String> detail, String reason) {
         Tender t = new Tender();
         t.setId((portal.idPrefix() + row.tenderId()).toLowerCase(Locale.ROOT));
+        // source_id is reserved for the T247 ID, so the portal's own Tender ID goes in eprocurement_portal_id.
         if (portal.isGepnic()) {
             // GePNIC ids (2026_DHS_1352679_1) are globally unique, so they double as the reference number.
             t.setRefNo(row.tenderId());
-            t.setSourceId(row.tenderId());
         } else {
             // Other systems use bare numbers; keep them portal-prefixed so they never match another source.
             t.setRefNo(firstNonBlank(row.referenceNumber(), listSourceId(portal, row.tenderId())));
-            t.setSourceId(listSourceId(portal, row.tenderId()));
         }
         t.setEprocurementPortalId(row.tenderId());
         t.setOfficialReferenceNumber(firstNonBlank(detail.get("Tender Reference Number"), row.referenceNumber()));
@@ -526,9 +525,8 @@ public class StateTenderSyncService {
 
         // Portal links are tied to a browsing session and expire; store the stable portal entry page.
         t.setOriginalUrl(portal.entryUrl());
-        String classification = TenderClassifier.classify(row.tenderId(), portal.baseUrl(), portal.host(), title);
-        // Every configured portal is a government eProcurement system (nprocure.com is Gujarat's).
-        t.setTenderType("Unverified".equals(classification) ? "Non GeM" : classification);
+        // Tender type follows the Organization Tender ID (the entity also re-applies this on save).
+        t.setTenderType(TenderClassifier.classify(t.getRefNo()));
         t.setStatus("Issued");
         t.setScrapedAt(new Date().toString());
         t.setEntryDate(LocalDate.now(IST).format(ENTRY_DATE));

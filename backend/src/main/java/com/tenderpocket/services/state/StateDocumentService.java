@@ -145,7 +145,7 @@ public class StateDocumentService {
         }
         GepnicPortal portal = portalOpt.get();
         if (!portal.isGepnic()) return startNonNic(tender, portal);
-        String gepnicId = firstNonBlank(tender.getEprocurementPortalId(), tender.getSourceId());
+        String gepnicId = firstNonBlank(tender.getEprocurementPortalId());
         if (gepnicId == null) return FetchResult.error("This tender has no portal Tender ID");
 
         pending.values().removeIf(p -> p.tenderId.equals(tenderId));
@@ -188,7 +188,7 @@ public class StateDocumentService {
     private FetchResult startNonNic(Tender tender, GepnicPortal portal) {
         pending.values().removeIf(p -> p.tenderId.equals(tender.getId()));
         GepnicSession session = new GepnicSession(requestPauseMs, Duration.ofSeconds(180));
-        String portalId = firstNonBlank(tender.getEprocurementPortalId(), tender.getSourceId());
+        String portalId = firstNonBlank(tender.getEprocurementPortalId());
         try {
             List<GepnicSession.RawResponse> files;
             switch (portal.kind()) {

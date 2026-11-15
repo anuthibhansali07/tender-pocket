@@ -37,12 +37,22 @@ import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/li
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import PortalDocumentFetcher, { type PortalDocsResult } from '@/app/components/PortalDocumentFetcher';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
-import { getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, isStatePortalSource, portalDocsNeedCaptcha, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
+import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, isStatePortalSource, portalDocsNeedCaptcha, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
 interface Toast {
   message: string;
   type: 'success' | 'error';
   show: boolean;
+}
+
+// Values that mean "nobody assigned" even though the column is non-empty. The retired
+// gemSyncEngine importer stored mis_executive as 'Unassigned', and those rows are still in the DB.
+const UNASSIGNED_EXECUTIVE_PLACEHOLDERS = ['unassigned', 'not assigned', 'n/a', 'none', 'null', '-'];
+
+/** The executive actually assigned to a tender, or '' when none is (blank or a placeholder value). */
+function assignedExecutiveOf(misExecutive: string | null | undefined): string {
+  const value = (misExecutive || '').trim();
+  return UNASSIGNED_EXECUTIVE_PLACEHOLDERS.includes(value.toLowerCase()) ? '' : value;
 }
 
 export default function TenderDetailPage() {
@@ -193,7 +203,6 @@ export default function TenderDetailPage() {
     estimated_cost_raw: '',
     emd_raw: '',
     document_fee_raw: '',
-    tender_type: 'Unverified',
     source: '',
     source_id: '',
     location: '',
@@ -489,9 +498,9 @@ export default function TenderDetailPage() {
         }
 
         // 7. MIS Executive
-        const hasLocalMisExecutiveChanges = prevTender && latestMisExecutive !== (prevTender.mis_executive || '');
+        const hasLocalMisExecutiveChanges = prevTender && latestMisExecutive !== assignedExecutiveOf(prevTender.mis_executive);
         if (isFirstLoad || !hasLocalMisExecutiveChanges) {
-          setMisExecutive(tender.mis_executive || '');
+          setMisExecutive(assignedExecutiveOf(tender.mis_executive));
         }
 
         // 8. Assigned MIS Representatives
@@ -947,12 +956,22 @@ export default function TenderDetailPage() {
       return null;
     }
     if (field === 'ref_no') {
-      if (!value || !String(value).trim()) return "Official Reference No cannot be empty.";
-      if (String(value).trim().length > 255) return "Official Reference No cannot exceed 255 characters.";
+      if (!value || !String(value).trim()) return "Organization Tender ID cannot be empty.";
+      if (String(value).trim().length > 255) return "Organization Tender ID cannot exceed 255 characters.";
       return null;
     }
-    if (['place', 'state', 'sector', 'vertical_name', 'source_id'].includes(field)) {
+    if (['place', 'state', 'sector', 'vertical_name'].includes(field)) {
       if (value && String(value).trim().length > 255) return `${field} cannot exceed 255 characters.`;
+      return null;
+    }
+    if (field === 'source_id') {
+      // T247 ID is Tender247's numeric tender number. Only checked when changed, so a value
+      // already on the tender never blocks saving other fields (same rule as the backend).
+      const v = value ? String(value).trim() : '';
+      const current = String(selectedTender?.source_id ?? '').trim();
+      if (v && v !== current && !/^\d{1,50}$/.test(v)) {
+        return 'T247 ID must be the number shown on Tender247 (digits only). Put GeM or department numbers in Organization Tender ID.';
+      }
       return null;
     }
     if (field === 'document_fee_raw') {
@@ -1018,7 +1037,6 @@ export default function TenderDetailPage() {
       estimated_cost_raw: selectedTender.estimated_cost_raw || '',
       emd_raw: selectedTender.emd_raw || '',
       document_fee_raw: selectedTender.document_fee_raw || '',
-      tender_type: selectedTender.tender_type || selectedTender.tenderType || 'Unverified',
       source: selectedTender.source || '',
       source_id: selectedTender.source_id || '',
       location: selectedTender.location || '',
@@ -1076,7 +1094,6 @@ export default function TenderDetailPage() {
         estimated_cost_raw: specForm.estimated_cost_raw,
         emd_raw: specForm.emd_raw,
         document_fee_raw: specForm.document_fee_raw,
-        tender_type: specForm.tender_type,
         source: specForm.source,
         source_id: specForm.source_id,
         location: specForm.location,
@@ -1854,10 +1871,10 @@ export default function TenderDetailPage() {
                         )}
                       </div>
 
-                      {/* 2. Official Reference No */}
+                      {/* 2. Organization Tender ID */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
                         <label htmlFor="spec-input-ref-no" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
-                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Official Reference No <span style={{ color: '#ef4444' }}>*</span>
+                          <FileText size={14} style={{ color: 'var(--primary)' }} /> Organization Tender ID <span style={{ color: '#ef4444' }}>*</span>
                         </label>
                         <input
                           id="spec-input-ref-no"
@@ -1931,17 +1948,15 @@ export default function TenderDetailPage() {
                         <label htmlFor="spec-input-tender-type" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
                           <FileText size={14} style={{ color: 'var(--primary)' }} /> Tender Type (GeM / Non GeM)
                         </label>
-                        <select
+                        <input
                           id="spec-input-tender-type"
-                          value={specForm.tender_type}
-                          onChange={(e) => handleSpecFieldChange('tender_type', e.target.value)}
-                          style={specInputStyle}
-                        >
-                          <option value="GeM">GeM</option>
-                          <option value="Non GeM">Non-GeM</option>
-                          <option value="Custom">Custom</option>
-                          <option value="Unverified">Non-GeM</option>
-                        </select>
+                          type="text"
+                          readOnly
+                          value={getClassificationLabel(classifyByRefNo(specForm.ref_no))}
+                          title="Set automatically: GeM when the Organization Tender ID contains GEM, otherwise Non-GeM"
+                          style={{ ...specInputStyle, opacity: 0.8, cursor: 'not-allowed' }}
+                        />
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Set from Organization Tender ID</span>
                       </div>
 
                       {/* 7. Source Portal */}
@@ -1964,10 +1979,10 @@ export default function TenderDetailPage() {
                         </select>
                       </div>
 
-                      {/* 8. Source ID */}
+                      {/* 8. T247 ID */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border-color)' }}>
                         <label htmlFor="spec-input-source-id" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>
-                          <Tag size={14} style={{ color: 'var(--primary)' }} /> Source ID
+                          <Tag size={14} style={{ color: 'var(--primary)' }} /> T247 ID
                         </label>
                         <input
                           id="spec-input-source-id"
@@ -2392,13 +2407,15 @@ export default function TenderDetailPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                       {[
                         { label: 'Procuring Authority', value: selectedTender.authority, icon: Building },
-                        { label: 'Official Reference No', value: selectedTender.ref_no, icon: FileText },
+                        { label: 'Organization Tender ID', value: selectedTender.ref_no, icon: FileText },
                         { label: 'Estimated Cost', value: selectedTender.estimated_cost_raw, icon: DollarSign, highlight: true },
                         { label: 'EMD Amount Requirement', value: selectedTender.emd_raw, icon: DollarSign },
                         { label: 'Tender Document Fee', value: selectedTender.document_fee_raw, icon: Tag },
                         { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
                         { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : (isStatePortalSource(selectedTender.source) ? STATE_PORTAL_COLOR : 'var(--text-muted)')) },
-                        { label: 'Source ID', value: selectedTender.source_id, icon: Tag },
+                        isStatePortalSource(selectedTender.source)
+                          ? { label: 'Portal Tender ID', value: selectedTender.eprocurement_portal_id, icon: Tag }
+                          : { label: 'T247 ID', value: selectedTender.source_id, icon: Tag },
                         { label: 'Location / Region', value: selectedTender.location, icon: MapPin },
                         { label: 'Place', value: selectedTender.place, icon: MapPin },
                         { label: 'State', value: selectedTender.state, icon: MapPin },
@@ -2588,8 +2605,13 @@ export default function TenderDetailPage() {
             {/* ==================== SECTION 2: WORKFLOW PIPELINE ==================== */}
             <div style={{ borderTop: '2px dashed var(--border-color)', paddingTop: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
-              {/* Participation Decision Section - Exclusive to MIS Team */}
-              {isMisRole && (selectedTender.status === 'New' || selectedTender.status === 'Issued' || selectedTender.status === 'Lapsed' || selectedTender.status === 'Not Participating') && (
+              {/* Participation Decision Section - Exclusive to MIS Team.
+                  Shown for every tender until MIS has assigned it to an executive. Gated on the
+                  assignment rather than on status, because the status served here is derived by
+                  TenderStatusResolver (e.g. an unassigned past-due tender arrives as "Missed Deadline")
+                  and a status whitelist hid the panel for those tenders. A tender marked
+                  Not Participating keeps the panel so the decision can be reversed. */}
+              {isMisRole && (!assignedExecutiveOf(selectedTender.mis_executive) || selectedTender.status === 'Not Participating') && (
                 <div 
                   id="participation-decision-section"
                   style={{ 
