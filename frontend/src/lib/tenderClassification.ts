@@ -91,7 +91,7 @@ const STATE_PORTALS: Record<string, string> = {
   MZ: 'Mizoram', NL: 'Nagaland', OD: 'Odisha', PY: 'Puducherry', PB: 'Punjab', RJ: 'Rajasthan',
   SK: 'Sikkim', TN: 'Tamil Nadu', TR: 'Tripura', UK: 'Uttarakhand', UP: 'Uttar Pradesh', WB: 'West Bengal',
   // Non-NIC state systems (stored as STATE-<code>)
-  AP: 'Andhra Pradesh', TS: 'Telangana', GJ: 'Gujarat', BR: 'Bihar', CG: 'Chhattisgarh',
+  AP: 'Andhra Pradesh', TS: 'Telangana', GJ: 'Gujarat', BR: 'Bihar', CG: 'Chhattisgarh', KA: 'Karnataka',
 };
 
 /** Source badge colour for state/central eProcurement portals (amber, distinct from GeM green and Tender247 blue). */
@@ -105,7 +105,7 @@ export function isStatePortalSource(source?: string | null): boolean {
 
 /**
  * True for NIC GePNIC portals, whose tender documents can be fetched inside TenderPocket
- * (the executive types the portal's CAPTCHA). Other state systems are list-only for now.
+ * after the executive types the portal's CAPTCHA.
  */
 export function isNicPortalSource(source?: string | null): boolean {
   return !!source && source.trim().startsWith('GePNIC-');
@@ -113,7 +113,8 @@ export function isNicPortalSource(source?: string | null): boolean {
 
 /**
  * Whether fetching this portal's documents needs the executive to type a CAPTCHA.
- * NIC portals and Manipur's new NIC portal do; AP, Telangana, Gujarat and Bihar release documents freely.
+ * NIC portals and Manipur's new NIC portal do. Andhra Pradesh, Telangana, Gujarat, Bihar,
+ * Chhattisgarh and Karnataka release documents without one.
  */
 export function portalDocsNeedCaptcha(source?: string | null): boolean {
   const s = (source || '').trim();
@@ -129,7 +130,7 @@ export function getStatePortal(source?: string | null): { code: string; state: s
   return { code, state, label: code === 'CENTRAL' ? 'Central eProcurement Portal (CPPP)' : `${state} eProcurement Portal` };
 }
 
-const NON_NIC_PORTALS = new Set(['AP', 'TS', 'GJ', 'BR', 'MN', 'CG']);
+const NON_NIC_PORTALS = new Set(['AP', 'TS', 'GJ', 'BR', 'MN', 'CG', 'KA']);
 
 /** Options for source filters (value is the stored source), sorted by state name. */
 export const STATE_PORTAL_OPTIONS: { code: string; source: string; label: string }[] = Object.keys(STATE_PORTALS)

@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -69,15 +70,19 @@ public class StateTenderSyncService {
             "nprocure", new NprocureCrawler(),
             "eproc2", new BiharEproc2Crawler(),
             "nggepnic", new NgGepnicLatestCrawler(),
-            "chips", new ChipsCrawler());
+            "chips", new ChipsCrawler(),
+            "kppp", new KpppCrawler());
 
     @Autowired
     private TenderRepository tenderRepository;
 
+    @Autowired(required = false)
+    private com.tenderpocket.services.FetchStatusRecorder fetchStatusRecorder;
+
     @Value("${state.sync.enabled:true}")
     private boolean enabled;
 
-    @Value("${state.sync.lookback-days:7}")
+    @Value("${state.sync.lookback-days:2}")
     private int lookbackDays;
 
     @Value("${state.sync.request-pause-ms:1500}")
@@ -164,10 +169,25 @@ public class StateTenderSyncService {
      * @return false if a sync is already running
      */
     public boolean startAsync(Collection<String> portalCodes, boolean dryRun) {
+        return startAsync(portalCodes, dryRun, null);
+    }
+
+    /**
+     * Same as {@link #startAsync(Collection, boolean)}, then hands the finished run to
+     * {@code onFinished} (on the runner thread), which the scheduler uses to retry failed portals.
+     */
+    public boolean startAsync(Collection<String> portalCodes, boolean dryRun, Consumer<RunSummary> onFinished) {
         if (!running.compareAndSet(false, true)) return false;
         Thread runner = new Thread(() -> {
             try {
-                runNow(portalCodes, dryRun);
+                RunSummary summary = runNow(portalCodes, dryRun);
+                if (onFinished != null) {
+                    try {
+                        onFinished.accept(summary);
+                    } catch (Exception e) {
+                        System.err.println("[StateSync] Post-run handler failed: " + e);
+                    }
+                }
             } finally {
                 running.set(false);
             }
@@ -190,9 +210,19 @@ public class StateTenderSyncService {
         System.out.printf("[StateSync] Starting %s sync of %d portal(s): %s%n", dryRun ? "DRY-RUN" : "live",
                 targets.size(), targets.stream().map(GepnicPortal::code).collect(Collectors.joining(",")));
 
-        List<Future<PortalResult>> futures = new ArrayList<>();
+        List<String> targetCodes = targets.stream().map(GepnicPortal::code).toList();
+        if (!dryRun && fetchStatusRecorder != null) fetchStatusRecorder.markStarted(targetCodes);
+        try {
+            return runTargets(targets, summary, dryRun);
+        } finally {
+            if (!dryRun && fetchStatusRecorder != null) fetchStatusRecorder.markFinished(targetCodes);
+        }
+    }
+
+    private RunSummary runTargets(List<GepnicPortal> targets, RunSummary summary, boolean dryRun) {
+        Map<String, Future<PortalResult>> futures = new LinkedHashMap<>();
         for (GepnicPortal portal : targets) {
-            futures.add(pool.submit(() -> {
+            futures.put(portal.code(), pool.submit(() -> {
                 GepnicSession session = new GepnicSession(requestPauseMs, Duration.ofSeconds(requestTimeoutSeconds));
                 if (portal.isGepnic()) return syncPortal(portal, session, dryRun);
                 PortalListCrawler crawler = CRAWLERS.get(portal.kind());
@@ -204,19 +234,28 @@ public class StateTenderSyncService {
                 return syncListPortal(portal, crawler, session, dryRun);
             }));
         }
-        for (Future<PortalResult> f : futures) {
+        for (Map.Entry<String, Future<PortalResult>> f : futures.entrySet()) {
             try {
-                summary.portals.add(f.get());
+                summary.portals.add(f.getValue().get());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
-                PortalResult failed = new PortalResult("?");
+                // Keep the portal code so a crashed portal can still be retried.
+                PortalResult failed = new PortalResult(f.getKey());
                 failed.error = e.toString();
                 summary.portals.add(failed);
             }
         }
         summary.finishedAt = LocalDateTime.now(IST);
+        if (!dryRun && fetchStatusRecorder != null) {
+            synchronized (summary.portals) {
+                for (PortalResult r : summary.portals) {
+                    if ("interrupted".equals(r.error)) continue; // app shutting down, not a portal problem
+                    fetchStatusRecorder.recordPortal(r.portal, r.imported, r.failures, r.error);
+                }
+            }
+        }
         System.out.printf("[StateSync] Finished: imported=%d enriched=%d relevant=%d portals=%d failed=%d%n",
                 summary.totalImported(), summary.totalEnriched(), summary.totalRelevant(), summary.portals.size(),
                 summary.portals.stream().filter(r -> r.error != null).count());

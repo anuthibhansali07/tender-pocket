@@ -79,6 +79,66 @@ class StatePortalCrawlersTest {
         assertEquals(LocalDateTime.of(2026, 11, 27, 15, 30), t.closingAt(), "AP has no separate published column");
     }
 
+    /** Telangana, 2026-11-15: mid-sync the list answered an empty 302 instead of JSON; a fresh session worked. */
+    @Test
+    void reopensTheSessionOnceWhenTheListRequestIsBounced() throws Exception {
+        String login = "<html><body><form id='loginForm'><input type='hidden' name='hdnType' value=''/></form></body></html>";
+        String json = "{\"iTotalRecords\":-1,\"aaData\":[[\"TELANGANA STATE MEDICAL SERVICES-HQ\",\"747415\",\"R1\",\"PRODUCTS\","
+                + "\"Supply of Hospital Beds\",\"\",\"14/11/2026 07:12 PM\",\"15/11/2026 10:00 AM\",\"27/11/2026 05:00 PM\",\"\"]]}";
+        int[] sessionsOpened = {0};
+        int[] listCalls = {0};
+        GepnicSession fake = new GepnicSession(0, java.time.Duration.ofSeconds(5)) {
+            @Override
+            public RawResponse getRaw(String url) {
+                return new RawResponse(200, "text/html", null, login.getBytes(StandardCharsets.UTF_8), url);
+            }
+
+            @Override
+            public RawResponse postForm(String url, List<Map.Entry<String, String>> fields, String referer) {
+                sessionsOpened[0]++;
+                return new RawResponse(200, "text/html", null, "<html></html>".getBytes(StandardCharsets.UTF_8), url);
+            }
+
+            @Override
+            public RawResponse getRaw(String url, Map<String, String> headers) {
+                listCalls[0]++;
+                if (listCalls[0] == 1) return new RawResponse(302, null, null, new byte[0], url); // bounced
+                return new RawResponse(200, "application/json", null, json.getBytes(StandardCharsets.UTF_8), url);
+            }
+        };
+        GepnicPortal ts = new GepnicPortal("TS", "Telangana", "Telangana", "https://tender.telangana.gov.in/login.html", true, null, "apts");
+
+        List<PortalListCrawler.ListedTender> listed =
+                new ApTsEprocCrawler().list(ts, fake, LocalDateTime.of(2026, 11, 8, 0, 0));
+
+        assertEquals(1, listed.size());
+        assertEquals("747415", listed.get(0).tenderId());
+        assertEquals(2, sessionsOpened[0], "a second list session is opened after the bounce");
+    }
+
+    @Test
+    void stillFailsWhenTheListIsBouncedTwice() {
+        String login = "<html><body><form id='loginForm'></form></body></html>";
+        GepnicSession fake = new GepnicSession(0, java.time.Duration.ofSeconds(5)) {
+            @Override
+            public RawResponse getRaw(String url) {
+                return new RawResponse(200, "text/html", null, login.getBytes(StandardCharsets.UTF_8), url);
+            }
+
+            @Override
+            public RawResponse postForm(String url, List<Map.Entry<String, String>> fields, String referer) {
+                return new RawResponse(200, "text/html", null, "<html></html>".getBytes(StandardCharsets.UTF_8), url);
+            }
+
+            @Override
+            public RawResponse getRaw(String url, Map<String, String> headers) {
+                return new RawResponse(302, null, null, new byte[0], url);
+            }
+        };
+        GepnicPortal ts = new GepnicPortal("TS", "Telangana", "Telangana", "https://tender.telangana.gov.in/login.html", true, null, "apts");
+        assertThrows(java.io.IOException.class, () -> new ApTsEprocCrawler().list(ts, fake, LocalDateTime.of(2026, 11, 8, 0, 0)));
+    }
+
     @Test
     void decodesAndhraBase64ListBody() throws Exception {
         String json = "{\"iTotalRecords\":-1,\"aaData\":[[\"X\",\"1\",\"R\",\"WORKS\",\"T\",\"\",\"12/11/2026 07:00 PM\",\"27/11/2026 03:30 PM\",\"\"]]}";
@@ -245,6 +305,56 @@ class StatePortalCrawlersTest {
         assertEquals("CN=Sectigo Public Server Authentication CA OV R36,O=Sectigo Limited,C=GB",
                 completed[1].getSubjectX500Principal().getName());
         assertNull(tm.complete(new X509Certificate[]{bundled.get(0)}), "nothing to add for a chain that does not need it");
+    }
+
+    // ---- Karnataka KPPP ----
+
+    @Test
+    void parsesKpppSearchRow() throws Exception {
+        JsonNode row = mapper.readTree("""
+                {"id":64551,"tenderNumber":"DHFWS/2026-27/IND2789","title":"PROCUREMENT FOR BPH UNIT",
+                 "category":"GOODS","ecv":250000,"deptName":"Department Of Health And Family Welfare Services",
+                 "locationName":"DHFWS District Health and Family Welfare Office Kodagu",
+                 "publishedDate":"15-11-2026 22:09:19","tenderClosureDate":"03-12-2026 16:30:11"}
+                """);
+        PortalListCrawler.ListedTender t = KpppCrawler.parse(row);
+        assertEquals("64551", t.tenderId());
+        assertEquals("DHFWS/2026-27/IND2789", t.referenceNumber());
+        assertEquals("GOODS", t.category());
+        assertEquals("Department Of Health And Family Welfare Services", t.organisation());
+        assertEquals("DHFWS District Health and Family Welfare Office Kodagu", t.extra().get("Location"));
+        assertEquals(LocalDateTime.of(2026, 11, 15, 22, 9, 19), t.publishedAt());
+        assertEquals(LocalDateTime.of(2026, 12, 3, 16, 30, 11), t.closingAt());
+        assertEquals(250000.0, t.estimatedValue());
+        assertEquals("GOODS:64551", t.docRef());
+    }
+
+    @Test
+    void kpppSearchBodyIncludesTheFieldsThePortalRequires() throws Exception {
+        KpppCrawler crawler = new KpppCrawler();
+        JsonNode body = mapper.readTree(crawler.searchBody("WORKS"));
+        assertEquals("WORKS", body.path("category").asText());
+        assertEquals("PUBLISHED", body.path("status").asText());
+        assertEquals("OPEN", body.path("tenderType").asText());
+        assertEquals("/portal-service/works/search-eproc-tenders", KpppCrawler.searchPath("WORKS"));
+        assertEquals("/portal-service/services/search-eproc-tenders", KpppCrawler.searchPath("SERVICES"));
+        assertEquals("/portal-service/search-eproc-tenders", KpppCrawler.searchPath("GOODS"));
+    }
+
+    @Test
+    void kpppDocumentPathsUseTheTenderIdAndFileUuid() throws Exception {
+        assertEquals("64551", KpppCrawler.tenderId("GOODS:64551"));
+        assertEquals("GOODS", KpppCrawler.categoryOf("GOODS:64551"));
+        assertEquals("/portal-service/64551/get-goods-tender-files", KpppCrawler.fileListPath("GOODS", "64551"));
+        assertEquals("/portal-service/64551/works-tender-file/abc/download-file",
+                KpppCrawler.fileDownloadPath("WORKS", "64551", "abc"));
+        JsonNode rows = mapper.readTree("""
+                [{"fileName":"DSO drugs tender doc.pdf","uuid":"83271e4f-81a4-4bd7-8c0e-d9148d8eecb4","documentType":"Tender Document"}]
+                """);
+        List<KpppCrawler.PortalFile> files = KpppCrawler.parseFileList(rows);
+        assertEquals(1, files.size());
+        assertEquals("83271e4f-81a4-4bd7-8c0e-d9148d8eecb4", files.get(0).uuid());
+        assertEquals("DSO drugs tender doc.pdf", files.get(0).fileName());
     }
 
     // ---- Relevance and saving ----

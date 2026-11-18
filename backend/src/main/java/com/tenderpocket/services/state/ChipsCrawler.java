@@ -26,8 +26,8 @@ import java.util.regex.Pattern;
  * asks the visitor to retype. CHiPS's technical team told the business that this code exists to
  * slow down request floods (DDoS), not to stop automated reading of public tenders. This crawler
  * therefore submits the printed code, once per session, and then reads the list and documents at a
- * polite pace. The portal ships disabled in state-portals.json; enable it only with CHiPS's written
- * confirmation on file.
+ * polite pace. It is enabled in state-portals.json because CHiPS's written confirmation is on file;
+ * disable it there if that confirmation is ever withdrawn.
  *
  * <p>Flow: sign-in page (session + search form) -> POST the search form -> code page -> POST the
  * code -> page 1 of results (100 rows) -> POST the results page's search form with pageNumber=n for

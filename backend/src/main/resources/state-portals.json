@@ -36,7 +36,8 @@
     { "code": "AP", "name": "Andhra Pradesh", "state": "Andhra Pradesh", "baseUrl": "https://tender.apeprocurement.gov.in/login.html", "enabled": true, "type": "apts" },
     { "code": "TS", "name": "Telangana", "state": "Telangana", "baseUrl": "https://tender.telangana.gov.in/login.html", "enabled": true, "type": "apts" },
     { "code": "GJ", "name": "Gujarat", "state": "Gujarat", "baseUrl": "https://tender.nprocure.com/", "enabled": true, "type": "nprocure" },
-    { "code": "CG", "name": "Chhattisgarh", "state": "Chhattisgarh", "baseUrl": "https://eproc.cgstate.gov.in/CHEPS/security/getSignInAction.do", "enabled": true, "type": "chips", "note": "Submits the page's printed authentication code; per CHiPS it guards against request floods, not reading. Enable only with CHiPS's written confirmation on file." },
-    { "code": "BR", "name": "Bihar", "state": "Bihar", "baseUrl": "https://eproc2.bihar.gov.in/EPSV2Web/openarea/tenderListingPage.action", "enabled": true, "type": "eproc2" }
+    { "code": "CG", "name": "Chhattisgarh", "state": "Chhattisgarh", "baseUrl": "https://eproc.cgstate.gov.in/CHEPS/security/getSignInAction.do", "enabled": true, "type": "chips", "note": "Submits the page's printed authentication code; per CHiPS it guards against request floods, not reading. Enabled: CHiPS's written confirmation is on file; disable if it is withdrawn." },
+    { "code": "BR", "name": "Bihar", "state": "Bihar", "baseUrl": "https://eproc2.bihar.gov.in/EPSV2Web/openarea/tenderListingPage.action", "enabled": true, "type": "eproc2" },
+    { "code": "KA", "name": "Karnataka", "state": "Karnataka", "baseUrl": "https://kppp.karnataka.gov.in/#/portal/searchTender/live", "enabled": true, "type": "kppp", "note": "The live-search canvas CAPTCHA is checked only in the browser. The public search API returns published open tenders without it." }
   ]
 }

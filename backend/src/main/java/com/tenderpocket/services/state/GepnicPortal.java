@@ -15,7 +15,7 @@ import java.util.Locale;
  * @param enabled whether the scheduled sync visits this portal
  * @param note    free-text reason a portal is disabled
  * @param type    "gepnic" (default, NIC GePNIC) or a non-NIC system: "apts" (AP/Telangana eProcurement),
- *                "nprocure" (Gujarat), "eproc2" (Bihar)
+ *                "nprocure" (Gujarat), "eproc2" (Bihar), "kppp" (Karnataka)
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record GepnicPortal(String code, String name, String state, String baseUrl, boolean enabled, String note, String type) {

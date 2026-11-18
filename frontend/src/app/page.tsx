@@ -71,6 +71,8 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import CompanyDocs from '@/app/components/CompanyDocs';
+import FetchStatus from '@/app/components/FetchStatus';
+import { RadioTower } from 'lucide-react';
 import { FolderOpen } from 'lucide-react';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
@@ -78,7 +80,7 @@ import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdRecei
 import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, STATE_PORTAL_OPTIONS, isStatePortalSource, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
 
-type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs' | 'fetch-status';
 
 // ---- Add Tender form (MIS Team and Admin) ----
 // Keys match the backend's POST /api/tenders fields. Only id, title and original_url are required.
@@ -215,6 +217,9 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
+  // Tender Fetch Status page (MIS Team and Admin): portals whose latest check did not complete
+  const canSeeFetchStatus = isMisRole || currentUser?.role === 'Admin';
+  const [fetchAttentionCount, setFetchAttentionCount] = useState(0);
   // MIS Team and Admin can add tenders by hand
   const canAddTender = isMisRole || currentUser?.role === 'Admin';
   const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
@@ -307,6 +312,25 @@ export default function Dashboard() {
 
     return response;
   }, [currentUser]);
+
+  // Sidebar badge for Fetch Status: how many portals' latest check did not complete.
+  useEffect(() => {
+    if (!canSeeFetchStatus) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchWithAuth('/api/tenders/fetch-status')
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          if (!cancelled && data?.success) {
+            setFetchAttentionCount((data.summary?.failed ?? 0) + (data.summary?.partial ?? 0) + (data.summary?.notSetUp ?? 0));
+          }
+        })
+        .catch(() => { /* badge is best effort */ });
+    };
+    refresh();
+    const id = setInterval(refresh, 10 * 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [canSeeFetchStatus, fetchWithAuth]);
 
   const getDocDownloadUrl = useCallback((pathOrUrl: string) => {
     if (!pathOrUrl) return '';
@@ -693,7 +717,7 @@ export default function Dashboard() {
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '');
-      const validTabs: TabType[] = ['dashboard', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs'];
+      const validTabs: TabType[] = ['dashboard', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs', 'fetch-status'];
       if (validTabs.includes(hash as TabType)) {
         setActiveTab(hash as TabType);
       }
@@ -1206,8 +1230,10 @@ export default function Dashboard() {
       // 3. Fetch latest database details
       await fetchData();
 
-      if (emailData.success && gemData.success) {
-        showToast(`Sync complete! GeM bids: +${gemData.importedCount || 0}, Emails: +${emailData.importedCount || 0}`, 'success');
+      if (gemData.alreadyRunning || gemData.recentlyChecked) {
+        showToast(gemData.message || 'GeM is already being updated. New tenders will appear when it finishes.', 'success');
+      } else if (emailData.success && gemData.success) {
+        showToast('Update started. New tenders appear here as they are found; GeM takes 15-30 minutes.', 'success');
       } else {
         showToast('Sync completed with warnings', 'success');
       }
@@ -2627,6 +2653,33 @@ export default function Dashboard() {
             </button>
           )}
 
+          {canSeeFetchStatus && (
+            <button
+              className={`menu-item ${activeTab === 'fetch-status' ? 'active' : ''}`}
+              onClick={() => setActiveTab('fetch-status')}
+              title="Which portals were checked for new tenders"
+            >
+              <RadioTower size={18} />
+              <span>Fetch Status</span>
+              {fetchAttentionCount > 0 && (
+                <span style={{
+                  marginLeft: 'auto',
+                  background: '#d97706',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  borderRadius: '10px',
+                  padding: '1px 7px',
+                  minWidth: '18px',
+                  textAlign: 'center',
+                  lineHeight: '16px'
+                }} title={`${fetchAttentionCount} portal(s) need attention`}>
+                  {fetchAttentionCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             className={`menu-item ${activeTab === 'company-docs' ? 'active' : ''}`}
             onClick={() => setActiveTab('company-docs')}
@@ -2736,6 +2789,7 @@ export default function Dashboard() {
               {activeTab === 'work-summary' && 'Work Summary'}
               {activeTab === 'approvals' && 'Approvals Center'}
               {activeTab === 'company-docs' && 'Company Docs'}
+              {activeTab === 'fetch-status' && 'Tender Fetch Status'}
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
@@ -2748,6 +2802,7 @@ export default function Dashboard() {
               {activeTab === 'work-summary' && 'Executive workload statistics and active assignment mappings.'}
               {activeTab === 'approvals' && 'Review, approve, and action pending workflow requests from your team.'}
               {activeTab === 'company-docs' && 'Company profile documents and certificates. Uploaded by the MIS Team, view-only for everyone else.'}
+              {activeTab === 'fetch-status' && 'See which portals were checked for new tenders, and where you might be missing some.'}
             </p>
           </div>
 
@@ -4863,6 +4918,9 @@ export default function Dashboard() {
             {/* TAB: COMPANY DOCS */}
             {activeTab === 'company-docs' && (
               <CompanyDocs fetchWithAuth={fetchWithAuth} showToast={showToast} />
+            )}
+            {activeTab === 'fetch-status' && canSeeFetchStatus && (
+              <FetchStatus fetchWithAuth={fetchWithAuth} onAttentionCount={setFetchAttentionCount} showToast={showToast} />
             )}
 
             {/* TAB: WORK SUMMARY */}

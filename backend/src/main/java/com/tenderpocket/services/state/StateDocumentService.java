@@ -181,9 +181,9 @@ public class StateDocumentService {
     }
 
     /**
-     * Non-NIC state systems. AP/Telangana, Gujarat and Bihar serve documents without a CAPTCHA, so they
-     * are downloaded straight away. Manipur's next-generation NIC portal asks for a CAPTCHA per
-     * document unit, which the executive types as for NIC portals.
+     * Non-NIC state systems. AP/Telangana, Gujarat, Bihar, Chhattisgarh and Karnataka serve documents
+     * without a server CAPTCHA, so they are downloaded straight away. Manipur's next-generation NIC
+     * portal asks for a CAPTCHA per document unit, which the executive types as for NIC portals.
      */
     private FetchResult startNonNic(Tender tender, GepnicPortal portal) {
         pending.values().removeIf(p -> p.tenderId.equals(tender.getId()));
@@ -196,6 +196,8 @@ public class StateDocumentService {
                 case "nprocure" -> files = new NprocureCrawler().downloadDocuments(portal, session, portalId);
                 case "eproc2" -> files = new BiharEproc2Crawler().downloadDocuments(portal, session, portalId);
                 case "chips" -> files = new ChipsCrawler().downloadDocuments(portal, session, tender.getPortalDocRef());
+                case "kppp" -> files = new KpppCrawler().downloadDocuments(portal, session,
+                        firstNonBlank(tender.getPortalDocRef(), portalId));
                 case "nggepnic" -> {
                     return startNextGen(tender, portal, session);
                 }

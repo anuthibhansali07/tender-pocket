@@ -134,8 +134,21 @@ public class ApTsEprocCrawler implements PortalListCrawler {
         openSession(session, origin);
 
         List<ListedTender> out = new ArrayList<>();
+        boolean reopened = false;
         for (int page = 0; page < MAX_PAGES; page++) {
-            JsonNode json = fetchPage(session, origin, page * PAGE_SIZE);
+            JsonNode json;
+            try {
+                json = fetchPage(session, origin, page * PAGE_SIZE);
+            } catch (IOException e) {
+                // The portal sits behind a load balancer and now and then drops the list session,
+                // answering with an empty redirect instead of JSON. A fresh session works again.
+                if (reopened) throw e;
+                reopened = true;
+                System.out.printf("[StateSync] %s list request failed (%s); opening a new session and retrying%n",
+                        origin, e.getMessage());
+                openSession(session, origin);
+                json = fetchPage(session, origin, page * PAGE_SIZE);
+            }
             JsonNode rows = json.path("aaData");
             if (!rows.isArray() || rows.isEmpty()) break;
             boolean reachedOld = false;

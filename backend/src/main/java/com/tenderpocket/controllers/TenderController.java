@@ -72,7 +72,23 @@ public class TenderController {
     private com.tenderpocket.services.EmailSyncService emailSyncService;
 
     @Autowired(required = false)
+    private com.tenderpocket.services.FetchStatusRecorder fetchStatusRecorder;
+
+    /** Header "Sync" skips GeM when it was checked this recently (same gap as the Fetch Status page). */
+    @org.springframework.beans.factory.annotation.Value("${fetch-status.manual-cooldown-minutes:30}")
+    private long gemSyncCooldownMinutes = 30;
+
+    @Autowired(required = false)
     private com.tenderpocket.services.state.StateTenderSyncService stateTenderSyncService;
+
+    @Autowired(required = false)
+    private com.tenderpocket.scheduler.SyncRetryTracker syncRetryTracker;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.FetchStatusReportService fetchStatusReportService;
+
+    @Autowired(required = false)
+    private com.tenderpocket.scheduler.SyncScheduler syncScheduler;
 
     @Autowired(required = false)
     private com.tenderpocket.services.state.StateDocumentService stateDocumentService;
@@ -237,10 +253,29 @@ public class TenderController {
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
         }
         try {
+            // One GeM sync at a time: a second run in parallel only doubles the load on GeM.
+            if (geMScraperService.isSyncRunning()) {
+                return ResponseEntity.ok(Map.of("success", true, "alreadyRunning", true,
+                        "message", "GeM is already being updated. New tenders will appear when it finishes."));
+            }
+            // A full GeM run takes 15-30 minutes. Pressing Sync right after one finished only
+            // repeats it, so wait out the same gap as the Fetch Status page's "Check again".
+            java.time.LocalDateTime lastGemCheck = fetchStatusRecorder == null ? null
+                    : fetchStatusRecorder.find(com.tenderpocket.services.FetchStatusRecorder.GEM)
+                        .map(com.tenderpocket.models.PortalFetchStatus::getLastAttemptAt).orElse(null);
+            java.time.LocalDateTime nowIst = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+            if (lastGemCheck != null && lastGemCheck.isAfter(nowIst.minusMinutes(gemSyncCooldownMinutes))) {
+                java.time.format.DateTimeFormatter clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH);
+                return ResponseEntity.ok(Map.of("success", true, "recentlyChecked", true,
+                        "message", "GeM was checked at " + clock.format(lastGemCheck) + ", so it wasn't checked again yet. "
+                                + "To re-check products that were missed, use the Fetch Status page."));
+            }
             System.out.println("[API Trigger] Initiating manual GeM sync in background...");
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
                     geMScraperService.syncTenders(false, Collections.emptyList());
+                } catch (com.tenderpocket.services.GeMScraperService.SyncAlreadyRunningException e) {
+                    System.out.println("[API Trigger] Manual GeM sync skipped: another GeM sync started first.");
                 } catch (Exception e) {
                     System.err.println("Background manual GeM sync failed: " + e.getMessage());
                 }
@@ -345,7 +380,62 @@ public class TenderController {
                 .map(com.tenderpocket.services.state.GepnicPortal::code).toList());
         var last = stateTenderSyncService.getLastRun();
         body.put("lastRun", last != null ? last.toMap() : null);
+        // Failed GeM / portal syncs waiting for their 2-hour retry.
+        body.put("pendingRetries", syncRetryTracker != null ? syncRetryTracker.snapshot() : java.util.List.of());
         return ResponseEntity.ok(body);
+    }
+
+    /** Plain-language import status per portal, for the MIS Team "Tender Fetch Status" page. */
+    @GetMapping("/fetch-status")
+    public ResponseEntity<?> tenderFetchStatus(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin or MIS Team only"));
+        }
+        if (fetchStatusReportService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Fetch status is not available right now"));
+        }
+        return ResponseEntity.ok(fetchStatusReportService.buildReport());
+    }
+
+    /**
+     * "Check again now" on the Fetch Status page: re-checks one source only - a state/UT/central
+     * portal code (e.g. MH) or GEM (only the product keywords that did not finish last time).
+     */
+    @PostMapping("/fetch-status/{source}/recheck")
+    public ResponseEntity<?> recheckFetchSource(@PathVariable String source,
+                                                @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Only the MIS Team and Admin can start a check."));
+        }
+        if (syncScheduler == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Checking is not available right now."));
+        }
+        var result = syncScheduler.startManualRecheck(source);
+        java.time.format.DateTimeFormatter clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH);
+        return switch (result.outcome()) {
+            case STARTED -> ResponseEntity.ok(Map.of("success", true, "started", true,
+                    "message", "GEM".equalsIgnoreCase(source.trim()) && result.keywordCount() > 0
+                            ? "Checking GeM again for the " + result.keywordCount() + " product(s) that were missed. This can take a few minutes."
+                            : "TENDER247".equalsIgnoreCase(source.trim())
+                            ? "Reading the Tender247 alert emails again now. The page updates by itself."
+                            : "Checking again now. This can take a few minutes; the page updates by itself."));
+            case ALREADY_RUNNING -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Another update is already in progress. Please try again in a few minutes."));
+            case COOLDOWN -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "This was checked a moment ago. You can check it again at " + clock.format(result.availableAt()) + "."));
+            case UNKNOWN_SOURCE -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "error", "This portal can't be checked from here."));
+            case DISABLED -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Portal checks are turned off right now."));
+            case NOT_SET_UP -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Tender247 isn't connected yet. Please ask the tech team to connect the Tender247 alert inbox."));
+        };
     }
 
     @PostMapping("/sync-emails")
