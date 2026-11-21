@@ -8,6 +8,10 @@
  * Step 5: Dual Track (Simultaneous parallel execution: Track A Commercial Pricing + Track B Full Path Document Verification)
  * Step 6: Final Submission (Submit Tender button unlocks ONLY when BOTH Track A & Track B pass)
  * Step 7: Outcome (Won / Lost / Commercial Evaluation)
+ *
+ * Brochure: after clearance the Brochure Team uploads brochure documents (PDF, Word, Excel or ZIP).
+ * It runs alongside Steps 3-7 and never blocks a step. Tenders cleared before the Brochure Team
+ * existed have no brochure_status.
  */
 
 export * from './tenderClassification';
@@ -77,6 +81,20 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { num: 6, name: 'Final Submission', short: 'Submit Tender' },
   { num: 7, name: 'Outcome', short: 'Outcome' }
 ];
+
+type BrochureFields = { brochure_status?: string | null; brochureStatus?: string | null } | null | undefined;
+
+/** True while the Brochure Team has been asked for the brochure and has not uploaded it yet. */
+export function isBrochurePending(tender: BrochureFields): boolean {
+  if (!tender) return false;
+  return String(tender.brochure_status || tender.brochureStatus || '').toLowerCase() === 'pending';
+}
+
+/** True once the Brochure Team has uploaded the brochure. */
+export function isBrochureUploaded(tender: BrochureFields): boolean {
+  if (!tender) return false;
+  return String(tender.brochure_status || tender.brochureStatus || '').toLowerCase() === 'uploaded';
+}
 
 export interface TenderStageDetails {
   stageNumber: number; // 0 to 7
@@ -473,7 +491,7 @@ export function resolveTenderStageDetails(tender: any, userRole?: string | null)
     let stageKey = 'DUAL_TRACK_ACTIVE';
     let stageName = 'Dual Track: Pricing & Verification';
     let shortStage = 'Dual Track';
-    let actionTitle = 'Parallel Clearance in Progress';
+    let actionTitle = 'Pricing & Verification in Progress';
     let actionDesc = 'Track A (Commercial Quote) & Track B (Folder Audit) are running simultaneously.';
     let needsActionNow = (pricingPending && (isMisRole || isTpcRole)) || (docsPending && isMisRole);
     let actionButtonText = isMisRole ? 'Review Dual Track' : (isTpcRole ? 'Provide TPC Price' : 'View Clearance');

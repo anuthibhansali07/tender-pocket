@@ -31,6 +31,10 @@ public class ApprovalControllerWorkflowTest {
     @Mock
     private TenderCommentRepository commentRepository;
 
+    /** Row locks taken by the approve actions; a mock does nothing here. */
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private ApprovalController approvalController;
 
@@ -156,6 +160,7 @@ public class ApprovalControllerWorkflowTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Approved", tender.getSpecVerificationStatus());
         assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
+        assertEquals("Pending", tender.getBrochureStatus(), "Clearance also asks the Brochure Team for the brochure, in parallel");
         assertEquals("APPROVED", request.getStatus());
         verify(tenderRepository).save(tender);
     }
@@ -188,6 +193,7 @@ public class ApprovalControllerWorkflowTest {
         assertEquals("Approved", tender.getSpecVerificationStatus());
         assertEquals("COMPLY WITH DEVIATIONS", tender.getSpecComplianceType());
         assertEquals("BID_DOCS_PREPARATION", tender.getCurrentStage());
+        assertEquals("Pending", tender.getBrochureStatus(), "Clearance also asks the Brochure Team for the brochure, in parallel");
         assertEquals("APPROVED", request.getStatus());
         verify(tenderRepository).save(tender);
     }

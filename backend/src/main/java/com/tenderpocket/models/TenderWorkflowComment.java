@@ -8,7 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "tender_workflow_comments")
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
+@Table(name = "tender_workflow_comments", indexes = {
+    @jakarta.persistence.Index(name = "idx_workflow_comments_tender_created", columnList = "tender_id, created_at")
+})
 public class TenderWorkflowComment {
 
     @Id
@@ -33,6 +36,10 @@ public class TenderWorkflowComment {
 
     @Column(name = "created_at", nullable = false)
     private String createdAt;
+
+    // Files attached to the message (images or documents) as a JSON list of {name, filename, url, content_type, size}
+    @Column(name = "attachments", columnDefinition = "TEXT")
+    private String attachments;
 
     public TenderWorkflowComment() {}
 
@@ -65,4 +72,7 @@ public class TenderWorkflowComment {
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+
+    public String getAttachments() { return attachments; }
+    public void setAttachments(String attachments) { this.attachments = attachments; }
 }

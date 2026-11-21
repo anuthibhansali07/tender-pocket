@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tenderpocket.utils.TenderClassifier;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.tenderpocket.cache.DataChangeListener.class)
 @Table(name = "tenders", indexes = {
     @Index(name = "idx_tenders_status", columnList = "status"),
     @Index(name = "idx_tenders_due_date", columnList = "due_date"),
@@ -254,6 +255,21 @@ public class Tender {
 
     @Column(name = "spec_compliance_type")
     private String specComplianceType;
+
+    // Brochure: requested when the Clearance Team approves the tender; it never blocks a step.
+    // null = no brochure requested (cleared before the Brochure Team existed), "Pending" = waiting
+    // for the Brochure Team, "Uploaded" = at least one brochure document is uploaded.
+    @Column(name = "brochure_status")
+    private String brochureStatus;
+
+    @Column(name = "brochure_filename")
+    private String brochureFilename;
+
+    @Column(name = "brochure_uploaded_by")
+    private String brochureUploadedBy;
+
+    @Column(name = "brochure_uploaded_at")
+    private String brochureUploadedAt;
 
     @Column(name = "pricing_status")
     private String pricingStatus = "None";
@@ -536,6 +552,18 @@ public class Tender {
 
     public String getSpecComplianceType() { return specComplianceType; }
     public void setSpecComplianceType(String specComplianceType) { this.specComplianceType = specComplianceType; }
+
+    public String getBrochureStatus() { return brochureStatus; }
+    public void setBrochureStatus(String brochureStatus) { this.brochureStatus = brochureStatus; }
+
+    public String getBrochureFilename() { return brochureFilename; }
+    public void setBrochureFilename(String brochureFilename) { this.brochureFilename = brochureFilename; }
+
+    public String getBrochureUploadedBy() { return brochureUploadedBy; }
+    public void setBrochureUploadedBy(String brochureUploadedBy) { this.brochureUploadedBy = brochureUploadedBy; }
+
+    public String getBrochureUploadedAt() { return brochureUploadedAt; }
+    public void setBrochureUploadedAt(String brochureUploadedAt) { this.brochureUploadedAt = brochureUploadedAt; }
 
     public String getPricingStatus() { return pricingStatus; }
     public void setPricingStatus(String pricingStatus) { this.pricingStatus = pricingStatus; }

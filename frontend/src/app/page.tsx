@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { fetchJsonWithEtag, rememberTenderSummary, saveDashboardMemory, readDashboardMemory, clearClientCaches } from '@/lib/clientCache';
 import {
   Inbox,
   FileText,
@@ -79,6 +80,23 @@ import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, STATE_PORTAL_OPTIONS, isStatePortalSource, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
+
+/** Background refresh of the open tab (the server answers "no change" when nothing changed). */
+const DASHBOARD_REFRESH_MS = 30_000;
+
+/**
+ * Work Summary's assigned tenders in one list answer. The same answer gives the same array, so
+ * applying an unchanged answer again re-renders nothing.
+ */
+const assignedTendersByAnswer = new WeakMap<object, Tender[]>();
+function assignedTendersOf(answer: { tenders: Tender[] }): Tender[] {
+  let assigned = assignedTendersByAnswer.get(answer);
+  if (!assigned) {
+    assigned = answer.tenders.filter((t: any) => t.mis_executive);
+    assignedTendersByAnswer.set(answer, assigned);
+  }
+  return assigned;
+}
 
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs' | 'fetch-status';
 
@@ -223,6 +241,7 @@ export default function Dashboard() {
   // MIS Team and Admin can add tenders by hand
   const canAddTender = isMisRole || currentUser?.role === 'Admin';
   const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
+  const isBrochureRole = canonicalRole(currentUser?.role) === 'Brochure Team';
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -341,7 +360,14 @@ export default function Dashboard() {
   }, []);
   
   // Data States
+  // Every tender matching the filters: loaded only where all of them are needed (Status tab, CSV export).
   const [tenders, setTenders] = useState<Tender[]>([]);
+  // Control Desk (5 rows) and Tender Repository (one page) are fetched as a page from the server.
+  const [deskTenders, setDeskTenders] = useState<Tender[]>([]);
+  const [repoTenders, setRepoTenders] = useState<Tender[]>([]);
+  const [repoTotal, setRepoTotal] = useState(0);
+  // Each list has been loaded at least once: until then its place shows a loader, not "no tenders".
+  const [listReady, setListReady] = useState({ desk: false, repo: false, full: false });
   const [allAssignedTenders, setAllAssignedTenders] = useState<Tender[]>([]);
   const [filters, setFilters] = useState({ locations: [] as string[], sectors: [] as string[] });
   const [analytics, setAnalytics] = useState<any>(null);
@@ -445,7 +471,7 @@ export default function Dashboard() {
   const isStage4Complete = (isStage5Complete && docsVerified) || isOutcomeState; // Track B after EMD
   const isStage6Complete = ((isStage2Complete && isStage4Complete) && Boolean(selectedTender && (selectedTender.submission_status === 'Approved' || selectedTender.status === 'Submitted' || selectedTender.status === 'Filed'))) || isOutcomeState;
 
-  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && !isBrochureRole;
   const isStage1Visible = true; // Step 2 spec clearance
   const isStage3Visible = isOperationalRole && (isStage1Complete || isOutcomeState); // Step 3 bid package after clearance
   const isStage5Visible = isOperationalRole && (isStage3Complete || isOutcomeState); // Step 4 EMD after the bid package
@@ -476,6 +502,19 @@ export default function Dashboard() {
   const [misTeamMembers, setMisTeamMembers] = useState<string[]>([]);
   const [specTeamMembers, setSpecTeamMembers] = useState<string[]>([]);
   const [corrigendumFilter, setCorrigendumFilter] = useState(false);
+
+  // Latest tab, filters and page, read by list loads that run later (debounced or in the background).
+  // Updated after each render, before the effects below that load lists (effects run in order).
+  const listStateRef = useRef({ activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit });
+  useEffect(() => {
+    listStateRef.current = { activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit };
+  });
+  // Only the newest answer for each list is shown (an older, slower answer is ignored).
+  const listRequestSeq = useRef({ desk: 0, repo: 0, full: 0 });
+  // Raised when the signed-in user goes away: answers to requests sent before that are ignored.
+  const sessionEpochRef = useRef(0);
+  // The first list load after sign-in is done by fetchData; the filter effect skips that one run.
+  const skipNextListEffect = useRef(false);
   const [lossReason, setLossReason] = useState('');
   const [workingPath, setWorkingPath] = useState('');
   const [emdPaymentMode, setEmdPaymentMode] = useState('');
@@ -717,36 +756,92 @@ export default function Dashboard() {
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '');
-      const validTabs: TabType[] = ['dashboard', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs', 'fetch-status'];
+      const validTabs: TabType[] = ['dashboard', 'status', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs', 'fetch-status'];
       if (validTabs.includes(hash as TabType)) {
         setActiveTab(hash as TabType);
       }
     };
 
+    // Browser Back / Forward between tabs. History entries are written with history.pushState /
+    // replaceState (below), which the Next.js router tracks: entries written by assigning
+    // location.hash are ignored by the router, so Back from a tender page would change the URL
+    // without showing the dashboard.
     window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleHashChange);
     if (window.location.hash) {
       handleHashChange();
     } else {
-      window.location.hash = '#/dashboard';
+      // "Back to Dashboard" from a tender page: return to the tab the user was on.
+      let rememberedTab: string | undefined;
+      try {
+        const name = storedUser ? JSON.parse(storedUser)?.username : undefined;
+        rememberedTab = name ? readDashboardMemory(name)?.activeTab : undefined;
+      } catch {
+        rememberedTab = undefined;
+      }
+      window.history.replaceState(null, '', `#/${rememberedTab || 'dashboard'}`);
+      handleHashChange();
     }
 
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handleHashChange);
+    };
   }, []);
 
   useEffect(() => {
-    if (mounted && activeTab) {
-      window.location.hash = `#/${activeTab}`;
+    if (mounted && activeTab && window.location.hash !== `#/${activeTab}`) {
+      // A new history entry per tab, so the browser's Back button returns to the previous tab.
+      window.history.pushState(null, '', `#/${activeTab}`);
     }
   }, [activeTab, mounted]);
 
   // Reset Tender Repository pagination on filter changes
+  // Set while the dashboard is restored on Back: those filters were restored, not changed by the user.
+  const restoredRepoPageRef = useRef<number | null>(null);
   useEffect(() => {
+    if (restoredRepoPageRef.current != null) return; // keep the restored page
     setRepoPage(1);
   }, [statusFilter, searchQuery, locationFilter, sectorFilter, sourceFilter, corrigendumFilter, misExecutiveFilter]);
+  useEffect(() => {
+    // Runs after every render, after the reset above: the restore marker only lives for one render.
+    restoredRepoPageRef.current = null;
+  });
 
   useEffect(() => {
     if (mounted && currentUser) {
-      fetchData();
+      skipNextListEffect.current = true;
+      const memory = readDashboardMemory(currentUser.username);
+      if (memory) {
+        // Back from a tender page: show the same filters, page and data at once, then refresh quietly.
+        const f = memory.filters;
+        setSearchQuery(f.searchQuery);
+        setStatusFilter(f.statusFilter);
+        setLocationFilter(f.locationFilter);
+        setSectorFilter(f.sectorFilter);
+        setSourceFilter(f.sourceFilter ?? '');
+        setMisExecutiveFilter(f.misExecutiveFilter);
+        setSortBy(f.sortBy);
+        setSortOrder(f.sortOrder);
+        setCorrigendumFilter(f.corrigendumFilter);
+        setRepoLimit(f.repoLimit);
+        if (memory.data.deskTenders) setDeskTenders(memory.data.deskTenders);
+        if (memory.data.repoTenders) setRepoTenders(memory.data.repoTenders);
+        setRepoTotal(memory.data.repoTotal);
+        if (memory.data.tenders) setTenders(memory.data.tenders);
+        setListReady({ desk: memory.data.deskTenders != null, repo: memory.data.repoTenders != null, full: memory.data.tenders != null });
+        if (memory.data.analytics) setAnalytics(memory.data.analytics);
+        if (memory.data.filterOptions) setFilters(memory.data.filterOptions);
+        setRepoPage(f.repoPage);
+        restoredRepoPageRef.current = f.repoPage;
+        setLoading(false);
+        listStateRef.current = { ...listStateRef.current, ...f };
+        fetchTenders();
+        fetchAnalytics();
+        fetchMisTeam();
+      } else {
+        fetchData();
+      }
       if (currentUser.role === 'MIS Team' || currentUser.role === 'Admin') {
         fetchExecutives();
       }
@@ -842,8 +937,13 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Eagerly load primary dashboard data; secondary tab data (stats/assignments) is lazy-loaded or derived
-      await Promise.all([fetchTenders(), fetchAnalytics(), fetchMisTeam()]);
+      // The open tab's list decides when the screen shows; analytics and the team list fill in as
+      // they arrive (metric numbers show a placeholder until then). The Analytics tab is built from
+      // analytics, so it waits for them.
+      const analyticsLoad = fetchAnalytics();
+      fetchMisTeam();
+      if (listStateRef.current.activeTab === 'analytics') await analyticsLoad;
+      await fetchTenders();
     } catch (e) {
       showToast('Failed to retrieve dashboard data', 'error');
     } finally {
@@ -851,57 +951,97 @@ export default function Dashboard() {
     }
   };
 
-  const fetchTenders = async (overrides?: { status?: string; search?: string; location?: string; sector?: string; mis_executive?: string; limit?: number; page?: number }) => {
+  type ListOverrides = { status?: string; search?: string; location?: string; sector?: string; mis_executive?: string; limit?: number; page?: number };
+
+  /** The tender list query for the current filters (plus any overrides), as the endpoint has always received it. */
+  const buildListParams = (overrides?: ListOverrides) => {
+    const state = listStateRef.current;
+    return new URLSearchParams({
+      search: overrides?.search !== undefined ? overrides.search : state.searchQuery,
+      status: overrides?.status !== undefined ? overrides.status : state.statusFilter,
+      location: overrides?.location !== undefined ? overrides.location : state.locationFilter,
+      sector: overrides?.sector !== undefined ? overrides.sector : state.sectorFilter,
+      source: state.sourceFilter,
+      sortBy: state.sortBy,
+      order: state.sortOrder,
+      mis_executive: overrides?.mis_executive !== undefined ? overrides.mis_executive : state.misExecutiveFilter
+    });
+  };
+
+  /** Answers depend on who asks: remembered answers are kept per user. */
+  const responseCacheKey = () => `${currentUser?.username || ''}|${currentUser?.role || ''}`;
+
+  /**
+   * Loads the tender list the open tab shows: the Control Desk's 5 rows, the Tender Repository's
+   * current page (its extra filters are applied by the server), or every matching tender for the
+   * Status tab. Other tabs show no tender list.
+   */
+  const fetchTenders = async (overrides?: ListOverrides) => {
+    const tab = listStateRef.current.activeTab;
+    const view = tab === 'dashboard' ? 'desk' : tab === 'tenders' ? 'repo' : tab === 'status' ? 'full' : null;
+    if (!view) return;
     try {
-      const activeStatus = overrides?.status !== undefined ? overrides.status : statusFilter;
-      const activeSearch = overrides?.search !== undefined ? overrides.search : searchQuery;
-      const activeLoc = overrides?.location !== undefined ? overrides.location : locationFilter;
-      const activeSec = overrides?.sector !== undefined ? overrides.sector : sectorFilter;
-      const activeExec = overrides?.mis_executive !== undefined ? overrides.mis_executive : misExecutiveFilter;
-
-      const params = new URLSearchParams({
-        search: activeSearch,
-        status: activeStatus,
-        location: activeLoc,
-        sector: activeSec,
-        source: sourceFilter,
-        sortBy,
-        order: sortOrder,
-        mis_executive: activeExec
-      });
-
-      if (overrides?.limit != null) {
-        params.set('limit', String(overrides.limit));
+      const params = buildListParams(overrides);
+      if (view === 'desk') {
+        params.set('limit', '5');
+        params.set('page', '0');
+      } else if (view === 'repo') {
+        const { repoPage: page, repoLimit: limit, corrigendumFilter: corrigendumOnly } = listStateRef.current;
+        params.set('view', 'repository');
+        params.set('page', String(Math.max(0, page - 1)));
+        params.set('limit', String(limit));
+        if (corrigendumOnly) params.set('corrigendumOnly', 'true');
       }
-      if (overrides?.page != null) {
-        params.set('page', String(overrides.page));
-      }
+      if (overrides?.limit != null) params.set('limit', String(overrides.limit));
+      if (overrides?.page != null) params.set('page', String(overrides.page));
 
-      const response = await fetchWithAuth(`/api/tenders?${params.toString()}`);
-      if (!response.ok) throw new Error('API Error');
-      const data = await response.json();
-      if (data.success && data.tenders) {
+      const seq = ++listRequestSeq.current[view];
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders?${params.toString()}`, responseCacheKey());
+      if (seq !== listRequestSeq.current[view]) return; // a newer request for this list was sent meanwhile
+      if (!result.ok || !result.data) throw new Error('API Error');
+      const data = result.data;
+      if (data.success) setListReady(prev => (prev[view] ? prev : { ...prev, [view]: true }));
+      // Applied even when unchanged (304): it is this URL's last answer, and the screen may show
+      // another page or filter since. An unchanged answer is the same object: nothing re-renders.
+      if (!data.success || !data.tenders) return;
+
+      if (view === 'desk') {
+        setDeskTenders(data.tenders);
+      } else if (view === 'repo') {
+        setRepoTenders(data.tenders);
+        setRepoTotal(typeof data.totalElements === 'number' ? data.totalElements : data.tenders.length);
+        // Fewer results than the page asked for: go to the last page, as the table always did.
+        const totalPages = Math.max(1, typeof data.totalPages === 'number' ? data.totalPages : 1);
+        if (listStateRef.current.repoPage > totalPages) setRepoPage(totalPages);
+      } else {
         setTenders(data.tenders);
-        setAllAssignedTenders(data.tenders.filter((t: any) => t.mis_executive));
-        if (data.filters) setFilters(data.filters);
       }
+      if (data.filters) setFilters(data.filters);
     } catch (e) {
       console.error(e);
     }
   };
 
+  /** Every tender matching the current filters (CSV export). */
+  const fetchAllMatchingTenders = async (): Promise<Tender[]> => {
+    const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders?${buildListParams().toString()}`, responseCacheKey());
+    return result.ok && result.data?.success && Array.isArray(result.data.tenders) ? result.data.tenders : [];
+  };
+
+  /**
+   * Work Summary's assignment list. Admin: tenders currently Participating (what the background
+   * refresh always loaded for Admin); MIS Team: the tenders matching the current filters.
+   */
   const fetchAssignedTenders = async () => {
-    if (tenders.length > 0) {
-      setAllAssignedTenders(tenders.filter((t: any) => t.mis_executive));
-      return;
-    }
+    const epoch = sessionEpochRef.current;
     try {
-      const response = await fetchWithAuth('/api/tenders');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.tenders) {
-          setAllAssignedTenders(data.tenders.filter((t: any) => t.mis_executive));
-        }
+      const url = currentUser?.role === 'Admin'
+        ? '/api/tenders?status=Participating'
+        : `/api/tenders?${buildListParams().toString()}`;
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, url, responseCacheKey());
+      if (epoch !== sessionEpochRef.current) return; // signed out meanwhile
+      if (result.ok && result.data?.success && result.data.tenders) {
+        setAllAssignedTenders(assignedTendersOf(result.data));
       }
     } catch (e) {
       console.error('Failed to fetch assignments list:', e);
@@ -909,12 +1049,13 @@ export default function Dashboard() {
   };
 
   const fetchAnalytics = async () => {
+    const epoch = sessionEpochRef.current;
     try {
-      const response = await fetchWithAuth('/api/analytics');
-      if (!response.ok) throw new Error('API Error');
-      const data = await response.json();
-      if (data.success) {
-        setAnalytics(data);
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, '/api/analytics', responseCacheKey());
+      if (epoch !== sessionEpochRef.current) return; // signed out meanwhile
+      if (!result.ok) throw new Error('API Error');
+      if (result.data?.success) {
+        setAnalytics(result.data);
       }
     } catch (e) {
       console.error(e);
@@ -922,13 +1063,12 @@ export default function Dashboard() {
   };
 
   const fetchExecStats = async () => {
+    const epoch = sessionEpochRef.current;
     try {
-      const response = await fetchWithAuth('/api/tenders/stats');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setExecStats(data.stats);
-        }
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, '/api/tenders/stats', responseCacheKey());
+      if (epoch !== sessionEpochRef.current) return; // signed out meanwhile
+      if (result.ok && result.data?.success) {
+        setExecStats(result.data.stats);
       }
     } catch (e) {
       console.error('Failed to fetch executive stats:', e);
@@ -1097,107 +1237,145 @@ export default function Dashboard() {
     setActiveTab('dashboard');
   };
 
-  // Trigger search and filters fetch
+  // When the signed-in user goes away (logout or an expired session), forget everything that user
+  // loaded, including answers that are still on their way: the next user must never see it, not
+  // even while their own data loads. Runs only on that change, never on the first sign-in or when
+  // the dashboard opens again on Back (that is what keeps Back instant).
+  const signedInUserRef = useRef<string | null>(null);
   useEffect(() => {
-    if (mounted && currentUser) {
-      const timer = setTimeout(() => {
-        fetchTenders();
-      }, 300);
-      return () => clearTimeout(timer);
+    const username = currentUser?.username ?? null;
+    if (signedInUserRef.current !== null && signedInUserRef.current !== username) {
+      sessionEpochRef.current += 1;
+      const seq = listRequestSeq.current;
+      seq.desk += 1;
+      seq.repo += 1;
+      seq.full += 1;
+      clearClientCaches();
+      setTenders([]);
+      setDeskTenders([]);
+      setRepoTenders([]);
+      setRepoTotal(0);
+      setListReady({ desk: false, repo: false, full: false });
+      setAllAssignedTenders([]);
+      setAnalytics(null);
+      setExecStats([]);
+      setFilters({ locations: [], sectors: [] });
     }
-  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter]);
+    signedInUserRef.current = username;
+  }, [currentUser]);
 
-  // Background Auto-Sync Poll for Dashboard
+  // Load the open tab's list when its tab, filters, sort or page change. Typing in the search box
+  // waits 300 ms for the user to pause; every other change loads at once.
+  const lastSearchRef = useRef(searchQuery);
+  useEffect(() => {
+    const searchChanged = lastSearchRef.current !== searchQuery;
+    lastSearchRef.current = searchQuery;
+    if (!(mounted && currentUser)) return;
+    if (skipNextListEffect.current) {
+      skipNextListEffect.current = false; // this load is already done by sign-in / Back
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchTenders();
+    }, searchChanged ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter, repoPage, repoLimit, corrigendumFilter]);
+
+  // Background refresh of the open tab: every 30 s, never two at once, paused while the browser tab
+  // is hidden (and refreshed as soon as it is shown again). Unchanged data is not re-rendered.
   useEffect(() => {
     if (!mounted || !currentUser) return;
     if (activeTab === 'approvals') return; // Do not poll dashboard data while in Approvals Center
 
-    const interval = setInterval(async () => {
-      try {
-        const fetchUrlParams = new URLSearchParams({
-          search: searchQuery,
-          status: statusFilter,
-          location: locationFilter,
-          sector: sectorFilter,
-          source: sourceFilter,
-          sortBy,
-          order: sortOrder,
-          mis_executive: misExecutiveFilter,
-          t: Date.now().toString()
-        });
+    let cancelled = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-        // 1. Silent fetch tenders
-        const tResp = await fetchWithAuth(`/api/tenders?${fetchUrlParams.toString()}`);
-        if (tResp.ok) {
-          const tData = await tResp.json();
-          if (tData.success && tData.tenders) {
-            setTenders(tData.tenders);
-            if (selectedTenderRef.current) {
-              const freshSel = tData.tenders.find((t: any) => t.id === selectedTenderRef.current?.id);
-              if (freshSel) {
-                setSelectedTender(prev => prev ? { ...prev, ...freshSel } : null);
-              }
-            }
-          }
-        }
-
-        // 2. Silent fetch analytics
-        const aResp = await fetchWithAuth(`/api/analytics?t=${Date.now()}`);
-        if (aResp.ok) {
-          const aData = await aResp.json();
-          if (aData.success) {
-            setAnalytics(aData);
-          }
-        }
-
-        // 3. Silent fetch assigned mapping list (if Admin)
-        if (currentUser.role === 'Admin') {
-          const mResp = await fetchWithAuth(`/api/tenders?status=Participating&t=${Date.now()}`);
-          if (mResp.ok) {
-            const mData = await mResp.json();
-            if (mData.success && mData.tenders) {
-              setAllAssignedTenders(mData.tenders.filter((t: any) => t.mis_executive));
-            }
-          }
-        }
-
-        // 4. Silent fetch exec stats (if Admin or MIS Team)
-        if (currentUser.role === 'Admin' || currentUser.role === 'MIS Team') {
-          const sResp = await fetchWithAuth(`/api/tenders/stats?t=${Date.now()}`);
-          if (sResp.ok) {
-            const sData = await sResp.json();
-            if (sData.success && sData.stats) {
-              setExecStats(sData.stats);
-            }
-          }
-        }
-
-        // 5. Silent fetch full tender object & comments for currently open tender drawer
-        if (selectedTenderRef.current) {
-          const activeId = selectedTenderRef.current.id;
-          const tDetailResp = await fetchWithAuth(`/api/tenders/${activeId}?t=${Date.now()}`);
-          if (tDetailResp.ok) {
-            const tDetailData = await tDetailResp.json();
-            if (tDetailData.success && tDetailData.tender) {
-              setSelectedTender(tDetailData.tender);
-            }
-          }
-
-          const cResp = await fetchWithAuth(`/api/tenders/${activeId}/comments?t=${Date.now()}`);
-          if (cResp.ok) {
-            const cData = await cResp.json();
-            if (cData.success && cData.comments) {
-              setComments(cData.comments);
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Dashboard silent background poll failed:', err);
+    const refreshOpenTab = async () => {
+      switch (activeTab) {
+        case 'dashboard':
+          await Promise.all([fetchTenders(), fetchAnalytics()]);
+          break;
+        case 'tenders':
+        case 'status':
+          await fetchTenders();
+          break;
+        case 'analytics':
+          await Promise.all([fetchAnalytics(), fetchExecStats()]);
+          break;
+        case 'work-summary':
+          await fetchAssignedTenders();
+          break;
+        default:
+          break;
       }
-    }, 1500); // Poll every 1.5 seconds for instant real-time sync across sessions
 
-    return () => clearInterval(interval);
-  }, [mounted, currentUser, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, misExecutiveFilter]);
+      // Keep an open tender drawer's details and comments current.
+      if (selectedTenderRef.current) {
+        const activeId = selectedTenderRef.current.id;
+        const detail = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${activeId}`, responseCacheKey());
+        if (cancelled || selectedTenderRef.current?.id !== activeId) return; // closed or switched meanwhile
+        if (detail.ok && detail.data?.success && detail.data.tender) {
+          setSelectedTender(detail.data.tender);
+        }
+        const commentsResult = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${activeId}/comments`, responseCacheKey());
+        if (cancelled || selectedTenderRef.current?.id !== activeId) return;
+        if (commentsResult.ok && commentsResult.data?.success && commentsResult.data.comments) {
+          setComments(commentsResult.data.comments);
+        }
+      }
+    };
+
+    const tick = async () => {
+      timer = null;
+      if (cancelled) return;
+      if (!document.hidden && !running) {
+        running = true;
+        try {
+          await refreshOpenTab();
+        } catch (err) {
+          console.error('Dashboard background refresh failed:', err);
+        } finally {
+          running = false;
+        }
+      }
+      if (!cancelled) timer = setTimeout(tick, DASHBOARD_REFRESH_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && !cancelled && !running) {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+
+    timer = setTimeout(tick, DASHBOARD_REFRESH_MS);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [mounted, currentUser, activeTab]);
+
+  // Remember the dashboard (tab, filters, page and data) so that Back from a tender page shows it at once.
+  useEffect(() => {
+    if (!mounted || !currentUser || loading) return;
+    saveDashboardMemory({
+      username: currentUser.username,
+      savedAt: Date.now(),
+      activeTab,
+      filters: { searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit },
+      data: {
+        deskTenders: listReady.desk ? deskTenders : null,
+        repoTenders: listReady.repo ? repoTenders : null,
+        repoTotal,
+        tenders: listReady.full ? tenders : null,
+        analytics,
+        filterOptions: filters
+      }
+    });
+  }, [mounted, currentUser, loading, activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit, deskTenders, repoTenders, repoTotal, tenders, analytics, filters, listReady]);
 
 
   const toggleTheme = () => {
@@ -1713,9 +1891,27 @@ export default function Dashboard() {
 
   // Open Dedicated Full-Page Tender Detail View via Full HTTP Navigation Redirection
   const openTenderDetails = (tender: Tender) => {
-    if (typeof window !== 'undefined') {
-      window.location.href = `/tenders/${tender.id}`;
-    }
+    // Open the tender page inside the app (no full page reload); it shows this row's summary at once.
+    rememberTenderSummary(currentUser?.username || '', tender);
+    router.push(`/tenders/${encodeURIComponent(String(tender.id))}`);
+  };
+
+  // Brochure Team list badge: Pending Upload / Uploaded
+  const renderBrochureBadge = (tender: Tender) => {
+    const uploaded = tender.brochure_status === 'Uploaded';
+    return (
+      <span style={{
+        fontSize: '11px',
+        fontWeight: '700',
+        padding: '3px 8px',
+        borderRadius: '6px',
+        backgroundColor: uploaded ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+        color: uploaded ? '#10b981' : '#f59e0b',
+        border: '1px solid ' + (uploaded ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)')
+      }}>
+        {uploaded ? 'Brochure Uploaded' : 'Pending Upload'}
+      </span>
+    );
   };
 
   // Handle Dashboard Metric Card Click
@@ -1725,8 +1921,7 @@ export default function Dashboard() {
     setSectorFilter('');
     setCorrigendumFilter(false);
     setStatusFilter(status);
-    setActiveTab('tenders');
-    fetchTenders({ status, search: '', location: '', sector: '' });
+    setActiveTab('tenders'); // the list effect loads the Tender Repository with these filters
   };
 
   const dbStatusToPlainEnglish = (status: string): string => {
@@ -2076,8 +2271,15 @@ export default function Dashboard() {
   };
 
   // Export filtered tenders list to CSV
-  const exportToCSV = () => {
-    if (tenders.length === 0) {
+  const exportToCSV = async () => {
+    // The screen holds only the page on display; the export covers every tender matching the filters.
+    let exportList: Tender[] = [];
+    try {
+      exportList = await fetchAllMatchingTenders();
+    } catch (err) {
+      console.error(err);
+    }
+    if (exportList.length === 0) {
       showToast('No tenders available to export', 'error');
       return;
     }
@@ -2113,7 +2315,7 @@ export default function Dashboard() {
 
     let csvContent = headers.join(',') + '\n';
 
-    tenders.forEach((t) => {
+    exportList.forEach((t) => {
       const row = [
         t.entry_date || '',
         t.source || 'Tender247',
@@ -2150,7 +2352,7 @@ export default function Dashboard() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast(`Exported ${tenders.length} tenders to CSV successfully`, 'success');
+      showToast(`Exported ${exportList.length} tenders to CSV successfully`, 'success');
     } catch (err) {
       console.error(err);
       showToast('Failed to export CSV file', 'error');
@@ -2278,6 +2480,19 @@ export default function Dashboard() {
         setCurrentUser(data.user);
         setUsernameInput('');
         setPasswordInput('');
+        // Return to the tender the user was opening before login (e.g. from a mail link).
+        try {
+          const target = sessionStorage.getItem('tp.afterLogin');
+          if (target) {
+            sessionStorage.removeItem('tp.afterLogin');
+            if (/^\/tenders\/[^/]+\/?$/.test(target)) {
+              window.location.href = target;
+              return;
+            }
+          }
+        } catch {
+          // storage unavailable: stay on the dashboard
+        }
       } else {
         setLoginError(data.error || 'Invalid credentials');
       }
@@ -2428,6 +2643,11 @@ export default function Dashboard() {
   
   const nonSubmissionLossTenders = analytics?.metrics?.nonSubmissionLossCount || 0;
   const nonParticipationLossTenders = analytics?.metrics?.nonParticipationLossCount || 0;
+
+  // Brochure Team counts come from analytics so the cards do not change with list filters
+  const brochurePendingCount = analytics?.metrics?.brochurePendingCount ?? tenders.filter(t => t.brochure_status === 'Pending').length;
+  const brochureUploadedCount = analytics?.metrics?.brochureUploadedCount ?? tenders.filter(t => t.brochure_status === 'Uploaded').length;
+  const brochureTotalCount = analytics?.metrics?.brochureTotalCount ?? (brochurePendingCount + brochureUploadedCount);
 
   const specTotalCount = analytics?.metrics?.specTotalCount ?? tenders.length;
   const specPendingCount = analytics?.metrics?.specPendingCount ?? tenders.filter((t: any) => t.spec_verification_status === 'Pending').length;
@@ -2734,6 +2954,7 @@ export default function Dashboard() {
                   backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
                     currentUser.role === 'MIS Team' ? '#10b981' :
                     currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+                    currentUser.role === 'Brochure Team' ? '#14b8a6' :
                     currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'
                 }} />
                 <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Active Session</span>
@@ -2840,8 +3061,8 @@ export default function Dashboard() {
                     fontSize: '12.5px'
                   }}
                 >
-                  <option value="ALL">All Cards (11)</option>
-                  <option value="PIPELINE">Steps 1-6 Pipeline</option>
+                  <option value="ALL">All Cards (12)</option>
+                  <option value="PIPELINE">Steps 1-6 & Brochure</option>
                   <option value="OUTCOMES">Outcomes & Won/Lost</option>
                   <option value="ACTION_REQUIRED">Action Required Only</option>
                 </select>
@@ -2875,7 +3096,7 @@ export default function Dashboard() {
           <>
             {/* TAB: DASHBOARD */}
             {activeTab === 'dashboard' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className={analytics ? undefined : 'metrics-pending'} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 {/* Grouped Metric Sections */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   {currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' ? (
@@ -2929,6 +3150,49 @@ export default function Dashboard() {
                             <h3>Rejected</h3>
                             <div className="metric-number">{specRejectedCount}</div>
                             <div className="metric-trend">Rejected specification review</div>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  ) : isBrochureRole ? (
+                    <div>
+                      <h2 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>
+                        Brochure Upload Statuses
+                      </h2>
+                      <section className="metrics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                        {/* All Tenders */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('')}>
+                          <div className="metric-icon-box total">
+                            <FileText size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>All Tenders</h3>
+                            <div className="metric-number">{brochureTotalCount}</div>
+                            <div className="metric-trend">Approved by the Clearance Team</div>
+                          </div>
+                        </div>
+
+                        {/* Pending Upload */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('Pending')} style={{ borderLeft: '3px solid var(--accent-yellow)' }}>
+                          <div className="metric-icon-box" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-yellow)' }}>
+                            <Clock size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>Pending Upload</h3>
+                            <div className="metric-number">{brochurePendingCount}</div>
+                            <div className="metric-trend">Waiting for the brochure document</div>
+                          </div>
+                        </div>
+
+                        {/* Uploaded */}
+                        <div className="card metric-card" onClick={() => handleMetricCardClick('Uploaded')} style={{ borderLeft: '3px solid var(--accent-green)' }}>
+                          <div className="metric-icon-box" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-green)' }}>
+                            <CheckCircle2 size={24} />
+                          </div>
+                          <div className="metric-info">
+                            <h3>Uploaded</h3>
+                            <div className="metric-number">{brochureUploadedCount}</div>
+                            <div className="metric-trend">Listed in the Document Repository</div>
                           </div>
                         </div>
                       </section>
@@ -3175,27 +3439,36 @@ export default function Dashboard() {
                     <div className="section-title-area">
                       <h2 className="section-title">
                         Latest Tender Alerts
-                        <span>{tenders.slice(0, 5).length} shown</span>
+                        <span>{deskTenders.length} shown</span>
                       </h2>
                       <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => setActiveTab('tenders')}>
                         View All
                       </button>
                     </div>
 
-                    {tenders.length === 0 ? (
+                    {!listReady.desk ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '48px 0', gap: '10px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+                        <Loader2 className="animate-spin" size={22} style={{ color: 'var(--primary)' }} />
+                        <span>Loading tenders...</span>
+                      </div>
+                    ) : deskTenders.length === 0 ? (
                       <div className="empty-state" style={{ flexGrow: 1 }}>
                         <Mail size={48} />
                         <h3>No Tenders Found</h3>
-                        <p>Paste or upload your first email digest from Tender247 to begin tracking.</p>
+                        <p>{isBrochureRole
+                          ? 'Tenders appear here after the Clearance Team approves them.'
+                          : 'Paste or upload your first email digest from Tender247 to begin tracking.'}</p>
                       </div>
                     ) : (
                       <div className="tender-list-container" style={{ maxHeight: '420px' }}>
-                        {tenders.slice(0, 5).map(tender => (
+                        {deskTenders.map(tender => (
                           <div key={tender.id} onClick={() => openTenderDetails(tender)} className="tender-item" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', cursor: 'pointer' }}>
                             <div className="tender-item-left">
                               <div className="tender-meta-row">
                                 <span className="tender-id-badge">{tender.id}</span>
-                                <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
+                                {isBrochureRole ? renderBrochureBadge(tender) : (
+                                  <span className={`tender-status-badge ${tender.status.toLowerCase().replace(/\s+/g, '-')}`}>{tender.status}</span>
+                                )}
                                 {(() => {
                                   const classification = getClassificationDisplay(tender.tender_type || tender.tenderType);
                                   const sourceLabel = getSourceBadgeLabel(tender.source);
@@ -3307,7 +3580,13 @@ export default function Dashboard() {
             )}
 
             {/* TAB: STATUS DASHBOARD (ALL ROLES) */}
-            {activeTab === 'status' && (
+            {activeTab === 'status' && !listReady.full && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '300px', flexDirection: 'column', gap: '12px' }}>
+                <Loader2 className="animate-spin" size={40} style={{ color: 'var(--primary)' }} />
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Loading tender status...</p>
+              </div>
+            )}
+            {activeTab === 'status' && listReady.full && (
               <StatusDashboard
                 tenders={tenders}
                 currentUser={currentUser}
@@ -3344,7 +3623,13 @@ export default function Dashboard() {
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
                   >
-                    {currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' ? (
+                    {isBrochureRole ? (
+                      <>
+                        <option value="">All Tenders</option>
+                        <option value="Pending">Pending Upload</option>
+                        <option value="Uploaded">Uploaded</option>
+                      </>
+                    ) : currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' || currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team' ? (
                       <>
                         <option value="">All Tenders</option>
                         <option value="Pending">Pending</option>
@@ -3469,59 +3754,23 @@ export default function Dashboard() {
                 </div>
 
                 {(() => {
-                  let filteredList = tenders;
-                  if (corrigendumFilter) {
-                    filteredList = filteredList.filter(t => t.corrigendum_remark === 'Yes' || (t.notes && t.notes.toLowerCase().includes('corrigendum')));
-                  }
-                  if (statusFilter && statusFilter.trim() !== '') {
-                    filteredList = filteredList.filter(t => {
-                      const s = (t.status || '').toLowerCase().trim();
-                      const f = statusFilter.toLowerCase().trim();
-
-                      // Role-specific definitions for TPC Pricing Team
-                      if (currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team') {
-                        if (f === 'pending') {
-                          const isRoutedToTpc = (t.pricing_route === 'TPC' || (t.current_stage || '').toUpperCase() === 'TPC_PRICING' || (t.track_a_pricing_status || '').toUpperCase() === 'TPC_PENDING') && t.pricing_route !== 'MIS';
-                          return isRoutedToTpc &&
-                                 (!t.tpc_purchase_price || Number(t.tpc_purchase_price) === 0) &&
-                                 s !== 'rejected' && (t.current_stage || '') !== 'REJECTED_TPC';
-                        }
-                        if (f === 'approved') {
-                          return Boolean(t.tpc_purchase_price && Number(t.tpc_purchase_price) > 0);
-                        }
-                        if (f === 'rejected') {
-                          return s === 'rejected' || (t.current_stage || '') === 'REJECTED_TPC';
-                        }
-                      }
-
-                      // Role-specific definitions for Clearance Team
-                      if (currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team') {
-                        if (f === 'pending') {
-                          return (t.spec_verification_status || '').toLowerCase() === 'pending' || !t.spec_verification_status || (t.spec_verification_status || '').toLowerCase() === 'not started';
-                        }
-                        if (f === 'approved') return (t.spec_verification_status || '').toLowerCase() === 'approved';
-                        if (f === 'rejected') return (t.spec_verification_status || '').toLowerCase() === 'rejected';
-                      }
-
-                      if (f === 'participating') return s === 'participating';
-                      if (f === 'not participating') return s === 'not participating';
-                      if (f === 'new') return s === 'new' || s === 'issued';
-                      if (f === 'lapsed') return s === 'lapsed';
-                      if (f === 'submitted') return s === 'submitted' || s === 'filed';
-                      if (f === 'won') return s === 'won' || s === 'awarded';
-                      if (f === 'lost') return s === 'lost' || s === 'not awarded';
-                      if (f === 'pending') return (t.spec_verification_status || '').toLowerCase() === 'pending' || (t.current_stage || '').toLowerCase().includes('pending');
-                      if (f === 'approved') return (t.spec_verification_status || '').toLowerCase() === 'approved';
-                      if (f === 'rejected') return (t.spec_verification_status || '').toLowerCase() === 'rejected' || s === 'rejected';
-                      return s === f;
-                    });
-                  }
-                  const displayedTenders = filteredList;
-                  const repoTotalPages = Math.max(1, Math.ceil(displayedTenders.length / repoLimit));
+                  // The server applies the filters (including Corrigendum Alerts and the repository's
+                  // status rules) and sends only the page on display, with the total count.
+                  const repoTotalCount = repoTotal;
+                  const repoTotalPages = Math.max(1, Math.ceil(repoTotalCount / repoLimit));
                   const safeRepoPage = Math.min(repoPage, repoTotalPages);
-                  const paginatedRepoTenders = displayedTenders.slice((safeRepoPage - 1) * repoLimit, safeRepoPage * repoLimit);
+                  const paginatedRepoTenders = repoTenders;
 
-                  if (displayedTenders.length === 0) {
+                  if (!listReady.repo) {
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0', gap: '10px', color: 'var(--text-secondary)', fontSize: '14px', flexGrow: 1 }}>
+                        <Loader2 className="animate-spin" size={22} style={{ color: 'var(--primary)' }} />
+                        <span>Loading tenders...</span>
+                      </div>
+                    );
+                  }
+
+                  if (repoTotalCount === 0) {
                     return (
                       <div className="empty-state" style={{ flexGrow: 1 }}>
                         <SlidersHorizontal size={48} />
@@ -3539,7 +3788,7 @@ export default function Dashboard() {
                         <div className="tender-item-left">
                           <div className="tender-meta-row">
                             <span className="tender-id-badge">{tender.id}</span>
-                            {currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' ? (
+                            {isBrochureRole ? renderBrochureBadge(tender) : currentUser?.role === 'Clearance Team' || currentUser?.role === 'Specification Team' ? (
                               <span style={{
                                 fontSize: '11px',
                                 fontWeight: '700',
@@ -3643,7 +3892,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Tenders Repository Pagination Toolbar */}
-                  {displayedTenders.length > 0 && (
+                  {repoTotalCount > 0 && (
                     <div
                       style={{
                         display: 'flex',
@@ -3660,7 +3909,7 @@ export default function Dashboard() {
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                          Showing <strong style={{ color: 'var(--text-primary)' }}>{Math.min((safeRepoPage - 1) * repoLimit + 1, displayedTenders.length)}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(safeRepoPage * repoLimit, displayedTenders.length)}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{displayedTenders.length}</strong> tenders
+                          Showing <strong style={{ color: 'var(--text-primary)' }}>{Math.min((safeRepoPage - 1) * repoLimit + 1, repoTotalCount)}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(safeRepoPage * repoLimit, repoTotalCount)}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{repoTotalCount}</strong> tenders
                         </span>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -4696,18 +4945,21 @@ export default function Dashboard() {
                                       user.role === 'Admin' ? 'rgba(245, 158, 11, 0.1)' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? 'rgba(99, 102, 241, 0.1)' :
                                       user.role === 'Clearance Team' ? 'rgba(139, 92, 246, 0.1)' :
+                                      user.role === 'Brochure Team' ? 'rgba(20, 184, 166, 0.1)' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? 'rgba(236, 72, 153, 0.1)' :
                                       'rgba(59, 130, 246, 0.1)',
                                     color: 
                                       user.role === 'Admin' ? '#f59e0b' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? '#818cf8' :
                                       user.role === 'Clearance Team' ? '#8b5cf6' :
+                                      user.role === 'Brochure Team' ? '#14b8a6' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? '#ec4899' :
                                       '#3b82f6',
                                     border: '1px solid ' + (
                                       user.role === 'Admin' ? 'rgba(245, 158, 11, 0.2)' :
                                       user.role === 'MIS Executive' || user.role === 'Tender Executive' ? 'rgba(99, 102, 241, 0.2)' :
                                       user.role === 'Clearance Team' ? 'rgba(139, 92, 246, 0.2)' :
+                                      user.role === 'Brochure Team' ? 'rgba(20, 184, 166, 0.2)' :
                                       user.role === 'TPC Pricing Team' || user.role === 'TPC Team' ? 'rgba(236, 72, 153, 0.2)' :
                                       'rgba(59, 130, 246, 0.2)'
                                     )
@@ -4872,6 +5124,7 @@ export default function Dashboard() {
                       >
                         <option value="Tender Executive">Tender Executive</option>
                         <option value="Clearance Team">Clearance Team</option>
+                        <option value="Brochure Team">Brochure Team</option>
                         <option value="TPC Pricing Team">TPC Pricing Team</option>
                         <option value="MIS Team">MIS Team</option>
                       </select>
@@ -8201,7 +8454,7 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID contains GEM, otherwise Non-GeM)
+                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM)
                 </p>
 
                 <h4 style={{ margin: '20px 0 12px 0', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
@@ -8885,10 +9138,12 @@ export default function Dashboard() {
             backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+              currentUser.role === 'Brochure Team' ? '#14b8a6' :
               currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
             boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' :
               currentUser.role === 'MIS Team' ? '#10b981' :
               currentUser.role === 'Clearance Team' ? '#8b5cf6' :
+              currentUser.role === 'Brochure Team' ? '#14b8a6' :
               currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>

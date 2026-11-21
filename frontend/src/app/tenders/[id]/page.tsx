@@ -30,14 +30,17 @@ import {
   Edit3,
   Save,
   RotateCcw,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react';
 import { Tender } from '@/lib/db';
-import { canPerform, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
+import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import PortalDocumentFetcher, { type PortalDocsResult } from '@/app/components/PortalDocumentFetcher';
-import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
+import TenderDiscussion from '@/app/components/TenderDiscussion';
+import { areBidDocsGenerated, hasWorkingPathSaved, isBrochurePending, isBrochureUploaded } from '@/lib/tenderStatus';
 import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, isStatePortalSource, portalDocsNeedCaptcha, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
+import { fetchJsonWithEtag, getTenderSummary } from '@/lib/clientCache';
 
 interface Toast {
   message: string;
@@ -49,10 +52,27 @@ interface Toast {
 // gemSyncEngine importer stored mis_executive as 'Unassigned', and those rows are still in the DB.
 const UNASSIGNED_EXECUTIVE_PLACEHOLDERS = ['unassigned', 'not assigned', 'n/a', 'none', 'null', '-'];
 
+/** Background refresh of the open tender (the server answers "no change" when nothing changed). */
+const TENDER_REFRESH_MS = 15_000;
+
 /** The executive actually assigned to a tender, or '' when none is (blank or a placeholder value). */
 function assignedExecutiveOf(misExecutive: string | null | undefined): string {
   const value = (misExecutive || '').trim();
   return UNASSIGNED_EXECUTIVE_PLACEHOLDERS.includes(value.toLowerCase()) ? '' : value;
+}
+
+/**
+ * Remembers the tender being opened so the login screen can bring the user straight back to it,
+ * for example when a TenderPocket mail link is opened while logged out.
+ */
+function rememberTenderForLogin() {
+  try {
+    if (/^\/tenders\/[^/]+\/?$/.test(window.location.pathname)) {
+      sessionStorage.setItem('tp.afterLogin', window.location.pathname);
+    }
+  } catch {
+    // storage unavailable: the user simply lands on the dashboard after login
+  }
 }
 
 export default function TenderDetailPage() {
@@ -69,6 +89,13 @@ export default function TenderDetailPage() {
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
   const isTpcRole = currentUser?.role === 'TPC Pricing Team' || currentUser?.role === 'TPC Team';
   const isAdmin = currentUser?.role === 'Admin';
+  const isBrochureRole = canonicalRole(currentUser?.role) === 'Brochure Team';
+  const [brochureFiles, setBrochureFiles] = useState<File[]>([]);
+  const [uploadingBrochure, setUploadingBrochure] = useState(false);
+  const [editingBrochure, setEditingBrochure] = useState<string | null>(null);
+  const [editBrochureName, setEditBrochureName] = useState('');
+  const [editBrochureFile, setEditBrochureFile] = useState<File | null>(null);
+  const [savingBrochure, setSavingBrochure] = useState(false);
   const [uploadingTechSpec, setUploadingTechSpec] = useState(false);
   const [techSpecProgress, setTechSpecProgress] = useState<{
     status?: string;
@@ -84,6 +111,9 @@ export default function TenderDetailPage() {
 
   // Data States
   const [selectedTender, setSelectedTender] = useState<Tender | null>(null);
+  // The list row the user clicked, shown in the header while the full tender loads.
+  const [summaryTender, setSummaryTender] = useState<Tender | null>(null);
+  const headerTender = selectedTender || summaryTender;
   const [tenderNotes, setTenderNotes] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [misExecutive, setMisExecutive] = useState('');
@@ -99,8 +129,7 @@ export default function TenderDetailPage() {
   const [comments, setComments] = useState<any[]>([]);
   const [specCommentText, setSpecCommentText] = useState('');
   const [paymentCommentText, setPaymentCommentText] = useState('');
-  const [verificationCommentText, setVerificationCommentText] = useState('');
-  const [submissionCommentText, setSubmissionCommentText] = useState('');
+  const [brochureCommentText, setBrochureCommentText] = useState('');
   
   const [selectedMisMember, setSelectedMisMember] = useState('');
   const [selectedMisMemberSpec, setSelectedMisMemberSpec] = useState('');
@@ -371,12 +400,14 @@ export default function TenderDetailPage() {
 
     const userStr = localStorage.getItem('currentUser');
     if (!userStr || userStr === 'undefined') {
+      rememberTenderForLogin();
       router.push('/');
       return;
     }
     try {
       const userObj = JSON.parse(userStr);
       setCurrentUser(userObj);
+      if (id) setSummaryTender(getTenderSummary(userObj?.username || '', String(id)));
     } catch (e) {
       console.error('Failed to parse user session:', e);
       router.push('/');
@@ -392,27 +423,57 @@ export default function TenderDetailPage() {
 
   // Fetch data once user is loaded with auto-sync polling
   useEffect(() => {
-    if (currentUser && id) {
-      fetchTenderDetails();
-      fetchComments(id);
-      fetchMisTeamMembers();
+    if (!(currentUser && id)) return;
+    fetchTenderDetails();
+    fetchComments(id);
+    fetchMisTeamMembers();
 
-      // Poll updates every 1.5 seconds for near-instant live sync
-      const syncInterval = setInterval(() => {
-        fetchTenderDetails(true);
-        fetchComments(id);
-      }, 1500);
+    // Background refresh every 15 s: never two at once, paused while the browser tab is hidden (and
+    // refreshed as soon as it is shown again). Unchanged data is not re-rendered.
+    let cancelled = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-      return () => clearInterval(syncInterval);
-    }
+    const tick = async () => {
+      timer = null;
+      if (cancelled) return;
+      if (!document.hidden && !running) {
+        running = true;
+        try {
+          await Promise.all([fetchTenderDetails(true), fetchComments(id, true)]);
+        } finally {
+          running = false;
+        }
+      }
+      if (!cancelled) timer = setTimeout(tick, TENDER_REFRESH_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && !cancelled && !running) {
+        if (timer) clearTimeout(timer);
+        tick();
+      }
+    };
+
+    timer = setTimeout(tick, TENDER_REFRESH_MS);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [currentUser, id]);
+
+  /** Answers depend on who asks: remembered answers are kept per user. */
+  const responseCacheKey = () => `${currentUser?.username || ''}|${currentUser?.role || ''}`;
 
   const fetchTenderDetails = async (isBackground = false) => {
     if (!isBackground && !selectedTender) setLoadingDetails(true);
     try {
-      // Append cache-busting timestamp to avoid browser GET caching
-      const response = await fetchWithAuth(`/api/tenders/${id}?t=${Date.now()}`);
-      const data = await response.json();
+      // "Anything new?": a background refresh of an unchanged tender re-renders nothing.
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${id}`, responseCacheKey());
+      if (isBackground && !result.changed && dbTenderRef.current) return;
+      const data = result.data || {};
       if (data.success) {
         const tender = data.tender;
         const prevTender = dbTenderRef.current;
@@ -550,12 +611,12 @@ export default function TenderDetailPage() {
     }
   };
 
-  const fetchComments = async (tenderId: string) => {
+  const fetchComments = async (tenderId: string, onlyIfChanged = false) => {
     try {
-      // Append cache-busting timestamp to avoid browser GET caching
-      const response = await fetchWithAuth(`/api/tenders/${tenderId}/comments?t=${Date.now()}`);
-      if (response.ok) {
-        const data = await response.json();
+      const result = await fetchJsonWithEtag<any>(fetchWithAuth, `/api/tenders/${tenderId}/comments`, responseCacheKey());
+      if (onlyIfChanged && !result.changed) return;
+      if (result.ok && result.data) {
+        const data = result.data;
         if (data.success) {
           setComments(data.comments || []);
         }
@@ -593,6 +654,127 @@ export default function TenderDetailPage() {
     }
   };
 
+  // Brochure documents: the Brochure Team uploads one or more files (PDF, Word, Excel or ZIP)
+  // and can rename, replace or delete them. Brochure changes never move the tender.
+  const BROCHURE_EXTENSIONS = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'zip'];
+  const checkBrochureFile = (file: File): string | null => {
+    const extension = (file.name.split('.').pop() || '').toLowerCase();
+    if (!BROCHURE_EXTENSIONS.includes(extension)) {
+      return `'${file.name}' is not allowed. Upload a PDF, Word (.docx / .doc), Excel (.xlsx / .xls) or ZIP file.`;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      return `'${file.name}' is larger than 50 MB. Please upload a smaller file.`;
+    }
+    return null;
+  };
+
+  const submitBrochureUpload = async () => {
+    if (!selectedTender || brochureFiles.length === 0 || uploadingBrochure) return;
+    if (brochureFiles.length > 10) {
+      showToast('Upload at most 10 brochure documents at a time.', 'error');
+      return;
+    }
+    for (const f of brochureFiles) {
+      const error = checkBrochureFile(f);
+      if (error) {
+        showToast(error, 'error');
+        return;
+      }
+    }
+    setUploadingBrochure(true);
+    try {
+      const formData = new FormData();
+      brochureFiles.forEach(f => formData.append('file', f));
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/upload-brochure`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'The brochure could not be uploaded.', 'error');
+        return;
+      }
+      showToast(data.message || 'Brochure uploaded.', 'success');
+      setBrochureFiles([]);
+      const input = document.getElementById('brochure-file-input') as HTMLInputElement | null;
+      if (input) input.value = '';
+      await fetchTenderDetails(true);
+    } catch {
+      showToast('Network error while uploading the brochure. Please try again.', 'error');
+    } finally {
+      setUploadingBrochure(false);
+    }
+  };
+
+  const startBrochureEdit = (fileName: string, currentName: string) => {
+    setEditingBrochure(fileName);
+    setEditBrochureName(currentName);
+    setEditBrochureFile(null);
+  };
+
+  const saveBrochureEdit = async (fileName: string, currentName: string) => {
+    if (!selectedTender || savingBrochure) return;
+    const name = editBrochureName.trim();
+    const renamed = name !== '' && name !== currentName;
+    if (!renamed && !editBrochureFile) {
+      showToast('Enter a new name or choose a new file.', 'error');
+      return;
+    }
+    if (editBrochureFile) {
+      const error = checkBrochureFile(editBrochureFile);
+      if (error) {
+        showToast(error, 'error');
+        return;
+      }
+    }
+    setSavingBrochure(true);
+    try {
+      const formData = new FormData();
+      if (renamed) formData.append('name', name);
+      if (editBrochureFile) formData.append('file', editBrochureFile);
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/brochures/${encodeURIComponent(fileName)}`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'The brochure document could not be changed.', 'error');
+        return;
+      }
+      showToast(data.message || 'Brochure document updated.', 'success');
+      setEditingBrochure(null);
+      setEditBrochureFile(null);
+      await fetchTenderDetails(true);
+    } catch {
+      showToast('Network error while saving the brochure document. Please try again.', 'error');
+    } finally {
+      setSavingBrochure(false);
+    }
+  };
+
+  const deleteBrochureDocument = async (fileName: string, name: string) => {
+    if (!selectedTender || savingBrochure) return;
+    if (!window.confirm(`Delete "${name}"? The file is removed from the tender and the Document Repository.`)) return;
+    setSavingBrochure(true);
+    try {
+      const res = await fetchWithAuth(`/api/tenders/${selectedTender.id}/brochures/${encodeURIComponent(fileName)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'The brochure document could not be deleted.', 'error');
+        return;
+      }
+      showToast(data.message || 'Brochure document deleted.', 'success');
+      if (editingBrochure === fileName) setEditingBrochure(null);
+      await fetchTenderDetails(true);
+    } catch {
+      showToast('Network error while deleting the brochure document. Please try again.', 'error');
+    } finally {
+      setSavingBrochure(false);
+    }
+  };
+
   const submitClearanceDecision = async (complianceOption: 'ALL COMPLY' | 'COMPLY WITH DEVIATIONS') => {
     if (!selectedTender || submittingApproveClearance) return;
     setSubmittingApproveClearance(true);
@@ -619,7 +801,7 @@ export default function TenderDetailPage() {
         return;
       }
       showToast(data.message || `Clearance granted (${complianceOption})!`, 'success');
-      alert(`Clearance granted (${complianceOption})! Returned to Tender Executive to prepare the standard bid package.`);
+      alert(`Clearance granted (${complianceOption})! Returned to Tender Executive to prepare the standard bid package. The Brochure Team was asked for the brochure.`);
       setClearancePdfFile(null);
       setClearanceDocxFile(null);
       setClearanceXlsxFile(null);
@@ -1239,38 +1421,36 @@ export default function TenderDetailPage() {
     }
   };
 
-  const postComment = async (phase: string) => {
-    let commentBody = '';
-    if (phase === 'Spec') {
-      commentBody = specCommentText;
-      setSpecCommentText('');
-    } else if (phase === 'Payment') {
-      commentBody = paymentCommentText;
-      setPaymentCommentText('');
-    } else if (phase === 'Verification') {
-      commentBody = verificationCommentText;
-      setVerificationCommentText('');
-    } else {
-      commentBody = submissionCommentText;
-      setSubmissionCommentText('');
-    }
-
-    if (!commentBody.trim() || !id) return;
+  // Posts a discussion message. With attachments it is sent as multipart form data.
+  const postDiscussion = async (phase: string, text: string, files: File[]): Promise<boolean> => {
+    const body = text.trim();
+    if (!id || (!body && files.length === 0)) return false;
     try {
-      const response = await fetchWithAuth(`/api/tenders/${id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment: commentBody, phase })
-      });
-      const data = await response.json();
-      if (data.success) {
-        showToast('Comment posted successfully!', 'success');
-        fetchComments(id);
+      let response: Response;
+      if (files.length > 0) {
+        const formData = new FormData();
+        formData.append('phase', phase);
+        formData.append('comment', body);
+        files.forEach(f => formData.append('files', f));
+        response = await fetchWithAuth(`/api/tenders/${id}/comments`, { method: 'POST', body: formData });
       } else {
-        showToast(data.error || 'Failed to post comment.', 'error');
+        response = await fetchWithAuth(`/api/tenders/${id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment: body, phase })
+        });
       }
-    } catch (e) {
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        showToast(files.length > 0 ? 'Message and attachments posted.' : 'Comment posted successfully!', 'success');
+        fetchComments(id);
+        return true;
+      }
+      showToast(data.error || 'Failed to post the message.', 'error');
+      return false;
+    } catch {
       showToast('Error communicating with server.', 'error');
+      return false;
     }
   };
 
@@ -1486,8 +1666,13 @@ export default function TenderDetailPage() {
     selectedTender.final_tech_spec_filename
   )) || isOutcomeState;
 
+  // Brochure: requested at clearance, runs alongside Steps 3-7 and never blocks a step.
+  // Tenders cleared before the Brochure Team existed have no brochure_status.
+  const brochurePending = isBrochurePending(selectedTender);
+  const brochureUploaded = isBrochureUploaded(selectedTender);
+
   // Step 3: Executive Handover & Document Preparation (Bid Docs Prep)
-  // Returned to Executive immediately after clearance - NOT blocked on pricing!
+  // Returned to Executive immediately after clearance - NOT blocked on pricing or the brochure!
   const isStep3Complete = (isStep2Complete && areDocsGenerated) || isOutcomeState;
 
   // Step 4: EMD Payment Step
@@ -1520,10 +1705,11 @@ export default function TenderDetailPage() {
 
   const canFinalSubmit = isStep5Complete && !isStep6Complete;
 
-  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team';
+  const isOperationalRole = currentUser?.role !== 'Specification Team' && currentUser?.role !== 'Clearance Team' && !isBrochureRole;
 
   // Section Visibility:
   const isCard1Visible = true; // Step 2 (Tech Spec) is always visible
+  const isBrochureCardVisible = (isBrochureRole || isOperationalRole) && (brochurePending || brochureUploaded); // Brochure card
   const isCard2Visible = isOperationalRole && (isStep2Complete || isOutcomeState); // Step 3 (Bid Docs Prep)
   const isCard3Visible = isOperationalRole && (isStep3Complete || isOutcomeState); // Step 4 EMD opens after the bid package exists
   const isCard4Visible = isOperationalRole && (isStep4Complete || isOutcomeState); // Step 5 (Dual Track)
@@ -1572,13 +1758,13 @@ export default function TenderDetailPage() {
             >
               <ChevronLeft size={16} /> Back to Dashboard
             </button>
-            {selectedTender && (
+            {headerTender && (
               <div>
                 <h1 style={{ margin: 0, fontSize: '22px', fontWeight: '800' }}>
-                  {selectedTender.product_name_as_per_tender || selectedTender.title}
+                  {headerTender.product_name_as_per_tender || headerTender.title}
                 </h1>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  Tender ID: <strong>{selectedTender.id}</strong> | Reference: <strong>{selectedTender.ref_no || 'N/A'}</strong>
+                  Tender ID: <strong>{headerTender.id}</strong> | Reference: <strong>{headerTender.ref_no || 'N/A'}</strong>
                 </span>
               </div>
             )}
@@ -1593,11 +1779,11 @@ export default function TenderDetailPage() {
               {theme === 'dark' ? <Sun size={15} style={{ color: '#f59e0b' }} /> : <Moon size={15} style={{ color: '#6366f1' }} />}
               <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
             </button>
-            {selectedTender && (
+            {headerTender && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {(() => {
-                  const classification = getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType);
-                  const sourceLabel = getSourceBadgeLabel(selectedTender.source);
+                  const classification = getClassificationDisplay(headerTender.tender_type || headerTender.tenderType);
+                  const sourceLabel = getSourceBadgeLabel(headerTender.source);
                   return (
                     <>
                       <span style={{
@@ -1627,8 +1813,8 @@ export default function TenderDetailPage() {
                     </>
                   );
                 })()}
-                <span className={`status-badge ${selectedTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
-                  {selectedTender.status}
+                <span className={`status-badge ${headerTender.status}`} style={{ fontSize: '13px', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
+                  {headerTender.status}
                 </span>
               </div>
             )}
@@ -1953,7 +2139,7 @@ export default function TenderDetailPage() {
                           type="text"
                           readOnly
                           value={getClassificationLabel(classifyByRefNo(specForm.ref_no))}
-                          title="Set automatically: GeM when the Organization Tender ID contains GEM, otherwise Non-GeM"
+                          title="Set automatically: GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM"
                           style={{ ...specInputStyle, opacity: 0.8, cursor: 'not-allowed' }}
                         />
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Set from Organization Tender ID</span>
@@ -2541,6 +2727,18 @@ export default function TenderDetailPage() {
                     }
                   }
                   
+                  // Brochure uploaded by the Brochure Team: always listed, even if another step rewrote the document list
+                  const repoBrochureFilename = selectedTender.brochure_filename;
+                  if (repoBrochureFilename && !docList.some(d => d && (d.filename === repoBrochureFilename || (typeof d.local_path === 'string' && d.local_path.split('?')[0].endsWith(`/${repoBrochureFilename}`))))) {
+                    docList.push({
+                      name: `Brochure - ${repoBrochureFilename}`,
+                      filename: repoBrochureFilename,
+                      local_path: `/documents/${selectedTender.id}/${repoBrochureFilename}`,
+                      created_date: (selectedTender.brochure_uploaded_at || '').split('T')[0] || 'N/A',
+                      source: 'brochure'
+                    });
+                  }
+
                   if (docList.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
@@ -2834,7 +3032,7 @@ export default function TenderDetailPage() {
                     </div>
 
                     <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
-                      Choose All Comply to send this tender to the Tender Executive for EMD payment, or Comply with deviations and upload three replacement documents. Those new PDF, DOCX, and XLSX files replace the previous specification documents and continue through the rest of the tender.
+                      Choose All Comply to send this tender to the Tender Executive for the bid package (the Brochure Team is asked for the brochure at the same time), or Comply with deviations and upload three replacement documents. Those new PDF, DOCX, and XLSX files replace the previous specification documents and continue through the rest of the tender.
                     </p>
 
                     {/* Tender Quantities Parameter Badges for Clearance Team Review */}
@@ -3212,7 +3410,7 @@ export default function TenderDetailPage() {
                                 <div>
                                   <strong style={{ fontSize: '13px', color: '#10b981', display: 'block' }}>ALL COMPLY</strong>
                                   <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '2px', lineHeight: '1.4' }}>
-                                    All specification requirements fully comply. Forwards to Tender Executive for Bid Document Preparation.
+                                    All specification requirements fully comply. Forwards to Tender Executive for Bid Document Preparation; the Brochure Team is asked for the brochure at the same time.
                                   </span>
                                 </div>
                               </label>
@@ -3415,57 +3613,241 @@ export default function TenderDetailPage() {
 
                   {/* Right Panel: Specification Comment Discussion */}
                   <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    {(() => {
-                      const phaseComments = comments.filter(c => c.phase === 'Specification' || c.phase === 'Spec');
-                      const isReadonlyRole = currentUser?.role === 'Admin';
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
-                          <div>
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                              Specification Discussion ({phaseComments.length})
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px' }}>
-                              {phaseComments.length === 0 ? (
-                                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No discussion messages yet.</span>
-                              ) : (
-                                phaseComments.map((c, i) => (
-                                  <div key={i} style={{ background: 'rgba(255, 255, 255, 0.015)', padding: '6px 10px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid rgba(255, 255, 255, 0.02)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '9px', marginBottom: '3px' }}>
-                                      <span style={{ fontWeight: '700' }}>{c.author || c.username} ({c.author_role})</span>
-                                      <span>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span>
-                                    </div>
-                                    <div style={{ color: 'var(--text-primary)' }}>{c.comment}</div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <input 
-                              type="text" 
-                              placeholder={isReadonlyRole ? "Discussion is read-only for Admin" : "Discuss specifications..."} 
-                              value={specCommentText} 
-                              onChange={(e) => setSpecCommentText(e.target.value)} 
-                              disabled={isReadonlyRole}
-                              style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: isReadonlyRole ? 0.7 : 1 }}
-                            />
-                            <button 
-                              className="btn btn-primary" 
-                              style={{ padding: '6px 12px', fontSize: '11px' }}
-                              onClick={() => postComment('Spec')}
-                              disabled={isReadonlyRole}
-                            >
-                              Post
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <TenderDiscussion
+                      title="Specification Discussion"
+                      inputId="spec-discussion-files"
+                      comments={comments.filter(c => c.phase === 'Specification' || c.phase === 'Spec')}
+                      text={specCommentText}
+                      onTextChange={setSpecCommentText}
+                      onPost={async (files) => {
+                        const ok = await postDiscussion('Spec', specCommentText, files);
+                        if (ok) setSpecCommentText('');
+                        return ok;
+                      }}
+                      placeholder="Discuss specifications..."
+                      readOnly={currentUser?.role === 'Admin'}
+                      readOnlyPlaceholder="Discussion is read-only for Admin"
+                      getDocUrl={getDocDownloadUrl}
+                      onError={(m) => showToast(m, 'error')}
+                    />
                   </div>
 
                 </div>
               </div>
+
+              {/* Brochure Upload Card: the Brochure Team uploads after Clearance approval; no step waits for it */}
+              {isBrochureCardVisible && (() => {
+                type BrochureDoc = { name?: string; filename?: string; local_path?: string; source?: string; uploaded_by?: string; uploaded_at?: string; created_date?: string; size?: number };
+                let brochureDocs: BrochureDoc[] = [];
+                try {
+                  const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                  const docs: unknown = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
+                  if (Array.isArray(docs)) brochureDocs = (docs as BrochureDoc[]).filter(d => d && d.source === 'brochure');
+                } catch {
+                  brochureDocs = [];
+                }
+                const formatWhen = (value?: string) => {
+                  if (!value) return '';
+                  const d = new Date(value);
+                  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+                };
+                return (
+                <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '24px' }}>
+                  <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <BookOpen size={16} style={{ color: '#14b8a6' }} />
+                      Brochure Upload
+                    </h4>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: brochureDocs.length > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                      color: brochureDocs.length > 0 ? '#10b981' : '#f59e0b',
+                      fontWeight: '600'
+                    }}>
+                      {brochureDocs.length > 0 ? `Uploaded (${brochureDocs.length} ${brochureDocs.length === 1 ? 'document' : 'documents'})` : 'Pending Upload'}
+                    </span>
+                  </div>
+
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
+                    After the Clearance Team approves the tender, the Brochure Team uploads the brochure documents (PDF, Word, Excel or ZIP). The Tender Executive does not wait for them, and every document is listed in the Document Repository.
+                  </p>
+
+                  {brochureDocs.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px 16px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.25)', marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '12.5px', fontWeight: '700' }}>
+                        <CheckCircle2 size={16} />
+                        <span>Brochure uploaded. All documents are listed in the Document Repository.</span>
+                      </div>
+                      {brochureDocs.map(doc => {
+                        const fileName = doc.filename || '';
+                        const label = doc.name || fileName;
+                        const path = doc.local_path || `/documents/${selectedTender.id}/${fileName}`;
+                        const isPdf = fileName.toLowerCase().endsWith('.pdf');
+                        const isEditing = editingBrochure === fileName;
+                        return (
+                          <div key={fileName} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                              <a
+                                href={getDocDownloadUrl(path)}
+                                target={isPdf ? '_blank' : undefined}
+                                rel="noreferrer"
+                                download={!isPdf ? (fileName || undefined) : undefined}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', textDecoration: 'none', minWidth: 0 }}
+                              >
+                                {isPdf ? <ExternalLink size={13} style={{ color: '#ef4444', flexShrink: 0 }} /> : <Download size={13} style={{ flexShrink: 0 }} />}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+                              </a>
+                              {isBrochureRole && !isEditing && (
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button type="button" className="btn btn-secondary" disabled={savingBrochure}
+                                    onClick={() => startBrochureEdit(fileName, label)}
+                                    style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Edit3 size={12} /> Edit
+                                  </button>
+                                  <button type="button" className="btn btn-secondary" disabled={savingBrochure}
+                                    onClick={() => deleteBrochureDocument(fileName, label)}
+                                    style={{ fontSize: '11px', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px', color: '#ef4444' }}>
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                              Uploaded by <strong style={{ color: 'var(--text-primary)' }}>{doc.uploaded_by || 'Brochure Team'}</strong>
+                              {(doc.uploaded_at || doc.created_date) ? ` on ${formatWhen(doc.uploaded_at || doc.created_date)}` : ''}
+                            </div>
+                            {isEditing && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed var(--border-color)' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  Document name
+                                  <input type="text" value={editBrochureName} maxLength={150}
+                                    onChange={e => setEditBrochureName(e.target.value)}
+                                    style={{ display: 'block', width: '100%', marginTop: '4px', padding: '6px 10px', fontSize: '12px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} />
+                                </label>
+                                <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                  Replace file (optional)
+                                  <input type="file" accept=".pdf,.docx,.doc,.xlsx,.xls,.zip"
+                                    onChange={e => setEditBrochureFile(e.target.files?.[0] || null)}
+                                    style={{ display: 'block', marginTop: '4px', fontSize: '11.5px', width: '100%' }} />
+                                </label>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button type="button" className="btn btn-primary" disabled={savingBrochure}
+                                    onClick={() => saveBrochureEdit(fileName, label)}
+                                    style={{ fontSize: '11px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '4px', background: '#14b8a6', borderColor: '#14b8a6' }}>
+                                    <Save size={12} /> {savingBrochure ? 'Saving...' : 'Save'}
+                                  </button>
+                                  <button type="button" className="btn btn-secondary" disabled={savingBrochure}
+                                    onClick={() => { setEditingBrochure(null); setEditBrochureFile(null); }}
+                                    style={{ fontSize: '11px', padding: '5px 12px' }}>
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {isBrochureRole ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px', borderRadius: '10px', background: 'rgba(20, 184, 166, 0.05)', border: '1px solid rgba(20, 184, 166, 0.2)' }}>
+                      <label htmlFor="brochure-file-input" style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {brochureDocs.length > 0 ? 'Upload More Brochure Documents' : 'Upload Brochure Documents'}
+                      </label>
+                      <input
+                        type="file"
+                        id="brochure-file-input"
+                        multiple
+                        accept=".pdf,.docx,.doc,.xlsx,.xls,.zip"
+                        disabled={uploadingBrochure}
+                        onChange={e => setBrochureFiles(Array.from(e.target.files || []))}
+                        style={{ fontSize: '12px', width: '100%' }}
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Allowed: PDF, Word (.docx / .doc), Excel (.xlsx / .xls), ZIP. Up to 10 files at a time, 50 MB each.
+                      </span>
+                      {brochureFiles.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {brochureFiles.map((f, i) => (
+                            <div key={`${f.name}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: '#10b981' }}>
+                              <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>✓ {f.name}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${f.name}`}
+                                onClick={() => {
+                                  const next = brochureFiles.filter((_, k) => k !== i);
+                                  setBrochureFiles(next);
+                                  if (next.length === 0) {
+                                    const input = document.getElementById('brochure-file-input') as HTMLInputElement | null;
+                                    if (input) input.value = '';
+                                  }
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        className="btn btn-primary"
+                        disabled={brochureFiles.length === 0 || uploadingBrochure}
+                        onClick={submitBrochureUpload}
+                        style={{
+                          width: '100%',
+                          justifyContent: 'center',
+                          padding: '11px 18px',
+                          fontWeight: '700',
+                          background: '#14b8a6',
+                          borderColor: '#14b8a6',
+                          opacity: brochureFiles.length === 0 || uploadingBrochure ? 0.6 : 1,
+                          cursor: brochureFiles.length === 0 || uploadingBrochure ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {uploadingBrochure
+                          ? '⏳ Uploading...'
+                          : brochureFiles.length > 1 ? `Upload ${brochureFiles.length} Documents` : 'Upload Brochure'}
+                      </button>
+                    </div>
+                  ) : brochureDocs.length === 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', background: 'rgba(20, 184, 166, 0.06)', border: '1px solid rgba(20, 184, 166, 0.25)', color: '#14b8a6' }}>
+                      <BookOpen size={14} />
+                      <span>Waiting for the Brochure Team to upload the brochure. This does not block the bid package or any other step.</span>
+                    </div>
+                  )}
+
+                  </div>
+
+                  {/* Right Panel: Brochure Discussion */}
+                  <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column' }}>
+                    <TenderDiscussion
+                      title="Brochure Discussion"
+                      inputId="brochure-discussion-files"
+                      comments={comments.filter(c => c.phase === 'Brochure')}
+                      text={brochureCommentText}
+                      onTextChange={setBrochureCommentText}
+                      onPost={async (files) => {
+                        const ok = await postDiscussion('Brochure', brochureCommentText, files);
+                        if (ok) setBrochureCommentText('');
+                        return ok;
+                      }}
+                      placeholder="Discuss the brochure..."
+                      readOnly={currentUser?.role === 'Admin'}
+                      readOnlyPlaceholder="Discussion is read-only for Admin"
+                      getDocUrl={getDocDownloadUrl}
+                      onError={(m) => showToast(m, 'error')}
+                    />
+                  </div>
+                  </div>
+                </div>
+                );
+              })()}
 
               {/* 3. Executive Handover & Bid Document Preparation Card */}
               {isCard2Visible && (
@@ -3491,6 +3873,51 @@ export default function TenderDetailPage() {
                   <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: '1.5' }}>
                     After clearance, the Tender Executive prepares the bid package from the standard template. The cleared specification is the one that continues. EMD opens after this package is generated.
                   </p>
+
+                  {brochureUploaded && (() => {
+                    // Every brochure document from the Brochure Team (falls back to the latest file name)
+                    let execBrochures: { name?: string; filename?: string; local_path?: string; source?: string }[] = [];
+                    try {
+                      const rawDocs = selectedTender.downloaded_docs || selectedTender.downloadedDocs;
+                      const docs: unknown = typeof rawDocs === 'string' ? JSON.parse(rawDocs) : rawDocs;
+                      if (Array.isArray(docs)) execBrochures = docs.filter(d => d && d.source === 'brochure');
+                    } catch {
+                      execBrochures = [];
+                    }
+                    if (execBrochures.length === 0 && selectedTender.brochure_filename) {
+                      execBrochures = [{ name: selectedTender.brochure_filename, filename: selectedTender.brochure_filename }];
+                    }
+                    if (execBrochures.length === 0) return null;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(20, 184, 166, 0.06)', border: '1px solid rgba(20, 184, 166, 0.25)', marginBottom: '14px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <BookOpen size={14} style={{ color: '#14b8a6' }} />
+                          Brochure documents from the Brochure Team ({execBrochures.length}):
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {execBrochures.map(doc => (
+                            <a
+                              key={doc.filename}
+                              href={getDocDownloadUrl(doc.local_path || `/documents/${selectedTender.id}/${doc.filename}`)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-secondary"
+                              style={{ fontSize: '11.5px', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                              <Download size={13} /> {doc.name || doc.filename}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {brochurePending && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', color: 'var(--text-secondary)', background: 'rgba(20, 184, 166, 0.05)', border: '1px solid rgba(20, 184, 166, 0.2)', marginBottom: '14px' }}>
+                      <BookOpen size={14} style={{ color: '#14b8a6', flexShrink: 0 }} />
+                      <span>Brochure pending from the Brochure Team. It does not block this step; it appears in the Document Repository once uploaded.</span>
+                    </div>
+                  )}
 
                   {!areDocsGenerated ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -4024,52 +4451,23 @@ export default function TenderDetailPage() {
 
                     {/* Right Panel: Comment Discussion */}
                     <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      {(() => {
-                        const phaseComments = comments.filter(c => c.phase === 'Payment');
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
-                            <div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                EMD Discussion ({phaseComments.length})
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px' }}>
-                                {phaseComments.length === 0 ? (
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No discussion messages yet.</span>
-                                ) : (
-                                  phaseComments.map((c, i) => (
-                                    <div key={i} style={{ background: 'rgba(255, 255, 255, 0.015)', padding: '6px 10px', borderRadius: '6px', fontSize: '11.5px', border: '1px solid rgba(255, 255, 255, 0.02)' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '9px', marginBottom: '3px' }}>
-                                        <span style={{ fontWeight: '700' }}>{c.author || c.username} ({c.author_role})</span>
-                                        <span>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span>
-                                      </div>
-                                      <div style={{ color: 'var(--text-primary)' }}>{c.comment}</div>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                            
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              <input 
-                                type="text" 
-                                placeholder={currentUser?.role === 'Admin' ? "Discussion is read-only" : "Discuss payment..."} 
-                                value={paymentCommentText} 
-                                onChange={(e) => setPaymentCommentText(e.target.value)} 
-                                disabled={currentUser?.role === 'Admin'}
-                                style={{ flexGrow: 1, padding: '6px 10px', fontSize: '11.5px', borderRadius: '6px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', opacity: currentUser?.role === 'Admin' ? 0.7 : 1 }}
-                              />
-                              <button 
-                                className="btn btn-primary" 
-                                style={{ padding: '6px 12px', fontSize: '11px' }}
-                                onClick={() => postComment('Payment')}
-                                disabled={currentUser?.role === 'Admin'}
-                              >
-                                Post
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <TenderDiscussion
+                        title="EMD Discussion"
+                        inputId="emd-discussion-files"
+                        comments={comments.filter(c => c.phase === 'Payment')}
+                        text={paymentCommentText}
+                        onTextChange={setPaymentCommentText}
+                        onPost={async (files) => {
+                          const ok = await postDiscussion('Payment', paymentCommentText, files);
+                          if (ok) setPaymentCommentText('');
+                          return ok;
+                        }}
+                        placeholder="Discuss payment..."
+                        readOnly={currentUser?.role === 'Admin'}
+                        readOnlyPlaceholder="Discussion is read-only"
+                        getDocUrl={getDocDownloadUrl}
+                        onError={(m) => showToast(m, 'error')}
+                      />
                     </div>
 
                   </div>
@@ -4087,7 +4485,7 @@ export default function TenderDetailPage() {
                         5. Dual Track (Commercial Pricing &amp; Document Verification)
                       </h4>
                       <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        Track A (Commercial Pricing) and Track B (Document Verification) execute in parallel simultaneously. Both tracks must be approved before final submission unlocks.
+                        Track A (Commercial Pricing) and Track B (Document Verification) run at the same time. Both tracks must be approved before final submission unlocks.
                       </p>
                     </div>
 
@@ -5331,8 +5729,8 @@ export default function TenderDetailPage() {
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
-            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
+            backgroundColor: currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'Brochure Team' ? '#14b8a6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)',
+            boxShadow: `0 0 6px ${currentUser.role === 'Admin' ? '#f59e0b' : currentUser.role === 'MIS Team' ? '#10b981' : currentUser.role === 'Clearance Team' ? '#8b5cf6' : currentUser.role === 'Brochure Team' ? '#14b8a6' : currentUser.role === 'TPC Pricing Team' || currentUser.role === 'TPC Team' ? '#ec4899' : 'var(--primary)'}`
           }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '9px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.5px' }}>

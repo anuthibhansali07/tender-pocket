@@ -19,6 +19,10 @@ import java.util.*;
 @Service
 public class WorkflowSyncService {
 
+    /** Tender.brochureStatus values. null means no brochure was requested (cleared before the Brochure Team existed). */
+    public static final String BROCHURE_PENDING = "Pending";
+    public static final String BROCHURE_UPLOADED = "Uploaded";
+
     @Autowired
     private TenderRepository tenderRepository;
 
@@ -214,6 +218,9 @@ public class WorkflowSyncService {
         commentRepository.save(new TenderComment(tenderId, "SPEC_CLEARANCE", clearanceUser, "Clearance Team",
                 "Final technical specification sealed with " + ("ALL_COMPLY".equalsIgnoreCase(complianceType) ? "All Comply" : "Deviations")
                 + ". Tender returned to the Tender Executive to generate the bid package. EMD follows the package."
+                + (BROCHURE_PENDING.equalsIgnoreCase(tender.getBrochureStatus())
+                    ? " The Brochure Team was asked for the brochure."
+                    : "")
                 + ("DEVIATIONS".equalsIgnoreCase(complianceType)
                     ? " Replacement PDF, DOCX, and XLSX files are now the specification documents for the rest of this tender."
                     : "")));
@@ -222,16 +229,37 @@ public class WorkflowSyncService {
     }
 
     /**
-     * After clearance, the executive's next job is EMD payment.
+     * After clearance the tender goes back to the executive for the bid package, and the Brochure
+     * Team is asked for the brochure at the same time (see requestBrochure).
      * Returns true when EMD does not apply and the tender skips ahead.
      */
     public boolean handOffClearedSpecToExecutive(Tender tender, TenderWorkflowState state) {
         tender.setCurrentStage("BID_DOCS_PREPARATION");
+        requestBrochure(tender);
         if (state != null) {
             state.setCurrentStep(3);
             state.setStepName("BID_DOCS_PREPARATION");
         }
         return false;
+    }
+
+    /**
+     * Clearance approved: the Brochure Team is asked for the brochure (brochure_status Pending).
+     * The Tender Executive does not wait for it; no step waits for the brochure.
+     * A brochure that is already uploaded is kept.
+     */
+    public static void requestBrochure(Tender tender) {
+        if (!BROCHURE_UPLOADED.equalsIgnoreCase(tender.getBrochureStatus())) {
+            tender.setBrochureStatus(BROCHURE_PENDING);
+        }
+    }
+
+    /**
+     * Saves a brochure document change (upload, replace, rename, delete) in the tender's comment
+     * history. Brochure changes never move the tender to another workflow step.
+     */
+    public void recordBrochureEvent(String tenderId, String username, String text) {
+        commentRepository.save(new TenderComment(tenderId, "BROCHURE_UPLOAD", username, "Brochure Team", text));
     }
 
     /**

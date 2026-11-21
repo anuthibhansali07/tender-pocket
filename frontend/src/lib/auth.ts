@@ -115,7 +115,7 @@ export function getAuthFromRequest(request: Request): AuthInfo | null {
   if (username && role) {
     const validRoles = [
       'Admin', 'MIS Team', 'MIS Executive',
-      'Clearance Team', 'Specification Team',
+      'Clearance Team', 'Specification Team', 'Brochure Team',
       'TPC Pricing Team', 'TPC Team',
       'Tender Executive', 'Executive', 'User'
     ];

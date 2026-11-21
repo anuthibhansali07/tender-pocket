@@ -3,6 +3,7 @@ import com.tenderpocket.config.WorkflowPermissions;
 
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
+import com.tenderpocket.services.WorkflowSyncService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -34,9 +35,20 @@ public class AnalyticsController {
             @RequestHeader(value = "x-user-username", required = false, defaultValue = "admin") String username) {
 
         if (!WorkflowPermissions.allowed(WorkflowPermissions.Action.VIEW_TENDERS)) return WorkflowPermissions.denied();
-        userRole = WorkflowPermissions.role();
-        final String actor = WorkflowPermissions.username();
+        String role = WorkflowPermissions.role();
+        String actor = WorkflowPermissions.username();
         String todayIST = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate().toString();
+        // The result depends only on the caller's role and username and on the data; analytics may be
+        // up to five minutes old, so one computation serves every refresh in that window.
+        String cacheKey = role + "|" + actor + "|" + todayIST + "|" + LocalDate.now();
+        return ResponseEntity.ok(analyticsCache.getComputed(cacheKey, () -> computeAnalytics(role, actor, todayIST)));
+    }
+
+    /** Analytics are shared for five minutes per role and user. */
+    private final com.tenderpocket.cache.TtlCache<String, Map<String, Object>> analyticsCache =
+            new com.tenderpocket.cache.TtlCache<>(5 * 60_000, 500);
+
+    private com.tenderpocket.cache.TtlCache.Computed<Map<String, Object>> computeAnalytics(String userRole, String actor, String todayIST) {
 
         boolean isExec = "MIS Executive".equalsIgnoreCase(userRole) || "Tender Executive".equalsIgnoreCase(userRole) || "Executive".equalsIgnoreCase(userRole);
         List<com.tenderpocket.repositories.TenderRepository.TenderAnalyticsProjection> tenders;
@@ -130,6 +142,7 @@ public class AnalyticsController {
         List<Map<String, Object>> authorityList = new ArrayList<>();
         List<Map<String, Object>> bracketsList = new ArrayList<>();
         List<Map<String, Object>> deadlineList = new ArrayList<>();
+        boolean complete = true; // false: shown as before, but not kept (the next request tries again)
 
         try {
             // Deadlines Query
@@ -208,6 +221,7 @@ public class AnalyticsController {
 
         } catch (Exception e) {
             e.printStackTrace();
+            complete = false;
         }
 
         List<Map<String, Object>> statusRows = new ArrayList<>();
@@ -241,16 +255,23 @@ public class AnalyticsController {
         metrics.put("tpcPendingCount", tpcPendingCount);
         metrics.put("tpcApprovedCount", tpcApprovedCount);
         metrics.put("tpcRejectedCount", tpcRejectedCount);
+        if ("Brochure Team".equals(WorkflowPermissions.canonicalRole(userRole))) {
+            long brochurePendingCount = tenderRepository.countByBrochureStatus(WorkflowSyncService.BROCHURE_PENDING);
+            long brochureUploadedCount = tenderRepository.countByBrochureStatus(WorkflowSyncService.BROCHURE_UPLOADED);
+            metrics.put("brochurePendingCount", brochurePendingCount);
+            metrics.put("brochureUploadedCount", brochureUploadedCount);
+            metrics.put("brochureTotalCount", brochurePendingCount + brochureUploadedCount);
+        }
         metrics.put("status", statusRows);
 
-        return ResponseEntity.ok(Map.of(
+        return new com.tenderpocket.cache.TtlCache.Computed<>(Map.of(
                 "success", true,
                 "metrics", metrics,
                 "deadlines", deadlineList,
                 "sectors", sectorList,
                 "authorities", authorityList,
                 "valueBrackets", bracketsList
-        ));
+        ), complete);
     }
 
     @GetMapping("/executive-performance")

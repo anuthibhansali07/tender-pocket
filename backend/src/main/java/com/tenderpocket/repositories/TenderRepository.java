@@ -2,7 +2,9 @@ package com.tenderpocket.repositories;
 
 import com.tenderpocket.models.Tender;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 
 import org.springframework.data.domain.Page;
@@ -15,6 +17,16 @@ import java.util.Optional;
 
 @Repository
 public interface TenderRepository extends JpaRepository<Tender, String> {
+
+    @Query("SELECT t FROM Tender t WHERE LOWER(t.source) = 'tender247' AND t.sourceId IS NOT NULL")
+    List<Tender> findTender247WithT247Id();
+
+    /** Sets the Organization Tender ID only while it is still empty, so a value saved meanwhile is never overwritten. */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Tender t SET t.refNo = :refNo, t.tenderType = :tenderType WHERE t.id = :id AND (t.refNo IS NULL "
+            + "OR TRIM(t.refNo) = '' OR UPPER(TRIM(t.refNo)) IN ('N/A','NA','NULL','-','--','TBD','NONE'))")
+    int fillMissingRefNo(@Param("id") String id, @Param("refNo") String refNo, @Param("tenderType") String tenderType);
 
     public interface TenderAnalyticsProjection {
         String getId();
@@ -72,6 +84,9 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
 
     List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
 
+    /** Brochure step counts: brochureStatus is "Pending" or "Uploaded" (null before the step). */
+    long countByBrochureStatus(String brochureStatus);
+
     @Query("SELECT DISTINCT t.location FROM Tender t WHERE t.location IS NOT NULL AND t.location != '' ORDER BY t.location")
     List<String> findUniqueLocations();
 
@@ -93,9 +108,17 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     @Query(value = "SELECT t.mis_executive, sh.to_status, sh.changed_at FROM status_history sh JOIN tenders t ON sh.tender_id = t.id", nativeQuery = true)
     List<Object[]> findStatusHistoryStats();
 
-    @Query("SELECT t FROM Tender t WHERE t.status IN :statuses AND t.dueDate LIKE CONCAT(:datePrefix, '%') AND t.misExecutive IS NOT NULL AND TRIM(t.misExecutive) != ''")
-    List<Tender> findActiveTendersByDueDatePrefixAndExecutiveAssigned(@Param("statuses") List<String> statuses, @Param("datePrefix") String datePrefix);
-
-    @Query("SELECT t FROM Tender t WHERE (t.status = 'Issued' OR t.status = 'New') AND (t.misExecutive IS NULL OR TRIM(t.misExecutive) = '')")
-    List<Tender> findUnreviewedCandidates();
+    /**
+     * Tenders the daily mails may need to mention: not closed, not filed, and not past due
+     * before {@code fromDate} (an ISO date). Due dates in any other format are kept so the
+     * Java side can parse them. Filed tenders whose submission still awaits MIS confirmation
+     * are included too. The final decision is made by PendingWorkResolver.
+     */
+    @Query("SELECT t FROM Tender t WHERE t.submissionStatus = 'Pending' OR ("
+            + " (t.status IS NULL OR LOWER(t.status) NOT IN :closedStatuses)"
+            + " AND (t.currentStage IS NULL OR UPPER(t.currentStage) NOT IN :closedStages)"
+            + " AND (t.dueDate IS NULL OR TRIM(t.dueDate) = '' OR t.dueDate >= :fromDate OR t.dueDate NOT LIKE '2___-__-__%'))")
+    List<Tender> findNotificationCandidates(@Param("closedStatuses") List<String> closedStatuses,
+                                            @Param("closedStages") List<String> closedStages,
+                                            @Param("fromDate") String fromDate);
 }
