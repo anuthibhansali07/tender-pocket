@@ -258,25 +258,24 @@ export function hashPassword(password: string): string {
 
 // Seed default users if missing for all standard roles
 try {
-  // Passwords come only from the environment; without one the local account gets a random,
-  // unusable password (logins are checked by the backend).
-  const randomPwd = () => crypto.randomBytes(24).toString('hex');
-  const adminPwd = process.env.ADMIN_DEFAULT_PASSWORD || randomPwd();
-  const execPwd = process.env.EXECUTIVE_DEFAULT_PASSWORD || randomPwd();
-  const clearancePwd = process.env.CLEARANCE_DEFAULT_PASSWORD || randomPwd();
-  const misPwd = process.env.MISTEAM_DEFAULT_PASSWORD || randomPwd();
-  const tpcPwd = process.env.TPC_DEFAULT_PASSWORD || randomPwd();
+  // Default account passwords come only from the environment (see .env.example).
+  // An account whose variable is unset is left as it is in the database.
+  const defaultUsers: [string, string | undefined, string, string][] = [
+    ['admin', process.env.ADMIN_DEFAULT_PASSWORD, 'Admin', 'admin@company.com'],
+    ['executive', process.env.EXECUTIVE_DEFAULT_PASSWORD, 'Tender Executive', 'executive@company.com'],
+    ['clearance', process.env.CLEARANCE_DEFAULT_PASSWORD, 'Clearance Team', 'clearance@company.com'],
+    ['misteam', process.env.MISTEAM_DEFAULT_PASSWORD, 'MIS Team', 'mis@company.com'],
+    ['tpc', process.env.TPC_DEFAULT_PASSWORD, 'TPC Pricing Team', 'tpc@company.com'],
+  ];
 
   const insertOrUpdateUser = db.prepare(`
     INSERT INTO users (username, password_hash, role, email) 
     VALUES (?, ?, ?, ?)
     ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role
   `);
-  insertOrUpdateUser.run('admin', hashPassword(adminPwd), 'Admin', 'admin@company.com');
-  insertOrUpdateUser.run('executive', hashPassword(execPwd), 'Tender Executive', 'executive@company.com');
-  insertOrUpdateUser.run('clearance', hashPassword(clearancePwd), 'Clearance Team', 'clearance@company.com');
-  insertOrUpdateUser.run('misteam', hashPassword(misPwd), 'MIS Team', 'mis@company.com');
-  insertOrUpdateUser.run('tpc', hashPassword(tpcPwd), 'TPC Pricing Team', 'tpc@company.com');
+  for (const [username, password, role, email] of defaultUsers) {
+    if (password) insertOrUpdateUser.run(username, hashPassword(password), role, email);
+  }
 
   // Purge deprecated accounts
   db.prepare("DELETE FROM users WHERE username IN ('specteam', 'specteam_1', 'admin_1', 'team_1', 'MIS_TEAM_1', 'clearance_1')").run();
@@ -329,6 +328,7 @@ export interface Tender {
   assigned_at?: string | null;
   source?: string | null;
   source_id?: string | null;
+  eprocurement_portal_id?: string | null;
   vertical_name?: string | null;
   place?: string | null;
   state?: string | null;

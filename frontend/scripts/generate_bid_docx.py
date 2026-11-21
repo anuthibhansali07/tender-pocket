@@ -383,6 +383,17 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
     landscape = is_landscape or is_doc_landscape(doc)
     font_name = BID_FONT
 
+    # Theme B (Healthtech): closing line, matching the PDF signatory block
+    if not is_theme_a:
+        p_yf = doc.add_paragraph()
+        p_yf.paragraph_format.space_before = Pt(2) if landscape else Pt(3)
+        p_yf.paragraph_format.space_after = Pt(0)
+        p_yf.paragraph_format.keep_with_next = True
+        r_yf = p_yf.add_run("Yours faithfully,")
+        r_yf.bold = True
+        r_yf.font.name = font_name
+        r_yf.font.size = Pt(10)
+
     # Header line: "On behalf of..."
     p_hdr = doc.add_paragraph()
     p_hdr.paragraph_format.space_before = Pt(2) if landscape else Pt(3)
@@ -618,14 +629,15 @@ def add_signatory_block(doc, profile, is_theme_a, root_dir, place, date, is_land
 def build_doc_1(doc, p, d, a):
     """Doc 1: Bidder Particulars / Information"""
     is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    add_heading(doc, "BIDDER PARTICULARS" if a else "BIDDER INFORMATION", a, doc_date=d.get('date'))
+    # Client-required title, same for both companies
+    add_heading(doc, "BIDDER PARTICULARS", a, doc_date=d.get('date'))
     
     if a:
         rows_data = [
             ("Address of the Bidder", f": {p['full_address']}"),
             ("Name of the Manufacturer", f": {p['manufacturer_name']}"),
             ("Address of the Manufacturer", f": {p['manufacturer_address']}"),
-            ("Name and address of the person\nTo whom all references shall be made\nregarding this tender inquiry.", f": Mr. {p['signatory_name']}\n: Address: {p.get('signatory_address') or p['full_address']}"),
+            ("Name and address of the person\nTo whom all references shall be made\nregarding this tender inquiry.", f": Mr. {p['signatory_name']}\nAddress: {p.get('signatory_address') or p['full_address']}"),
             ("Mobile no", f": {p['phones'][1] if len(p['phones']) > 1 else p['phones'][0]}"),
             ("Telephone", ": 0253-299 5112"),
             ("Telex", ": NA"),
@@ -872,9 +884,8 @@ def build_doc_5(doc, p, d, a):
 def build_doc_6(doc, p, d, a):
     """Doc 6: Acceptance of Tender Terms and Conditions"""
     is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    title = "UNDERTAKING" if a else "ACCEPTANCE OF TENDER TERMS AND CONDITIONS"
-    subtitle = "(Acceptance of Tender Terms and Conditions as per Bid)" if a else None
-    add_heading(doc, title, a, subtitle=subtitle, doc_date=d.get('date'))
+    # Client-required title/subtitle, same for both companies
+    add_heading(doc, "UNDERTAKING", a, subtitle="(Acceptance of Tender Terms and Conditions as per Bid)", doc_date=d.get('date'))
     add_address_block(doc, d.get('authorityName'), d.get('authorityDept'), d.get('authorityAddress'), a)
     add_subject_ref(doc, "Acceptance of Tender Terms and Conditions as per Bid.", p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
     add_body_paragraph(doc, p['salutation'], a, bold=True)
@@ -890,8 +901,7 @@ def build_doc_6(doc, p, d, a):
     add_body_paragraph(doc, "In case any provision of this bid / tender are found violated, your department / organization shall be at liberty to reject this and we shall not have any claim/ right against the department in satisfaction of this condition.", a, bullet=b5)
     if a:
         add_body_paragraph(doc, "Thanking you and assuring you of our best services at all the times.", a)
-    else:
-        add_body_paragraph(doc, "Yours faithfully,", a, space_after=2)
+    # Theme B: "Yours faithfully," now comes from add_signatory_block
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
 def build_doc_7(doc, p, d, a):
@@ -908,10 +918,12 @@ def build_doc_7(doc, p, d, a):
 def build_doc_8(doc, p, d, a):
     """Doc 8: Undertaking for Warranty"""
     is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    subtitle = "(Acceptance of Warranty Period and Terms and Conditions)" if a else None
+    # Subtitle shown for both companies so the Word output matches the PDF (renderDocWarrantyThemeA)
+    subtitle = "(Acceptance of Warranty Period and Terms and Conditions)"
     add_heading(doc, "UNDERTAKING FOR WARRANTY", a, subtitle=subtitle, doc_date=d.get('date'))
     add_address_block(doc, d.get('authorityName'), d.get('authorityDept'), d.get('authorityAddress'), a)
-    add_subject_ref(doc, "Undertaking for Warranty", p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
+    # No subject line: matches the PDF version (renderDocWarrantyThemeA)
+    add_subject_ref(doc, None, p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
     add_body_paragraph(doc, p['salutation'], a, bold=True)
     scope = "Blood Bank, Cold Chain, Medical, Hospital Equipment’s and Furniture"
     add_body_paragraph(doc, f"We, {p['short_name']} ourselves as an Established and Reputable, Indigenous Manufacturers of {scope}, do hereby guarantee and warranty all work performed as part of the bid for a period of as per bid terms from the Date of supply. We commit to repairing any defective spare parts associated with our work at no additional charges to the product.", a)
@@ -1159,9 +1171,8 @@ def build_doc_15(doc, p, d, a):
 def build_doc_16(doc, p, d, a):
     """Doc 16: Escalation Matrix (For Service Support)"""
     is_landscape = (d.get('orientation', 'portrait').lower() == 'landscape')
-    title = "ESCALATION MATRIX" if a else "ESCALATION MATRIX FOR SERVICE SUPPORT"
-    subtitle = "(For Service Support)" if a else None
-    add_heading(doc, title, a, subtitle=subtitle, doc_date=d.get('date'))
+    # Client-required title/subtitle, same for both companies
+    add_heading(doc, "ESCALATION MATRIX", a, subtitle="(For Service Support)", doc_date=d.get('date'))
     add_address_block(doc, d.get('authorityName'), d.get('authorityDept'), d.get('authorityAddress'), a)
     add_subject_ref(doc, "Escalation Matrix for Service Support", p['ref_label'], d.get('bidNumber'), d.get('bidDate'), a)
     add_body_paragraph(doc, p['salutation'], a, bold=True)
@@ -1169,7 +1180,7 @@ def build_doc_16(doc, p, d, a):
 
     matrix_data = [
         ("1.", "Mr. Sanjay Sadade", "General Manager", "Administration", "9225126772", "support@markenworld.com"),
-        ("2.", "Mr. Shridhar Shingare", "Tender Manager", "Institution Business Division", "9011104332", "info@markenworld.com"),
+        ("2.", "Mr. Shreedhar Shingare" if a else "Mr. Shridhar Shingare", "Tender Manager", "Institution Business Division", "+91 90111 04332" if a else "9011104332", "info@markworld.com" if a else "info@markenworld.com"),
         ("3.", "Mr. Eknath Mandal", "Production Manager", "Delays of machine design and Technical Error.", "9225102371", "support@markenworld.com"),
         ("4.", "Mr. Sachin Shisode", "Service Head", "Servicing Delay", "8390900347", "support@markenworld.com")
     ]
@@ -1233,42 +1244,43 @@ def build_doc_16(doc, p, d, a):
     add_signatory_block(doc, p, a, d['root_dir'], d.get('place', p['place']), d.get('date'), is_landscape=is_landscape)
 
 def get_stations_data(is_theme_a):
+    # Kept identical to stationsThemeA / stationsThemeB in src/lib/documentTemplates.ts (PDF version)
     if is_theme_a:
         return [
-            {"city": "(H.O.) Nashik, Maharashtra.", "addr": "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra", "contact": "Mr. Sachin Shisode,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Delhi.", "addr": "B-50, South Extension, Part -1, New Delhi – 110049.", "contact": "Adarsh Kumar Arora", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Ambala, Haryana.", "addr": "5337, Punjabi Mohalla, Ambala Cantt, Ambala, Haryana, 133001", "contact": "Mr. Deepak Pawaiya,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Jaipur, Rajasthan.", "addr": "Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan", "contact": "Mr. Devendra Hire,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Lucknow, Uttar Pradesh.", "addr": "14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.", "contact": "Mr. Anil Aher,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Hyderabad, Telangana.", "addr": "P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Telangana", "contact": "Mr. Chandu,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Ahmedabad, Gujarat.", "addr": "M/s. Sevamed Solutions Private Limited, Ahmedabad, Gujarat – 382421", "contact": "Mr. Paresh Sohni,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Jammu, Jammu & Kashmir", "addr": "M/s. Facio Marketing Solutions, 1st Floor, GQ Building, Near Rahat Hospital, Bathindi Morh, Sunjwan Road, Jammu - 181152", "contact": "Mr. Zeeshan,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Kolkata, West Bengal.", "addr": "P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal", "contact": "Mr. Nilesh Mehta,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Amritsar, Punjab", "addr": "Kaze Pharmaceuticals Private Limited. 1st Floor Sco 14, Cabin No. 1, Mansa Devi Complex, Sector 5, Swastik Vihar, Panchkula, Haryana", "contact": "Mr. Santosh chaudhari,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Bhubaneshwar, Odisha", "addr": "GITANJALI ASSOCIATES, Cuttack Road, 128, Laxmi Sagar, Bhubaneshwar 715006 Odisha", "contact": "Mr. Mohd Ismile Alimulah", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Kamrup, Assam.", "addr": "J.M. Distributor, Ground Floor, 10, Surana Building, Jail Road, Fancy Bazar, Kamrup Metropolitan, Assam, 781001", "contact": "Mr. Pratik Chaudhari,\nMr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Ernakulam, Kerala", "addr": "ASA Diagnostics Private Limited, Ist Floor, 54/2824-D, Muttathil Lane, Kochi, Ernakulam, Kerala, 682020", "contact": "Mr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Bhopal, Madhya Pradesh", "addr": "Imagers Sales PVT. Ltd. C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Bhopal (M.P.) - 462023", "contact": "Mr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"},
-            {"city": "Bangalore Karnataka", "addr": "M/s KK Allianze, No.178/2, Govindarao Street, Seshadripuram, Bangalore-560020", "contact": "Mr. Shridhar Shingare", "email": "info@markenworld.com\nsupport@markenworld.com", "mob": "9175559646\n9011104332"}
+            {"city": "(H.O.) Nashik, Maharashtra.", "addr": "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra", "contact": "Mr. Sachin Shisode,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Delhi.", "addr": "B-50, South Extension, Part -1, New Delhi – 110049.", "contact": "Adarsh Kumar Arora", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Ambala, Haryana.", "addr": "5337, Punjabi Mohalla, Ambala Cantt, Ambala, Haryana, 133001", "contact": "Mr. Deepak Pawaiya,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Jaipur, Rajasthan.", "addr": "Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan", "contact": "Mr. Devendra Hire,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Lucknow, Uttar Pradesh.", "addr": "14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.", "contact": "Mr. Anil Aher,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Hyderabad, Telangana.", "addr": "P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Telangana", "contact": "Mr. Chandu,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Ahmedabad, Gujarat.", "addr": "M/s. Sevamed Solutions Private Limited, Ahmedabad, Gujarat – 382421", "contact": "Mr. Paresh Sohni,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Jammu, Jammu & Kashmir", "addr": "M/s. Facio Marketing Solutions, 1st Floor, GQ Building, Near Rahat Hospital, Bathindi Morh, Sunjwan Road, Jammu - 181152", "contact": "Mr. Zeeshan,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Kolkata, West Bengal.", "addr": "P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal", "contact": "Mr. Nilesh Mehta,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Amritsar, Punjab", "addr": "Kaze Pharmaceuticals Private Limited. 1st Floor Sco 14, Cabin No. 1, Mansa Devi Complex, Sector 5, Swastik Vihar, Panchkula, Haryana", "contact": "Mr. Santosh chaudhari,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Bhubaneshwar, Odisha", "addr": "GITANJALI ASSOCIATES, Cuttack Road, 128, Laxmi Sagar, Bhubaneshwar 715006 Odisha", "contact": "Mr. Mohd Ismile Alimulah", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Kamrup, Assam.", "addr": "J.M. Distributor, Ground Floor, 10, Surana Building, Jail Road, Fancy Bazar, Kamrup Metropolitan, Assam, 781001", "contact": "Mr. Pratik Chaudhari,\nMr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Ernakulam, Kerala", "addr": "ASA Diagnostics Private Limited, Ist Floor, 54/2824-D, Muttathil Lane, Kochi, Ernakulam, Kerala, 682020", "contact": "Mr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Bhopal, Madhya Pradesh", "addr": "Imagers Sales PVT. Ltd. C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Infront of OM Hospital, Bhopal (M.P.) - 462023", "contact": "Mr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"},
+            {"city": "Bangalore Karnataka", "addr": "M/s KK Allianze, No.178/2, Govindarao Street, Seshadripuram, Bangalore-560020", "contact": "Mr. Shreedhar Shingare", "email": "info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com", "mob": "9175559646\n+91 90111 04332"}
         ]
     else:
         return [
-            {"city": "( H.O.) Nashik, Maharashtra.", "addr": "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra", "contact": "Mr. Sachin Shisode,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "8390900347\n9175559646"},
-            {"city": "Mumbai, Maharashtra.", "addr": "410 , 4th floor, Maker Chamber V, Nariman point, Mumbai 400021 Maharashtra", "contact": "Mr. Shridhar Shingare,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9011104332\n9175559646"},
-            {"city": "South Delhi.", "addr": "Office No.515, 5th Floor, Tower-DLF, Jasola-110025 South Delhi", "contact": "Mr. Vinit Sharma,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "8527027321\n9175559646"},
-            {"city": "Ambala, Haryana.", "addr": "B. Block 3031 CCC Zirakpur, Chandigarh-140603 Haryana", "contact": "Mr. Deepak Pawaiya,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9175550259\n9175559646"},
-            {"city": "Jaipur, Rajasthan.", "addr": "Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan", "contact": "Mr. Devendra Hire,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "8208463830\n9175559646"},
-            {"city": "Lucknow, Uttar Pradesh.", "addr": "14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.", "contact": "Mr. Anil Aher,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9146489605\n9175559646"},
-            {"city": "Hyderabad, Telangana.", "addr": "P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Telangana", "contact": "Mr. Chandu,", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9000959574\n9175559646"},
-            {"city": "Trivandrum, Kerala", "addr": "Manasa Enterprises Dot Space Business Center, Kowdiar, Devasomboard Road, Trivandrum-695003 Kerala", "contact": "Meera Budhan", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "8589999138\n9175559646"},
-            {"city": "Ahmedabad, Gujarat.", "addr": "Pulse Biomed LLP, A314, Advance Business Park, Shahibag, Ahmedabad-380004 Gujarat", "contact": "Paresh Sohni", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9898081574\n9175559646"},
-            {"city": "Jammu, Jammu & Kashmir", "addr": "Vista Electronic Care, 05-JDA, Behind Laxmi Naryan Mandir, New Rehari, Jammu, Jammu & Kashmir 180001", "contact": "Vikram Gupta", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "7006171371\n9175559646"},
+            {"city": "( H.O.) Nashik, Maharashtra.", "addr": "Shed No.1, Plot No.93/2, Street No.17, Satpur MIDC, Nashik-422007 Maharashtra", "contact": "Mr. Sachin Shisode,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "8390900347\n9175559646"},
+            {"city": "Mumbai, Maharashtra.", "addr": "410 , 4th floor, Maker Chamber V, Nariman point, Mumbai 400021 Maharashtra", "contact": "Mr. Shridhar Shingare,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9011104332\n9175559646"},
+            {"city": "South Delhi.", "addr": "Office No.515, 5th Floor, Tower-DLF, Jasola-110025 South Delhi", "contact": "Mr. Vinit Sharma,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "8527027321\n9175559646"},
+            {"city": "Ambala, Haryana.", "addr": "B. Block 3031 CCC Zirakpur, Chandigarh-140603 Haryana", "contact": "Mr. Deepak Pawaiya,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9175550259\n9175559646"},
+            {"city": "Jaipur, Rajasthan.", "addr": "Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan", "contact": "Mr. Devendra Hire,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "8208463830\n9175559646"},
+            {"city": "Lucknow, Uttar Pradesh.", "addr": "14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.", "contact": "Mr. Anil Aher,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9146489605\n9175559646"},
+            {"city": "Hyderabad, Telangana.", "addr": "P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Telangana", "contact": "Mr. Chandu,", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9000959574\n9175559646"},
+            {"city": "Trivandrum, Kerala", "addr": "Manasa Enterprises Dot Space Business Center, Opp. Tennis Club, Kowdiar, Devasomboard Road, Trivandrum-695003 Kerala", "contact": "Meera Budhan", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "8589999138\n9175559646"},
+            {"city": "Ahmedabad, Gujarat.", "addr": "Pulse Biomed LLP, A314, Advance Business Park, Shahibag, Ahmedabad-380004 Gujarat", "contact": "Paresh Sohni", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9898081574\n9175559646"},
+            {"city": "Jammu, Jammu & Kashmir", "addr": "Vista Electronic Care, 05-JDA, Behind Laxmi Naryan Mandir, New Rehari, Jammu, Jammu & Kashmir 180001", "contact": "Vikram Gupta", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "7006171371\n9175559646"},
             {"city": "Amritsar, Punjab", "addr": "Jai Shiva Enterprises, Sale and Service 185, New Colony, Near Amar Jyoti School, Amritsar", "contact": "Sanjay Kumar", "email": "sanjay.kumar3333@gmail.com", "mob": "9216275044"},
-            {"city": "Kolkata, West Bengal.", "addr": "P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal", "contact": "Nilesh Pratapray Mehta", "email": "support@markenworld.com,\ninfo@markenworld.com", "mob": "9175559646"},
-            {"city": "Karnataka.", "addr": "SB4-30/6, Bhoomi Complex, Main Road, Siddakatte, Bantwal Taluka, Dakshina Kannada, Karnataka, 574237", "contact": "Sunil Kotin Ref Karnataka", "email": "info@markenworld.com,\ntender@markenworld.com", "mob": "9594947178"},
-            {"city": "Madhya Pradesh", "addr": "C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Bhopal (M.P.) - 462023", "contact": "Shruti Yadav", "email": "info@markenworld.com,\ntender@markenworld.com", "mob": "9011104332"},
-            {"city": "Assam", "addr": "JM Distributor Surana Building, Jail Road, Fancy Bazar, Guwahati - 7810001", "contact": "Mr. Pratik Chaudhari", "email": "info@markenworld.com,\ntender@markenworld.com", "mob": "9864030081"},
-            {"city": "Bihar", "addr": "FAIRDEAL MEDITECH Flat No 306, Wazeer Apartment, New Patliputra Colony, Patna, Bihar, 800013", "contact": "Mr. Shubham", "email": "info@markenworld.com,\ntender@markenworld.com", "mob": "9431018743"}
+            {"city": "Kolkata, West Bengal.", "addr": "P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal", "contact": "Nilesh Pratapray Mehta", "email": "support@markenworld.com,\ninfo@markenworld.com,\ntender@markenworld.com.", "mob": "9175559646"},
+            {"city": "Karnataka.", "addr": "SB4-30/6, Bhoomi Complex, Main Road, Siddakatte, Bantwal Taluka, Sangabettu, Dakshina Kannada, Karnataka, 574237", "contact": "Sunil Kotin Ref Karnataka", "email": "info@markenworld.com,\ntender@markenworld.com.", "mob": "9594947178"},
+            {"city": "Madhya Pradesh", "addr": "C-13/7 Simi Apartment Phase 3 Padmanabh Nagar, Near Prabhat Petrol Pump, Infront of OM Hospital, Bhopal (M.P.) - 462023", "contact": "Shruti Yadav", "email": "info@markenworld.com,\ntender@markenworld.com.", "mob": "9011104332"},
+            {"city": "Assam", "addr": "JM Distributor Surana Building, Jail Road, Fancy Bazar, Guwahati - 7810001", "contact": "Mr. Pratik Chaudhari", "email": "info@markenworld.com,\ntender@markenworld.com.", "mob": "9864030081"},
+            {"city": "Bihar", "addr": "FAIRDEAL MEDITECH Flat No 306, Wazeer Apartment, New Patliputra Colony, Patliputra Patna, Bihar, 800013 India", "contact": "Mr. Shubham", "email": "info@markenworld.com,\ntender@markenworld.com.", "mob": "9431018743"}
         ]
 
 def build_doc_17_18(doc, p, d, a):
@@ -1846,7 +1858,7 @@ def main():
             'signatory_name': data.get('signatoryName', 'Shreedhar Shingare'),
             'signatory_designation': data.get('signatoryDesignation', 'Authorized Signatory – Tender manager'),
             'signatory_address': 'Shed No. 1, Plot No. 93/2, Street No. 17, MIDC Satpur, Nashik – 422007, Maharashtra, India',
-            'phones': ['09175559646', '090111 04332'],
+            'phones': ['09175559646', '+91 90111 04332'],
             'witness_details': 'Mr. Korra Praveen Naik',
             'place': 'Nashik, Maharashtra.',
             'udyam_no': 'MH23B0040110/UDYAM-MH-19-0016285',
@@ -1873,7 +1885,7 @@ def main():
             'manufacturer_address': 'Shed No.1, Plot No.93/1, Street No.17, Satpur MIDC, Nashik-422007, Maharashtra.',
             'signatory_name': data.get('signatoryName', 'Korra Praveen Naik'),
             'signatory_designation': data.get('signatoryDesignation', 'Authorized Signatory'),
-            'signatory_address': '1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, Hyderabad - 500062',
+            'signatory_address': '1-1-51/46, Kapra, ECIL post, S.T.Colony, VTC: Ranga Reddy, District: Hyderabad, State: Andhra Pradesh, PIN Code: 500062',
             'phones': ['+91 91 3030 5959'],
             'witness_details': 'Mr. Shreedhar Shingare (Cell No.: 09011104332)',
             'place': 'Nashik',
@@ -1942,47 +1954,18 @@ def main():
     font.size = Pt(body_pt)
 
     # 1. Build documents sequentially with page breaks
-    if is_theme_a:
-        builders = [
-            build_doc_1,
-            build_doc_2,
-            build_doc_3,
-            build_doc_4,
-            build_doc_5,
-            build_doc_6,
-            build_doc_7,
-            build_doc_8,
-            build_doc_9,
-            build_doc_10,
-            build_doc_11,
-            build_doc_12,
-            build_doc_13,
-            build_doc_14,
-            build_doc_15,
-            build_doc_16,
-            build_doc_17_18, # Contains Doc 17 and Doc 18
-            build_doc_19,
-            build_doc_20
-        ]
-    else:
-        # Theme B (Marken Healthtech): Exact 14 documents (16 pages) matching MHL reference
-        builders = [
-            build_doc_4,        # 1. Bid Form
-            build_doc_5,        # 2. Bid Security Declaration Form
-            build_doc_1,        # 3. Bidder Information
-            build_doc_14,       # 4. Declaration Certificate for Local Content (Page 1)
-            build_doc_15,       # 5. Declaration Certificate for Local Content (Page 2)
-            build_doc_10,       # 6. Declaration for Demonstration
-            build_doc_13,       # 7. Declaration for Certificate of Country of Origin
-            build_doc_11,       # 8. Declaration on Non-Blacklisting / Debarring
-            build_doc_8a,       # 9. Undertaking for Warranty (General Scope)
-            build_doc_6,        # 10. Acceptance of Tender Terms and Conditions
-            build_doc_9,        # 11. Price Declaration
-            build_doc_12,       # 12. Undertaking for Financial Standing
-            build_doc_8b,       # 13. Undertaking for Warranty (Product-Specific Scope)
-            build_doc_17_18,    # 14 & 15. Details of After Sales Service Station (Page 1 & 2)
-            build_doc_16        # 16. Escalation Matrix for Service Support
-        ]
+    # Client-required package (both Mark Enterprises and Marken Healthtech): 8 documents, 9 pages.
+    # Other build_doc_* functions are kept but intentionally not included in the package.
+    builders = [
+        build_doc_1,        # 1. Bidder Particulars / Information
+        build_doc_2,        # 2. OEM Declaration
+        build_doc_3,        # 3. Manufacturer Declaration
+        build_doc_6,        # 4. Acceptance of Tender Terms and Conditions
+        build_doc_7,        # 5. Declaration for Availability of Spare Parts
+        build_doc_8,        # 6. Undertaking for Warranty (Acceptance of Warranty Period)
+        build_doc_16,       # 7. Escalation Matrix for Service Support
+        build_doc_17_18     # 8 & 9. Details of After Sales Service Station (Page 1 & 2)
+    ]
 
     body = doc.element.body
     for idx, builder in enumerate(builders):
