@@ -976,7 +976,7 @@ export class DocumentLayoutRenderer {
             <p style="margin-top: 0; margin-bottom: 3px; font-weight: bold; font-size: 10pt;">For and on behalf of ${this.profile.legalName}</p>
             <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
               <div style="font-size: 9.5pt; line-height: 1.25; min-width: 210px;">
-                <div style="font-weight: bold;">${this.profile.signatoryName}</div>
+                <div style="font-weight: bold;">Name: ${this.profile.signatoryName}</div>
                 <div>${this.profile.signatoryDesignation}</div>
               </div>
               ${this.stampSigBase64 ? `<img src="${this.stampSigBase64}" width="190" height="92" class="stamp-sig-img" style="width: 190px; height: 92px; object-fit: contain; margin-left: 6px;" alt="Signature &amp; Stamp" />` : `
@@ -1021,7 +1021,7 @@ export class DocumentLayoutRenderer {
               </div>
             `}
           </div>
-          <p style="margin: 0; line-height: 1.20; font-size: 12pt;">${this.profile.signatoryName}</p>
+          <p style="margin: 0; line-height: 1.20; font-size: 12pt;">Name: ${this.profile.signatoryName}</p>
           <p style="margin: 0; line-height: 1.20; font-size: 12pt;">${this.profile.signatoryDesignation}</p>
         </div>
       `;
@@ -1048,6 +1048,9 @@ export class DocumentLayoutRenderer {
           ` : ''}
           ${shouldPlaceDateBelow && formattedDate ? `
             <div class="theme-b-date-row" style="text-align: right; margin: 2px 0 8px 0; font-size: 12pt;">Date: ${formattedDate}</div>
+          ` : ''}
+          ${this.profile.theme === 'B' && title && docDate ? `
+            <div class="theme-b-date-row" style="text-align: right; margin: 2px 0 4px 0; font-size: 10pt;">Date: ${formatDate(docDate)}</div>
           ` : ''}
           <div class="doc-body">
             ${content}
