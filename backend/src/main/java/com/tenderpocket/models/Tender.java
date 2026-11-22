@@ -153,6 +153,10 @@ public class Tender {
     @Column(name = "eprocurement_portal_id")
     private String eprocurementPortalId;
 
+    /** Portal-internal reference needed to fetch documents (e.g. AP/Telangana procurement+indent ids, Manipur work item id). */
+    @Column(name = "portal_doc_ref", columnDefinition = "TEXT")
+    private String portalDocRef;
+
     @Column(name = "is_corrigendum")
     private Boolean isCorrigendum = false;
 
@@ -504,6 +508,8 @@ public class Tender {
 
     public String getEprocurementPortalId() { return eprocurementPortalId; }
     public void setEprocurementPortalId(String eprocurementPortalId) { this.eprocurementPortalId = eprocurementPortalId; }
+    public String getPortalDocRef() { return portalDocRef; }
+    public void setPortalDocRef(String portalDocRef) { this.portalDocRef = portalDocRef; }
 
     public Boolean getIsCorrigendum() { return isCorrigendum != null && isCorrigendum; }
     public void setIsCorrigendum(Boolean isCorrigendum) { this.isCorrigendum = isCorrigendum; }

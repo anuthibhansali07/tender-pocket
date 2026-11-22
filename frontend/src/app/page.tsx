@@ -72,11 +72,13 @@ import { Tender } from '@/lib/db';
 import ApprovalsCenter from '@/app/components/ApprovalsCenter';
 import StatusDashboard from '@/app/components/StatusDashboard';
 import CompanyDocs from '@/app/components/CompanyDocs';
+import FetchStatus from '@/app/components/FetchStatus';
+import { RadioTower } from 'lucide-react';
 import { FolderOpen } from 'lucide-react';
 import WorkflowPipelineStepper from '@/app/components/WorkflowPipelineStepper';
 import { areBidDocsGenerated, hasWorkingPathSaved } from '@/lib/tenderStatus';
 import { canPerform, canonicalRole, canReviewAssignment, isAuthorizedForEmdReceipt } from '@/lib/workflowAuthorization';
-import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel } from '@/lib/tenderClassification';
+import { classifyByRefNo, getClassificationDisplay, getClassificationLabel, getSourceBadgeLabel, getSourcePortalLabel, STATE_PORTAL_OPTIONS, isStatePortalSource, getStatePortal, STATE_PORTAL_COLOR } from '@/lib/tenderClassification';
 
 
 /** Background refresh of the open tab (the server answers "no change" when nothing changed). */
@@ -96,7 +98,7 @@ function assignedTendersOf(answer: { tenders: Tender[] }): Tender[] {
   return assigned;
 }
 
-type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
+type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs' | 'fetch-status';
 
 // ---- Add Tender form (MIS Team and Admin) ----
 // Keys match the backend's POST /api/tenders fields. Only id, title and original_url are required.
@@ -233,6 +235,9 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
   const canRecordOperationalStages = currentUser?.role === 'Tender Executive' || currentUser?.role === 'Executive';
   const isMisRole = currentUser?.role === 'MIS Team' || currentUser?.role === 'MIS';
+  // Tender Fetch Status page (MIS Team and Admin): portals whose latest check did not complete
+  const canSeeFetchStatus = isMisRole || currentUser?.role === 'Admin';
+  const [fetchAttentionCount, setFetchAttentionCount] = useState(0);
   // MIS Team and Admin can add tenders by hand
   const canAddTender = isMisRole || currentUser?.role === 'Admin';
   const isExecutive = currentUser && (currentUser.role === 'Tender Executive' || currentUser.role === 'Executive' || currentUser.role === 'MIS Executive' || canonicalRole(currentUser.role) === 'Tender Executive');
@@ -327,6 +332,25 @@ export default function Dashboard() {
     return response;
   }, [currentUser]);
 
+  // Sidebar badge for Fetch Status: how many portals' latest check did not complete.
+  useEffect(() => {
+    if (!canSeeFetchStatus) return;
+    let cancelled = false;
+    const refresh = () => {
+      fetchWithAuth('/api/tenders/fetch-status')
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          if (!cancelled && data?.success) {
+            setFetchAttentionCount((data.summary?.failed ?? 0) + (data.summary?.partial ?? 0) + (data.summary?.notSetUp ?? 0));
+          }
+        })
+        .catch(() => { /* badge is best effort */ });
+    };
+    refresh();
+    const id = setInterval(refresh, 10 * 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [canSeeFetchStatus, fetchWithAuth]);
+
   const getDocDownloadUrl = useCallback((pathOrUrl: string) => {
     if (!pathOrUrl) return '';
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -361,6 +385,7 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [sectorFilter, setSectorFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [misExecutiveFilter, setMisExecutiveFilter] = useState('');
   const [sortBy, setSortBy] = useState('scraped_at');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -480,9 +505,9 @@ export default function Dashboard() {
 
   // Latest tab, filters and page, read by list loads that run later (debounced or in the background).
   // Updated after each render, before the effects below that load lists (effects run in order).
-  const listStateRef = useRef({ activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit });
+  const listStateRef = useRef({ activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit });
   useEffect(() => {
-    listStateRef.current = { activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit };
+    listStateRef.current = { activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit };
   });
   // Only the newest answer for each list is shown (an older, slower answer is ignored).
   const listRequestSeq = useRef({ desk: 0, repo: 0, full: 0 });
@@ -731,7 +756,7 @@ export default function Dashboard() {
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#/', '');
-      const validTabs: TabType[] = ['dashboard', 'status', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs'];
+      const validTabs: TabType[] = ['dashboard', 'status', 'tenders', 'analytics', 'settings', 'audit', 'team', 'work-summary', 'approvals', 'company-docs', 'fetch-status'];
       if (validTabs.includes(hash as TabType)) {
         setActiveTab(hash as TabType);
       }
@@ -777,7 +802,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (restoredRepoPageRef.current != null) return; // keep the restored page
     setRepoPage(1);
-  }, [statusFilter, searchQuery, locationFilter, sectorFilter, corrigendumFilter, misExecutiveFilter]);
+  }, [statusFilter, searchQuery, locationFilter, sectorFilter, sourceFilter, corrigendumFilter, misExecutiveFilter]);
   useEffect(() => {
     // Runs after every render, after the reset above: the restore marker only lives for one render.
     restoredRepoPageRef.current = null;
@@ -794,6 +819,7 @@ export default function Dashboard() {
         setStatusFilter(f.statusFilter);
         setLocationFilter(f.locationFilter);
         setSectorFilter(f.sectorFilter);
+        setSourceFilter(f.sourceFilter ?? '');
         setMisExecutiveFilter(f.misExecutiveFilter);
         setSortBy(f.sortBy);
         setSortOrder(f.sortOrder);
@@ -935,6 +961,7 @@ export default function Dashboard() {
       status: overrides?.status !== undefined ? overrides.status : state.statusFilter,
       location: overrides?.location !== undefined ? overrides.location : state.locationFilter,
       sector: overrides?.sector !== undefined ? overrides.sector : state.sectorFilter,
+      source: state.sourceFilter,
       sortBy: state.sortBy,
       order: state.sortOrder,
       mis_executive: overrides?.mis_executive !== undefined ? overrides.mis_executive : state.misExecutiveFilter
@@ -1252,7 +1279,7 @@ export default function Dashboard() {
       fetchTenders();
     }, searchChanged ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter, repoPage, repoLimit, corrigendumFilter]);
+  }, [searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, sortBy, sortOrder, activeTab, currentUser, misExecutiveFilter, repoPage, repoLimit, corrigendumFilter]);
 
   // Background refresh of the open tab: every 30 s, never two at once, paused while the browser tab
   // is hidden (and refreshed as soon as it is shown again). Unchanged data is not re-rendered.
@@ -1338,7 +1365,7 @@ export default function Dashboard() {
       username: currentUser.username,
       savedAt: Date.now(),
       activeTab,
-      filters: { searchQuery, statusFilter, locationFilter, sectorFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit },
+      filters: { searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit },
       data: {
         deskTenders: listReady.desk ? deskTenders : null,
         repoTenders: listReady.repo ? repoTenders : null,
@@ -1348,7 +1375,7 @@ export default function Dashboard() {
         filterOptions: filters
       }
     });
-  }, [mounted, currentUser, loading, activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit, deskTenders, repoTenders, repoTotal, tenders, analytics, filters, listReady]);
+  }, [mounted, currentUser, loading, activeTab, searchQuery, statusFilter, locationFilter, sectorFilter, sourceFilter, misExecutiveFilter, sortBy, sortOrder, corrigendumFilter, repoPage, repoLimit, deskTenders, repoTenders, repoTotal, tenders, analytics, filters, listReady]);
 
 
   const toggleTheme = () => {
@@ -1381,8 +1408,10 @@ export default function Dashboard() {
       // 3. Fetch latest database details
       await fetchData();
 
-      if (emailData.success && gemData.success) {
-        showToast(`Sync complete! GeM bids: +${gemData.importedCount || 0}, Emails: +${emailData.importedCount || 0}`, 'success');
+      if (gemData.alreadyRunning || gemData.recentlyChecked) {
+        showToast(gemData.message || 'GeM is already being updated. New tenders will appear when it finishes.', 'success');
+      } else if (emailData.success && gemData.success) {
+        showToast('Update started. New tenders appear here as they are found; GeM takes 15-30 minutes.', 'success');
       } else {
         showToast('Sync completed with warnings', 'success');
       }
@@ -2844,6 +2873,33 @@ export default function Dashboard() {
             </button>
           )}
 
+          {canSeeFetchStatus && (
+            <button
+              className={`menu-item ${activeTab === 'fetch-status' ? 'active' : ''}`}
+              onClick={() => setActiveTab('fetch-status')}
+              title="Which portals were checked for new tenders"
+            >
+              <RadioTower size={18} />
+              <span>Fetch Status</span>
+              {fetchAttentionCount > 0 && (
+                <span style={{
+                  marginLeft: 'auto',
+                  background: '#d97706',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  borderRadius: '10px',
+                  padding: '1px 7px',
+                  minWidth: '18px',
+                  textAlign: 'center',
+                  lineHeight: '16px'
+                }} title={`${fetchAttentionCount} portal(s) need attention`}>
+                  {fetchAttentionCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             className={`menu-item ${activeTab === 'company-docs' ? 'active' : ''}`}
             onClick={() => setActiveTab('company-docs')}
@@ -2954,6 +3010,7 @@ export default function Dashboard() {
               {activeTab === 'work-summary' && 'Work Summary'}
               {activeTab === 'approvals' && 'Approvals Center'}
               {activeTab === 'company-docs' && 'Company Docs'}
+              {activeTab === 'fetch-status' && 'Tender Fetch Status'}
             </h1>
             <p className="page-subtitle">
               {activeTab === 'dashboard' && 'Real-time overview of active bids, alerts, and deadline schedules.'}
@@ -2966,6 +3023,7 @@ export default function Dashboard() {
               {activeTab === 'work-summary' && 'Executive workload statistics and active assignment mappings.'}
               {activeTab === 'approvals' && 'Review, approve, and action pending workflow requests from your team.'}
               {activeTab === 'company-docs' && 'Company profile documents and certificates. Uploaded by the MIS Team, view-only for everyone else.'}
+              {activeTab === 'fetch-status' && 'See which portals were checked for new tenders, and where you might be missing some.'}
             </p>
           </div>
 
@@ -3629,6 +3687,21 @@ export default function Dashboard() {
                     <option value="">All Sectors</option>
                     {filters.sectors.map((sec) => (
                       <option key={sec} value={sec}>{sec}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="filter-select"
+                    value={sourceFilter}
+                    onChange={(e) => setSourceFilter(e.target.value)}
+                    aria-label="Filter by source portal"
+                  >
+                    <option value="">All Sources</option>
+                    <option value="GeM">GeM Portal</option>
+                    <option value="Tender247">Tender247 Portal</option>
+                    <option value="STATE">All State &amp; Central Portals</option>
+                    {STATE_PORTAL_OPTIONS.map((p) => (
+                      <option key={p.code} value={p.source}>{p.label}</option>
                     ))}
                   </select>
 
@@ -5099,6 +5172,9 @@ export default function Dashboard() {
             {activeTab === 'company-docs' && (
               <CompanyDocs fetchWithAuth={fetchWithAuth} showToast={showToast} />
             )}
+            {activeTab === 'fetch-status' && canSeeFetchStatus && (
+              <FetchStatus fetchWithAuth={fetchWithAuth} onAttentionCount={setFetchAttentionCount} showToast={showToast} />
+            )}
 
             {/* TAB: WORK SUMMARY */}
 
@@ -6264,8 +6340,10 @@ export default function Dashboard() {
                     { label: 'Earnest Money Deposit (EMD)', value: selectedTender.emd_raw || 'N/A', icon: DollarSign },
                     { label: 'Tender Document Fee', value: selectedTender.document_fee_raw || 'N/A', icon: Tag },
                     { label: 'Tender Type (GeM / Non GeM)', value: getClassificationLabel(selectedTender.tender_type || selectedTender.tenderType), icon: FileText, color: getClassificationDisplay(selectedTender.tender_type || selectedTender.tenderType).color },
-                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : 'var(--text-muted)') },
-                    { label: 'T247 ID', value: selectedTender.source_id || 'N/A', icon: Tag },
+                    { label: 'Source Portal', value: getSourcePortalLabel(selectedTender.source), icon: Globe, color: selectedTender.source === 'GeM' ? '#10b981' : ((selectedTender.source === 'Tender247' || selectedTender.source === 'Tender 247') ? '#3b82f6' : (isStatePortalSource(selectedTender.source) ? STATE_PORTAL_COLOR : 'var(--text-muted)')) },
+                    isStatePortalSource(selectedTender.source)
+                      ? { label: 'Portal Tender ID', value: selectedTender.eprocurement_portal_id || 'N/A', icon: Tag }
+                      : { label: 'T247 ID', value: selectedTender.source_id || 'N/A', icon: Tag },
                     { label: 'Location / Region', value: selectedTender.location || 'N/A', icon: MapPin },
                     { label: 'Place', value: selectedTender.place || 'N/A', icon: MapPin },
                     { label: 'State', value: selectedTender.state || 'N/A', icon: MapPin },

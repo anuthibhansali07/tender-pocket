@@ -1,0 +1,1483 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+
+
+
+ 
+
+
+
+<html lang="en">
+
+
+
+
+
+
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+
+
+
+
+
+<HEAD>
+
+
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" /> 
+	<meta http-equiv="content-language" content="en" />
+	<META name="GENERATOR" content="IBM WebSphere Studio" />
+	<link rel="shortcut icon" type="image/icon" href="/CHEPS/favicon.ico?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+	<!-- Start For Site CSS & JS Related -->
+	
+	<script language="javascript" src="../javascript/common.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="../javascript/commonHindi.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="../javascript/hindi.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="../javascript/dynamicTemplate.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="../javascript/dynamicTemplateFormula.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="../javascript/dynamicFormTemplate.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<!-- End For Site CSS & JS Related -->	
+	<link href="../theme/suycCalendar.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" rel="stylesheet" type="text/css" />	
+	<!-- Start For DateTimepicker Related -->
+	<script language="javascript" src="../javascript/datetimepicker.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	 
+	<!-- End For DateTimepicker Related -->	
+	<!-- Start For Menu Related -->
+	<link rel="stylesheet" type="text/css" href="../theme/menuRelated/ddSmoothMenu/ddsmoothmenu.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+	<script type="text/javascript" src="../theme/menuRelated/ddSmoothMenu/jquery.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script type="text/javascript" src="../theme/menuRelated/ddSmoothMenu/ddsmoothmenu.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<!-- End For Menu Related -->
+	<!-- Start For Tab View Related -->
+	<link rel="stylesheet" type="text/css" href="../theme/tabViewRelated/tabcontent.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+	<script type="text/javascript" src="../theme/tabViewRelated/tabcontent.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<!-- End For Tab View Related -->		
+	<link rel="stylesheet" href="../theme/jqueryui/jquery-ui-1.8.5.custom.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" type="text/css">
+	<script type="text/javascript" src="/CHEPS/javascript/pki.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&v=1"></script>
+	 
+	<script type="text/javascript" src="/CHEPS/javascript/jquery-1.2.3.pack.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script type="text/javascript" src="/CHEPS/javascript/jquery-migrate-1.3.0.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	
+	<script type="text/javascript" src="/CHEPS/javascript/jquery.form.pack.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script type="text/javascript" src="/CHEPS/javascript/epsv2.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	
+	<script type="text/javascript" src="/CHEPS/javascript/controllersv2.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<script language="javascript" src="/CHEPS/javascript/jquery-ui-1.7.3.custom.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>		
+	<script language="javascript" src="/CHEPS/javascript/autoComplete.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<!-- Added for Jquery Alert,Confirm & Prompt Box  -->
+	<script language="javascript" src="/CHEPS/javascript/jquery.alerts.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>	
+	<link rel="stylesheet" type="text/css" href="../theme/jquery.alerts.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />	
+	
+	
+	<link href="../theme/bs_leftnavi.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" rel="stylesheet" type="text/css"> 
+	<script src="../javascript/bs_leftnavi.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+<!-- 	<script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script> -->
+<!-- 	<link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrapreset.min.css"> -->
+		<link href="../theme/bootstrap.min.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" rel="stylesheet" type="text/css">
+<!-- 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap3-dialog/1.34.7/css/bootstrap-dialog.min.css"> -->
+<!-- 	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap3-dialog/1.34.7/js/bootstrap-dialog.min.js"></script> -->
+<!-- 	<script src="../javascript/typeahead.bundle.js"></script> -->
+	
+	<!-- End of Jquery Alert,Confirm & Prompt Box -->
+	<script type="text/javascript" src="../javascript/aes.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script language="javascript">
+	
+	//var timeDiff = new Date().getTime()-1794498583224;
+	var lastTime = 1794498583224;
+	var dayarray=new Array("Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday")
+	var montharray=new Array("January","February","March","April","May","June","July","August","September","October","November","December")
+
+	function getthedate(){
+		var mydate=new Date();
+		var offset=mydate.getTimezoneOffset();
+		var  time =lastTime+(offset*60000)+19800000;
+		mydate.setTime(time+1000);
+		lastTime = lastTime+1000;
+		var year=mydate.getYear();
+		if (year < 1000) year+=1900;
+		var day=mydate.getDay();
+		var month=mydate.getMonth();
+		var daym=mydate.getDate();
+		if (daym<10) daym="0"+daym;
+		var hours=mydate.getHours();
+		var minutes=mydate.getMinutes();
+		var seconds=mydate.getSeconds();
+		var dn="AM";
+		if (hours>=12) dn="PM";
+		if (hours>12){
+		hours=hours-12;
+	}
+		if (hours==0) hours=12;
+		if (minutes<=9) minutes="0"+minutes;
+		if (seconds<=9) seconds="0"+seconds;
+		
+		$("#clock").html(dayarray[day]+", "+montharray[month]+" "+daym+", "+year+"&nbsp;&nbsp;"+hours+":"+minutes+":"+seconds+" "+dn);
+		//document.getElementById("clock").innerHTML=
+}
+	$(document).ready(function() {
+		if (document.all||document.getElementById) {
+			getthedate();
+			setInterval("getthedate()",1000);
+		}
+		
+ 	// Prevent the backspace key from navigating back.
+	$(document).unbind('keydown').bind('keydown', function (event) {
+	    var doPrevent = false;
+	    if (event.keyCode === 8) {
+	        var d = event.srcElement || event.target;
+	        if ((d.tagName.toUpperCase() === 'INPUT' && 
+	             (
+	                 d.type.toUpperCase() === 'TEXT' ||
+	                 d.type.toUpperCase() === 'PASSWORD' || 
+	                 d.type.toUpperCase() === 'FILE' || 
+	                 d.type.toUpperCase() === 'EMAIL' || 
+	                 d.type.toUpperCase() === 'SEARCH' || 
+	                 d.type.toUpperCase() === 'DATE' )
+	             ) || 
+	             d.tagName.toUpperCase() === 'TEXTAREA') {
+	            doPrevent = d.readOnly || d.disabled;
+	        }
+	        else {
+	            doPrevent = true;
+	        }
+	    }
+
+	    if (doPrevent) {
+	        event.preventDefault();
+	    }
+	});		
+		
+		
+	});
+			
+ 
+	$(document).ready(function()
+		{
+			str1 = $('div.titleClass1').text();			
+			if ($.trim(str1) ==="")
+			{   
+				$('div.titleClass1').remove();
+			}			
+		});
+	
+	
+	
+</script>
+
+	<TITLE>Welcome to e-Procurement System</TITLE>
+
+
+
+
+
+	
+	 <!-- Start For News Scroller -->
+	 <link rel="stylesheet" type="text/css" href="../theme/newsScrollerRelated/li-scroller.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+	 <script type="text/javascript" src="../theme/newsScrollerRelated/jquery.li-scroller.1.0.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	 
+	 <script type="text/javascript">
+		$(function(){
+			if($("ul#ticker01").length > 0){
+			$("ul#ticker01").liScroll();
+		/* 	$("ul#ticker02").liScroll({travelocity: 0.15}); */
+		}		
+			 
+		});
+	</script>	
+		
+ 	<!-- End For News Scroller -->	 	 
+ 	
+ 	 <!-- Start For Tree View -->
+ 	
+ 	<script language="javascript" src="../javascript/treeView/jquery.treeview.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<link rel="stylesheet" href="../javascript/treeView/jquery.treeview.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" /> 
+	<link rel="stylesheet" href="../theme/master.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" type="text/css" media="screen" />
+	
+	<!-- End For Tree View -->	 
+	
+	 <!-- Start For DataTable -->
+ 	
+ 	<script language="javascript" src="../javascript/jquery.dataTables.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+ 	
+ 	
+ 	<script language="javascript" src="../javascript/dataTables.tableTools.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+ 	
+	<link rel="stylesheet" href="../theme/jquery.dataTables.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" /> 
+	<link rel="stylesheet" href="../theme/dataTables.tableTools.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" /> 
+	<script language="javascript" src="../javascript/swfobject.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	
+	<!-- End For DataTable -->	 
+ 	
+	<!-- Start For Rich Text Editor -->
+ 	
+ 	<link type="text/css" rel="stylesheet" href="../javascript/richTextEditor/css/jquery.rte.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+ 	<!-- <script type="text/javascript" src="../javascript/richTextEditor/js/jquery.js"></script> -->
+	<script type="text/javascript" src="../javascript/richTextEditor/js/jquery.rte.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script type="text/javascript" src="../javascript/richTextEditor/js/jquery.rte.tb.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+
+	
+	<!-- End For Rich Text Editor -->
+ 
+	
+	<!-- Start For Jquery Validation -->
+	
+	<link rel="stylesheet" type="text/css" href="../javascript/jqueryValidation/css/screen.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+	<script src="../javascript/jqueryValidation/dist/jquery.validate.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	<script src="../javascript/jqueryValidation/dist/additional-methods.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+	
+	<!-- End For Jquery Validation -->
+ 	
+	
+
+</HEAD>
+
+<BODY id="_body" data-spy="scroll" data-target=".navbar" data-offset="60">
+<FORM action="/CHEPS/business/item.handle" name="browserForm" id="dummyForm" method="post">
+	<input type="hidden" name="methodName" id="methodName" value="invalidateSession"/>
+<INPUT type=hidden name=OWASP_CSRFTOKEN value=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW><INPUT type=hidden name=pkiEnabledOrg id=pkiEnabledOrg value=false></FORM>
+<form name="newLeftBarForm">
+	
+<INPUT type=hidden name=OWASP_CSRFTOKEN value=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW><INPUT type=hidden name=pkiEnabledOrg id=pkiEnabledOrg value=false></form>
+<table align="center" width="100%" border="0" cellspacing="0" cellpadding="0" class='tableBackground'>
+ <tr >
+  <td class=''>
+    <table align="center" width="100%" border="0" cellspacing="0" cellpadding="0">	 
+	 <!-- Start Header-Menu Section--> 
+	 <tr class='columnClass'>
+		<td>
+			
+
+
+<html lang="en">
+<head>
+
+<title>CHIPS</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=9">
+<link rel="stylesheet"	href="../theme/bootstrap.min.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">
+<link href="../theme/Montserrat.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"	rel="stylesheet" type="text/css">
+<link href="../theme/Lato.css?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"	rel="stylesheet" type="text/css">
+
+
+<script type="text/javascript"	src="../javascript/home_page/jquery.min.1.11.1.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+<script type="text/javascript">
+
+function blinktext() {
+
+  //var f = document.getElementById('announcement');
+
+$("#blink").fadeToggle();
+
+   setTimeout(blinktext, 700);
+
+}
+
+ 
+
+$(document).ready(function(){
+
+    blinktext();
+
+});
+
+</script>
+
+
+<script type="text/javascript">
+var jq = $.noConflict();
+</script>
+
+<script type="text/javascript"	src="../javascript/home_page/bootstrap.min.3.3.5.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+<style>
+/* Remove the navbar's default margin-bottom and rounded borders */
+.navbar {
+	margin-bottom: 0;
+	border-radius: 0;
+}
+
+/* Set height of the grid so .sidenav can be 100% (adjust as needed) */
+.row.content {
+	height: 450px
+}
+
+/* Set gray background color and 100% height */
+.sidenav {
+	padding-top: 20px;
+	background-color: #f1f1f1;
+	height: 100%;
+}
+
+/* Set black background color, white text and some padding */
+footer {
+	background-color: #555;
+	color: white;
+	padding: 15px;
+}
+
+/* On small screens, set height to 'auto' for sidenav and grid */
+@media screen and (max-width: 767px) {
+	.sidenav {
+		height: auto;
+		padding: 15px;
+	}
+	.row.content {
+		height: auto;
+	}
+}
+/* Set black background color, white text and some padding */
+footer {
+	background-color: #6699cc;
+	color: white;
+	padding: 15px;
+}
+
+.navbar {
+	margin-bottom: 0;
+	background-color: #6699cc;
+	z-index: 9999;
+	border: 0;
+	font-size: 12px !important;
+	line-height: 1.42857143 !important;
+	letter-spacing: 2px;
+	border-radius: 0;
+	font-family: verdana, sans-serif;
+}
+
+.dropdown-menu {
+	background-color: #6699cc;
+}
+
+.navbar li a, .navbar .navbar-brand {
+	color: #fff !important;
+	float: left;
+	/* Fix bug in IE7 and below */
+	zoom: 1;
+	display: inline;
+}
+
+.navbar-nav li a:hover, .navbar-nav li.active a {
+	color: #fff !important;
+	background-color: #000 !important;
+	float: left;
+}
+
+.navbar-default .navbar-toggle {
+	border-color: transparent;
+	color: #000 !important;
+}
+
+.glyphicon.glyphicon-signal {
+	font-size: 100px;
+}
+</style>
+
+
+
+</head>
+<body id="myPage" data-spy="scroll" data-target=".navbar"	data-offset="60">
+	<!-- HEADER  START-->
+	<nav class="navbar navbar-inverse">
+	<div class="container-fluid">
+	<div style="text-align:center;">
+	<span style="font-size: x-large ; color:white ; font-weight: bold ; "> Chhattisgarh Government Integrated e-Procurement Portal  </span>
+	</div>
+		<div class="navbar-header">
+			<button type="button" class="navbar-toggle" data-toggle="collapse"
+				data-target="#myNavbar">
+				<span class="icon-bar"></span> <span class="icon-bar"></span> <span
+					class="icon-bar"></span>
+			</button>
+			<a style="font-size: 12px;" class="navbar-brand" href="/CHEPS/security/getSignInAction.do?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Home</a>
+		</div>
+		<div class="collapse navbar-collapse" id="myNavbar">
+			<ul class="nav navbar-nav">
+				<li><a style="font-size: 12px;" href="/CHEPS/html/About_Us.htm?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>About Us</a></li>
+				<li class="dropdown"><a class="dropdown-toggle"
+					data-toggle="dropdown" href="javascript:void(0);">Downloads<span class="caret"></span></a>
+					<ul class="dropdown-menu">
+						
+							<li><a style="font-size: 12px;"  href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=downloadJRE&fileName=Java_V8_77.zip&<csrf:token-name/>=<csrf:token-value/>">Java 8 Update 77</a></li>
+						<li><a style="font-size: 12px;"  href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=downloadJRE&fileName=Preferred_System_Configuration_V_2.pdf&<csrf:token-name/>=<csrf:token-value/>">Preferred System Setup Guidelines</a></li>
+							
+							<li><a style="font-size: 12px;" target="_blank" href="https://get.adobe.com/reader/?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" rel="noopener noreferrer">PDF Reader</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="http://www.autodesk.com/products/dwg/viewers?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" rel="noopener noreferrer">Drawing viewer</a></li>
+							<li><a style="font-size: 12px;"  href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=downloadJRE&fileName=Store_Purhase_Rules_28.01.2021.pdf&<csrf:token-name/>=<csrf:token-value/>">Bhandar karya niyam</a></li>
+							</ul></li>
+				<li class="dropdown"><a style="font-size: 12px;" class="dropdown-toggle"
+					data-toggle="dropdown" href="javascript:void(0);">Manuals<span class="caret"></span></a>
+					<ul class="dropdown-menu">
+						<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/CHiPS_Vendor_Registration_Manual_English.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Vendor Registration(English)</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/CHiPS_Vendor_Registration_Manual_Hindi.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Vendor Registration(Hindi)</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/CHiPS_Bid_Submission_Manual_English.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Bid Submission(English)</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/CHiPS_Bid_Submission_Manual_Hindi.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Bid Submission(Hindi)</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/EMD_CHALLAN_PAYMENT_V1.0.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">EMD Payment</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/Guidelines_To_Bidders_EPS_v1.6.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Guidelines to Bidders</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/Corrigendum_Instructions_to_department_users_and_bidders.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Corrigendum Manual & Instruction to Buyers/Bidders</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/Manual_Offline_Tenders_v.1.0.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Uploading Manual / Offline Tenders</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/EDGE_Browser_Setup_V1.0.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">EDGE Browser Setup Guide</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/AuctionManual_FA.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Forward eAuction Manual</a></li>
+					</ul></li>
+				<li class="dropdown"><a class="dropdown-toggle"
+					data-toggle="dropdown" href="javascript:void(0);">Forms<span class="caret"></span></a>
+					<ul class="dropdown-menu">
+						<li><a style="font-size: 12px;" target="_blank" href="http://www.chips.gov.in/page/11?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">DSC for Govt. Users</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="http://www.chips.gov.in/page/11?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">DSC for Vendors</a></li>
+			    	</ul></li>
+				<li class="dropdown"><a style="font-size: 12px;" class="dropdown-toggle"
+					data-toggle="dropdown" href="javascript:void(0);">Web Link<span class="caret"></span></a>
+					<ul class="dropdown-menu">
+						<li><a style="font-size: 12px;" target="_blank" href="http://www.chips.gov.in?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">CHiPS</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="http://www.cgstate.gov.in?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Govt. of CG</a></li>
+							<li><a style="font-size: 12px;" target="_blank" href="http://www.chips.gov.in/page/11?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">DSC Online</a></li>
+					</ul></li>
+				<li><a style="font-size: 12px;" href="/CHEPS/html/CHIPS_FAQ.html?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>FAQs</a></li>
+				<li><a style="font-size: 12px;" href="/CHEPS/html/Contact_Us_CHIPS.htm?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>Contact Us</a></li>
+				<li class="dropdown"><a style="font-size: 12px;" class="dropdown-toggle"
+					data-toggle="dropdown" href="javascript:void(0);">Language<span class="caret"></span></a>
+					<ul class="dropdown-menu">
+							<li><a style="font-size: 12px;"  href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=reloadCurrentPage&printFlag=N&lang=hi_IN&<csrf:token-name/>=<csrf:token-value/>&rk=9b0a969a-4367-4338-9044-385119e95c00"> <strong style="font-size: 13; color: white;">Hindi</strong></a></li>
+			                <li><a style="font-size: 12px;"  href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=reloadCurrentPage&printFlag=N&lang=en_IN&<csrf:token-name/>=<csrf:token-value/>&rk=d3de50b5-27d9-4229-8bf7-7f4e43d998de"><strong style="font-size: 13; color: white;">English</strong></a></li>
+					</ul>
+				</li>
+			    <li><a style="font-size: 12px;" href="/CHEPS/html/Chips_privacy.htm?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>Privacy Policy</a></li>
+			    <li><a style="font-size: 12px;" href="/CHEPS/html/chips/CHIPS_certificate.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>STQC Certification</a></li>
+			    <li><a style="font-size: 12px;" href="/CHEPS/html/chips/Online_EMD_Refund_Notice.pdf?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" target='_blank'>EMD Refund Guidelines</a></li>
+				<li><a  id="blink" style="font-size: 12px;" target="_blank" href="/CHEPS/html/chips/AutoSetup.zip?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW">Auto Setup</a></li>
+			</ul>
+			
+			<ul class="nav navbar-nav navbar-right">
+				<li><a style="font-size: 12px;" href="javascript:void(0);" id="clock"></a></li>
+			</ul>
+		</div>
+	</div>
+	
+	</nav>
+
+	<!-- HEADER  END-->
+
+	<!-- BODY  START-->
+
+	<!-- third row starts here -->
+
+
+</body>
+</html>
+	   </td>
+	 </tr>
+	 <!-- End Header-Menu Section--> 
+	 
+	 <!--START Optional Headline Section  -->
+
+	 
+	 <tr>
+	 	<td nowrap="nowrap" class='columnClass'>
+	 
+	 		<marquee behavior="scroll" scrolldelay="90" truespeed="truespeed" onmouseover="this.stop()" onmouseout="this.start()">
+		 		<span style="color:red;font-size: 13px;font-weight: bold;">
+		 			&emsp;||&emsp;
+					Kindly click ‘ADVANCE SEARCH’ to view TENDER, LATEST NEWS, LATEST NOTICE, HELPDESK CONTACT details.
+			 		&emsp;||&emsp;	
+			 		All Bidders are required to update their Bank Account details in Registration profile asap in order to ensure proper refund of EMD amount, if not updated onus of inappropriate refund shall be on bidders itself.
+			 		&emsp;||&emsp;	
+					Users may refer EDGE Browser Setup Guide under Manuals section for appropriate browser settings.
+					&emsp;||&emsp;	
+				</span>
+	 		</marquee>
+	 	</td>
+	</tr>
+	 <!--END Optional Headline Section  -->
+	 
+	<!--<tr>
+	 	<td nowrap="nowrap" class='columnClass'>
+	 
+	 		<marquee behavior="scroll" scrolldelay="90" truespeed="truespeed" onmouseover="this.stop()" onmouseout="this.start()">
+		 		<span style="color:red;font-size: 22px;font-weight: bold;">
+		 			&emsp;||&emsp;
+					As per CCA Guidelines all Digital Certificates to be issued on new FIPS 3.0 Tokens and to be complied by all Certificate issuing authorities & eToken OEMs which is under way owing to which few bidder (not all) who have obtained fresh DSC on new eToken may face interruption on operations of eProcurement till it get rectified by OEMs like ePass2003(Hyper), mToken etc., this is not an issue of eProcurement portal.
+					&emsp;||&emsp;
+				</span>
+	 		</marquee>
+	 	</td>
+	</tr>
+	<tr>-->
+	 	<td nowrap="nowrap" class='columnClass'>
+	 
+	 		<marquee behavior="scroll" scrolldelay="60" truespeed="truespeed" onmouseover="this.stop()" onmouseout="this.start()">
+		 		<span style="color:green;font-size: 22px;font-weight: bold;">
+		 			&emsp;||&emsp;	
+					New eToken (FIPS 3.0) Digital Signature Certificate compatibility had been incorporated from 15th Oct’26 in compliance with guidelines issued by CCA, all users should be able to access eProc portal using both old and new eTokens, may contact Help Desk if face any difficulty.
+					&emsp;||&emsp;
+				</span>
+	 		</marquee>
+	 	</td>
+	</table></td>
+	<!-- <tr>
+	 	<td nowrap="nowrap" class='columnClass'>
+	 
+	 		<marquee behavior="scroll" scrolldelay="60" truespeed="truespeed" onmouseover="this.stop()" onmouseout="this.start()">
+		 		<span style="color:red;font-size: 22px;font-weight: bold;">
+		 			&emsp;||&emsp;	
+					As per STQC, Govt. of India recommendation self-workflow approval to be discontinued / disabled, Hence it is recommended to all Department users to create separate work flow Approver login ids to comply with recommendation. functionality would be enabled/effective from 15th June’21 midnight
+					&emsp;||&emsp;	
+				</span>
+	 		</marquee>
+	 	</td>
+	</tr>	 -->
+	<!--END Optional Headline Section  -->
+	 <!-- Start For News Scroller -->
+	  
+	 <!-- End For News Scroller -->	 
+		 <tr class='columnClass'>
+			<td align='center'>
+				<DIV id="_progressBar" style="display: none;">
+					Processing....<IMG src="/CHEPS/image/pbar.gif?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+				</DIV>				
+			</td>
+		 </tr>
+	   <tr class="epsBodySection" valign='top'>
+			<td valign='top'>
+				<!-- Start Body Content -->
+				<div style="min-height: 60px;">
+				
+					<table align="center" width="100%" border="0" cellspacing="0"	cellpadding="0" style="background-color: #FFFFFF;">
+
+						<tr valign='top'>
+						
+							<td width='' valign='top'>
+								<!-- Start Body Left Section -->
+								<div align="center"		style="display: none; Arial; font-style: italic; font-weight: bold; font-size: 9pt; color: red"></div>
+								<DIV id="_content">
+									<DIV id="_msgBox" class="msgBox"></DIV>
+									<div id='epsBodyContainer'>
+										
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+  
+<script language="javascript" src="/CHEPS/javascript/jquery-ui.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+
+  <style>
+.tooltip1 {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip1 .tooltiptext {
+    visibility: hidden;
+    width: 370px;
+    background-color: black;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px 0;
+    position: absolute;
+    z-index: 1;
+    bottom: 150%;
+    left: 10%;
+    margin-left: -120px;
+    word-wrap: break-word;
+    background-size: auto;
+    
+}
+
+.tooltip1 .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: black transparent transparent transparent;
+}
+
+.tooltip1:hover .tooltiptext {
+    visibility: visible;
+}
+</style>
+
+<div id='bodyContent' style="background-color: #FFFFFF;margin: 0 auto;">
+ 
+	<form name="rfqSearchViewForm" method="post" action="/CHEPS/business/getOpenRfqListAction.do" style="margin:18px;">
+		<br>
+		<input type="hidden" name="subCatId" value="-">
+		<input type="hidden" name="documentType" value="-"> 
+		<input type="hidden" name="rfqStatus" value="AAS">
+		<input type="hidden" name="rfqPart" value="">
+		<input type="hidden" id="limitedTenderOrgList" name="limitedTenderOrgList" value =""/>
+		<p><b>Authentication Code : <font color="blue" style="margin-left: 52px; font-size: 18px;"><i>HSWW1x47m</i></font></b></p>
+ 		<br>
+ 		<b>Confirm Authentication Code : </b> <input type="text" name="inputCaptchaValue" value="">
+		<br><br>
+		<input type="submit" value="Submit Captcha AND PROCEED" class="epsSubmit">
+	<INPUT type=hidden name=OWASP_CSRFTOKEN value=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW><INPUT type=hidden name=pkiEnabledOrg id=pkiEnabledOrg value=false></form>
+	
+ 
+</div>
+									</div>
+								</DIV> <!-- End Body Left Section -->
+							</td>
+							
+							<td width='1%'>&nbsp;</td>
+							<td id="rightSignBar" width='25%' class='' style="background-color: #FFFFFF;">
+								<!--Start Right Section--> 
+								
+
+
+
+
+
+
+
+
+<script type="text/javascript"
+	src="../javascript/jquery.selectric.min.js?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"></script>
+
+<style type="text/css">
+.modal-header {
+	padding: 5px 7px;
+	border-bottom: 1px solid #eee;
+	background-color: #0480be;
+	-webkit-border-top-left-radius: 5px;
+	-webkit-border-top-right-radius: 5px;
+	-moz-border-radius-topleft: 5px;
+	-moz-border-radius-topright: 5px;
+	border-top-left-radius: 5px;
+	border-top-right-radius: 5px;
+}
+
+.modal-dialog {
+	position: absolute;
+	left: 50%;
+	margin-left: -312px;
+	height: 500px;
+	top: 50%;
+	margin-top: -250px;
+}
+
+.hasPlaceholder {
+	color: #aaa;
+}
+</style>
+
+
+
+
+
+<script type="text/javascript">
+jQuery.support.placeholder = false;
+ $(document).ready(function(){
+	 
+ 	$("#capsLockTr").hide();
+ 	/*START:Jquery code for Placholder for IE-9  */
+ 	jQuery.support.placeholder = (function(){
+ 	    var i = document.createElement('input');
+ 	    return 'placeholder' in i;
+ 	})();
+ 	
+	   $(function() {
+	     if(!jQuery.support.placeholder) {
+
+	       var active = document.activeElement;
+
+	       $(':text,:password').focus(function () {
+
+	       if (($(this).attr('placeholder')) && ($(this).attr('placeholder').length > 0) &&  ($(this).attr('placeholder') != '') && $(this).val() == $(this).attr('placeholder')) {
+	          $(this).val('').removeClass('hasPlaceholder');
+	          if($(this).hasClass("password")){
+	        	  $(this).attr("type","password").removeClass('password');
+	          }
+	        }
+	      }).blur(function () {
+	if (($(this).attr('placeholder')) && ($(this).attr('placeholder').length > 0) &&  ($(this).attr('placeholder') != '') && ($(this).val() == '' || $(this).val() ==   $(this).attr('placeholder'))) {
+	     $(this).val($(this).attr('placeholder')).addClass('hasPlaceholder');
+	     if($(this).attr("type")=="password"){
+	    	 $(this).addClass("password");
+	    	 $(this).attr("type","input");
+	     }
+	}
+	});
+
+	$(':text,:password').blur();
+	$(active).focus();
+	$('form').submit(function () {
+	     $(this).find('.hasPlaceholder').each(function() { $(this).val(''); });
+	});
+	}
+	});
+	   /*END:Jquery code for Placholder for IE-9  */
+	   
+	   
+	   jq('.selectwrap').selectric();
+	   
+ });
+ function toogleDivView(divId){
+	 		$("#"+divId).slideToggle();
+ }
+ 
+function rememberPassword(){
+	if(document.getElementById) {
+	
+	var obj = document.getElementById('passwordId');
+	if(obj.setAttribute)
+		obj.setAttribute('autocomplete','off');
+	}
+}
+
+var pUrl = '/CHEPS';
+
+function register()
+{
+	document.signInForm.action = pUrl + "/registration/getOrganizationAddAction.do";
+	document.signInForm.submit();
+}
+
+function forgotPassword() {    	
+     	document.signInForm.action= pUrl + "/security/forgotPasswordSearchParameterAction.do";
+ 	    document.signInForm.submit(); 
+  }
+
+function forgotPasswordDsc() {    	
+     	document.signInForm.action= pUrl + "/security/forgotPasswordSearchParameterAction.do?withDsc";
+ 	    document.signInForm.submit(); 
+  }
+  
+function viewNotice(noticeId) {
+	//alert("pUrl"+ pUrl +"\n noticeId>>>"+noticeId+"\n csrfToken"+csrfToken);
+	var csrfStr = "";
+	var csrfValue = $("input[name$='CSRFTOKEN']").val();
+	var csrfName = $("input[name$='CSRFTOKEN']").attr("name");
+	csrfStr = csrfName + "=" + csrfValue
+	//alert("csrfValue:: " + csrfName + "=" + csrfValue);
+	var url = pUrl
+			+ "/business/admin.action?methodName=viewNotice&Tab=Y&noticeId="
+			+ noticeId + "&" + csrfStr;
+	
+	window.open(
+					url,
+					'viewNotice',
+					'width=600,height=280,scrollbars=yes,resizable=yes,menubar=no,directories=no,location=no'
+			);
+	
+	return;
+}
+
+function moreMessageNotice(Type) {
+	
+	$("#myModal").draggable({
+	    handle: ".modal-header"
+	}); 
+
+ }
+
+function submitForm() {
+	document.signInForm.submit();
+}
+function setMacAndIPAddress(clientIp, clientMacAddress) {
+	alert("client ip: "+clientIp+" and MAC Address: "+clientMacAddress);
+	$("#clientIP").val(clientIp);
+	$("#clientMacAddress").val(clientMacAddress);
+}
+
+
+function passEncrypt() {
+//alert("passEncrypt..");
+	 var val = document.getElementById('passwordId').value; //assign password to a variable
+	 //alert("val.."+val);
+	 var secretKey=generateKey(22)+'==';//generateKey(24);
+	 //alert("secretKey.."+secretKey);
+	 document.signInForm.dynamicSecretKeyId.value=secretKey;
+	 var rkEncryptionKey = CryptoJS.enc.Base64.parse(secretKey);
+	 var rkEncryptionIv = CryptoJS.enc.Base64.parse('5D9r9ZVzEYYgha93/aUK2w==');
+	 var utf8Stringified = CryptoJS.enc.Utf8.parse(val);
+	 var encrypted = CryptoJS.AES.encrypt(utf8Stringified.toString(), rkEncryptionKey, 
+	{mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7, iv: rkEncryptionIv});
+	 document.signInForm.authenticationPassword.value = encrypted.ciphertext.toString(CryptoJS.enc.Base64);
+	var temp = document.signInForm.authenticationPassword.value;
+	//alert("temp.."+temp);
+	//console.log(document.signInForm.authenticationPassword.value);
+	 document.signInForm.submit();  
+}
+
+var chars ="0123456789ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz/";
+
+function generateKey(keyLength){
+	
+  var randomstring = '';
+  for (var i=0; i < keyLength; i++) {    
+	var rnum = Math.floor(Math.random() * chars.length);
+	randomstring += chars.substring(rnum,rnum+1);
+  }
+  return randomstring;
+
+}
+</script>
+
+<div style="padding: 10px 10px 0px 10px" class="container-fluid bg-blue"
+	style="background-color: #FFFFFF;">
+	<div class="col-sm-12">
+		<div class="well well-sm" style="padding: 18px 20px 0px 20px">
+			
+				<form name="signInForm" method="post" action="/CHEPS/security/signInAction.do" class="form-signin">
+					<input type="hidden" id="openRfqFlag" name="openRfqFlag" value="Y" />
+					<!--	<input type="hidden" id="clientIP" name="clientIP" value=""/>
+				<input type="hidden" id="clientMacAddress" name="clientMacAddress" value=""/> -->
+					<div style="padding-bottom: 5px;">
+						<input type="text" class="form-control" placeholder="User ID"
+							required="" autofocus="" name="authenticationCode"
+							id="authenticationCode" />
+					</div>
+					<div style="padding-bottom: 5px;">
+						<input type="password" class="form-control" placeholder="Password"
+							required="" name="authenticationPassword" id="passwordId"
+							autocomplete="off" /> <input type="hidden"
+							name="dynamicSecretKey" id="dynamicSecretKeyId" />
+					</div>
+					<div style="padding-bottom: 5px;">
+						<select name="authenticationOrganization" style="width:242px;" class="selectwrap"><option value="101"><font size="2" face="Arial">36 Incubation Center (AIC 36Inc) Chhattisgarh(36INC)</font></option>
+							
+								<option value="186"><font size="2" face="Arial">ASSISSTANT COMMISSIONAR TRIBAL DEVELOPMENT NARAYANPUR C.G(ACTDN)</font></option>
+							
+								<option value="211"><font size="2" face="Arial">Assistant commissionar tribal development sakti (C.G)(ACTDSKT)</font></option>
+							
+								<option value="200"><font size="2" face="Arial">Assistant commissioner tribal department Dantewada(ACTDD)</font></option>
+							
+								<option value="192"><font size="2" face="Arial">Atal Bihari Vajpayee Vishvavidyalaya,Bilaspur Chhattisgarh(ABVVBC)</font></option>
+							
+								<option value="161"><font size="2" face="Arial">Balod District Urban Public Service Society(BALDUPSS)</font></option>
+							
+								<option value="164"><font size="2" face="Arial">Baloda Bazar District Urban Public Service Society(BBDUPSS)</font></option>
+							
+								<option value="170"><font size="2" face="Arial">Balrampur District Urban Public Service Societ(BPDUPSS)</font></option>
+							
+								<option value="146"><font size="2" face="Arial">Bastar District Urban Public Service Society(BASTARJUPS)</font></option>
+							
+								<option value="34"><font size="2" face="Arial">Bastar Urban Public Service Society  (BSTUPSS)</font></option>
+							
+								<option value="162"><font size="2" face="Arial">Bemetara District Urban Public Service Society(BEMDUPSS)</font></option>
+							
+								<option value="105"><font size="2" face="Arial">Bhoramdev Sahakari Sugar Production Factory-Kabirdham(BSSPFK)</font></option>
+							
+								<option value="154"><font size="2" face="Arial">Bijapur District Urban Public Service Society(BIJAPURUPS)</font></option>
+							
+								<option value="145"><font size="2" face="Arial">Bilaspur District Urban Public Service Society(BJUPSS)</font></option>
+							
+								<option value="81"><font size="2" face="Arial">Bilaspur Smart City Limited(BSCL)</font></option>
+							
+								<option value="35"><font size="2" face="Arial">Bilaspur Urban Public Service Society  (BSPUPSS)</font></option>
+							
+								<option value="183"><font size="2" face="Arial">CG Building and other Construction workers welfare Board (CGBOCW)</font></option>
+							
+								<option value="178"><font size="2" face="Arial">Chhattisgarh Academy of Administration Nimora Raipur(CAOANR)</font></option>
+							
+								<option value="172"><font size="2" face="Arial">Chhattisgarh Board of Secondary Education(CBOSE)</font></option>
+							
+								<option value="121"><font size="2" face="Arial">Chhattisgarh Council of Science &amp; Technology(CCST)</font></option>
+							
+								<option value="51"><font size="2" face="Arial">Chhattisgarh Department of Agriculture (CGDA)</font></option>
+							
+								<option value="84"><font size="2" face="Arial">CHHATTISGARH ENVIRONMENT CONSERVATION BOARD(CECB)</font></option>
+							
+								<option value="142"><font size="2" face="Arial">Chhattisgarh Government Labour Department(CGLD)</font></option>
+							
+								<option value="45"><font size="2" face="Arial">Chhattisgarh Handicraft Board (CGHCB)</font></option>
+							
+								<option value="66"><font size="2" face="Arial">Chhattisgarh High Court, Bilaspur (CGHC)</font></option>
+							
+								<option value="59"><font size="2" face="Arial">Chhattisgarh Housing Board (CGHB)</font></option>
+							
+								<option value="21"><font size="2" face="Arial">Chhattisgarh Infotech Promotion Society (CHiPS)</font></option>
+							
+								<option value="77"><font size="2" face="Arial">Chhattisgarh Kamdhenu Vishwavidyalaya(CGKV)</font></option>
+							
+								<option value="87"><font size="2" face="Arial">Chhattisgarh Khadi &amp; Village Industries Board(CGKVIB)</font></option>
+							
+								<option value="176"><font size="2" face="Arial">Chhattisgarh livestock development Agency(CLDA)</font></option>
+							
+								<option value="25"><font size="2" face="Arial">Chhattisgarh Medical Services Corporation Ltd. (CGMSC)</font></option>
+							
+								<option value="139"><font size="2" face="Arial">Chhattisgarh Mineral Development Corporation Ltd(CMDC)</font></option>
+							
+								<option value="27"><font size="2" face="Arial">Chhattisgarh Police Housing Corporation Ltd (CGPHC)</font></option>
+							
+								<option value="73"><font size="2" face="Arial">Chhattisgarh Railway Corporation Ltd(CRCL)</font></option>
+							
+								<option value="62"><font size="2" face="Arial">Chhattisgarh Rajya Beej Evam Krishi Vikas Nigam (CGRBEKVN)</font></option>
+							
+								<option value="125"><font size="2" face="Arial">Chhattisgarh Rajya Sahakari Bank Mydt(CRSBM)</font></option>
+							
+								<option value="111"><font size="2" face="Arial">Chhattisgarh Regional Science Centre Society(CRSCS)</font></option>
+							
+								<option value="69"><font size="2" face="Arial">Chhattisgarh Road Development Corporation Limited(CGRDC)</font></option>
+							
+								<option value="217"><font size="2" face="Arial">Chhattisgarh State BharatNet Infrastructure Limited(CSBIL)</font></option>
+							
+								<option value="56"><font size="2" face="Arial">Chhattisgarh State Civil Supplies Corp. Limited (SCSC)</font></option>
+							
+								<option value="67"><font size="2" face="Arial">Chhattisgarh State Co-Operative Marketing Federation Limited(CGMARKFED)</font></option>
+							
+								<option value="68"><font size="2" face="Arial">Chhattisgarh State Cooperative Dairy Federation Ltd.(CGCDF)</font></option>
+							
+								<option value="108"><font size="2" face="Arial">Chhattisgarh State Election Commission(CSEC)</font></option>
+							
+								<option value="23"><font size="2" face="Arial">Chhattisgarh State Industrial Development Corporation (CSIDC)</font></option>
+							
+								<option value="126"><font size="2" face="Arial">Chhattisgarh State Information Infrastructure Corporation Limited(CSIICL)</font></option>
+							
+								<option value="58"><font size="2" face="Arial">Chhattisgarh State Mandi Board (CGSMB)</font></option>
+							
+								<option value="54"><font size="2" face="Arial">Chhattisgarh State Minor Forest Produce-Trading & Development Co-Operative Federation Ltd (CGMFPFED)</font></option>
+							
+								<option value="49"><font size="2" face="Arial">Chhattisgarh State Power Distribution Company Limited (CGSPDCL)</font></option>
+							
+								<option value="40"><font size="2" face="Arial">Chhattisgarh State Power Generation Company Limited (CGSPGCL)</font></option>
+							
+								<option value="61"><font size="2" face="Arial">Chhattisgarh State Power Transmission Company Limited (CGSPTCL)</font></option>
+							
+								<option value="79"><font size="2" face="Arial">Chhattisgarh State Renewable Energy Development Agency(CREDA)</font></option>
+							
+								<option value="129"><font size="2" face="Arial">Chhattisgarh State Skill Development Authority(CSSDA)</font></option>
+							
+								<option value="57"><font size="2" face="Arial">Chhattisgarh State Warehousing Corporation (CGSWC)</font></option>
+							
+								<option value="46"><font size="2" face="Arial">Chhattisgarh Text Book Corporation (CGTBC)</font></option>
+							
+								<option value="74"><font size="2" face="Arial">CHHATTISGARH TOURISM BOARD(CGT)</font></option>
+							
+								<option value="137"><font size="2" face="Arial">Chhattisgarh Transport Department(CTD)</font></option>
+							
+								<option value="133"><font size="2" face="Arial">CHIEF MEDICAL AND HEALTH OFFICER RAIGARH(CMAHOR)</font></option>
+							
+								<option value="177"><font size="2" face="Arial">Collectorate Balod(CB)</font></option>
+							
+								<option value="117"><font size="2" face="Arial">Danteshwari Maiya Shahkari Shakkar Karkhana Maryadit Balod(DMSSK)</font></option>
+							
+								<option value="156"><font size="2" face="Arial">Dantewada District Urban Public Service Society(DANTEWADAU)</font></option>
+							
+								<option value="208"><font size="2" face="Arial">Department of Good Governance and Convergence(DGGC)</font></option>
+							
+								<option value="55"><font size="2" face="Arial">Department of Home Guard and Civil Defence Chhattisgarh (HGCD)</font></option>
+							
+								<option value="39"><font size="2" face="Arial">Department of Panchayat and Social Welfare (DPSW)</font></option>
+							
+								<option value="32"><font size="2" face="Arial">Department of School Education (DSE)</font></option>
+							
+								<option value="65"><font size="2" face="Arial">Department of Technical Education (DTE)</font></option>
+							
+								<option value="197"><font size="2" face="Arial">Department of Tribal and Scheduled Caste Manendragarh-Chirmiri-Bharatpur(DTSCMCB)</font></option>
+							
+								<option value="70"><font size="2" face="Arial">Department of Women and Child Development(WCD)</font></option>
+							
+								<option value="143"><font size="2" face="Arial">Dhamtari Jila Urban Public Service Society(DJUPSS)</font></option>
+							
+								<option value="181"><font size="2" face="Arial">Directorate Financial Management and Information System(DFMAIS)</font></option>
+							
+								<option value="72"><font size="2" face="Arial">Directorate Horticulture and Farm Forestry, Chhattisgarh(DHF)</font></option>
+							
+								<option value="122"><font size="2" face="Arial">Directorate of  Printing and Stationery(DOPAS)</font></option>
+							
+								<option value="196"><font size="2" face="Arial">Directorate of Archaeology, Archives and Museum(DAAM)</font></option>
+							
+								<option value="115"><font size="2" face="Arial">Directorate of Aviation(DoA)</font></option>
+							
+								<option value="92"><font size="2" face="Arial">Directorate of CG Food And Civil Supplies and Consumer Protection(DSCSC)</font></option>
+							
+								<option value="114"><font size="2" face="Arial">Directorate of Culture and Archaeology Chhattisgarh(DOCAAC)</font></option>
+							
+								<option value="193"><font size="2" face="Arial">Directorate of Culture and Language(DCL)</font></option>
+							
+								<option value="215"><font size="2" face="Arial">Directorate of Employment and Training(DOEAT)</font></option>
+							
+								<option value="60"><font size="2" face="Arial">Directorate of Fisheries (DF)</font></option>
+							
+								<option value="180"><font size="2" face="Arial">Directorate of Higher Education Chhattisgarh(DOHEC)</font></option>
+							
+								<option value="96"><font size="2" face="Arial">Directorate of Industries(DOI)</font></option>
+							
+								<option value="116"><font size="2" face="Arial">Directorate of Institutional Finance(DIF)</font></option>
+							
+								<option value="113"><font size="2" face="Arial">Directorate of Local Fund Audit(DOLFA)</font></option>
+							
+								<option value="110"><font size="2" face="Arial">Directorate of Social Welfare Chhattisgarh(DSWC)</font></option>
+							
+								<option value="71"><font size="2" face="Arial">Directorate of Sports and Youth Welfare(DSYW)</font></option>
+							
+								<option value="173"><font size="2" face="Arial">Directorate of Treasury Accounts &amp; Pension, Chhattisgarh(DTAPC)</font></option>
+							
+								<option value="107"><font size="2" face="Arial">Directorate of Tribal and Schedule Caste Development(DTSCD)</font></option>
+							
+								<option value="127"><font size="2" face="Arial">Directorate of Tribal Research and Training Institute(DOTRATI)</font></option>
+							
+								<option value="120"><font size="2" face="Arial">Directorate of Veterinary Services Chhattisgarh(DVSC)</font></option>
+							
+								<option value="82"><font size="2" face="Arial">DISTRICT POLICE KORBA(DPK)</font></option>
+							
+								<option value="214"><font size="2" face="Arial">District Project Livelihood College Society (DPLCS) Dantewada(DPLCS)</font></option>
+							
+								<option value="219"><font size="2" face="Arial">District Project Livelihood College Society (DPLCS) Raigarh(DPLCSR)</font></option>
+							
+								<option value="220"><font size="2" face="Arial">District Project Livelihood College Society, Dhamtari(DPLCS)</font></option>
+							
+								<option value="153"><font size="2" face="Arial">Durg District Urban Public Service Society(DDUPSS)</font></option>
+							
+								<option value="38"><font size="2" face="Arial">Durg-Bhilai Urban Public Service Society  (DBUPSS)</font></option>
+							
+								<option value="43"><font size="2" face="Arial">Food and Drug Administration (FDA)</font></option>
+							
+								<option value="97"><font size="2" face="Arial">Forest Department(FD)</font></option>
+							
+								<option value="163"><font size="2" face="Arial">Gariaband District Urban Public Service Society(GDUPSS)</font></option>
+							
+								<option value="174"><font size="2" face="Arial">Gaurella Pendra Marwahi  District Urban Public Service Society(GPMDUPSS)</font></option>
+							
+								<option value="63"><font size="2" face="Arial">Health Department (HD)</font></option>
+							
+								<option value="182"><font size="2" face="Arial">IIIT Naya Raipur(IIITNR)</font></option>
+							
+								<option value="28"><font size="2" face="Arial">Indira Gandhi Krishi Vishwavidyalaya (IGKV)</font></option>
+							
+								<option value="95"><font size="2" face="Arial">Inspector General of Registration and Superintendent of Stamps(IGRS)</font></option>
+							
+								<option value="167"><font size="2" face="Arial">Janjgir Champa District Urban Public Service Society(JCDUPSS)</font></option>
+							
+								<option value="168"><font size="2" face="Arial">Jashpur District Urban Public Service Society(JASDUPSS)</font></option>
+							
+								<option value="128"><font size="2" face="Arial">Jila Nirman Samiti Jagdalpur(JNSJ)</font></option>
+							
+								<option value="205"><font size="2" face="Arial">Jila Nirman Samiti Narayanpur(JNSN)</font></option>
+							
+								<option value="195"><font size="2" face="Arial">Jila Sahakari Kendariya Bank Mydt. Raipur(JSKBM)</font></option>
+							
+								<option value="188"><font size="2" face="Arial">Jila Sahakari Kendriya Bank Mydt. Durg (CG)(JSKBMD)</font></option>
+							
+								<option value="159"><font size="2" face="Arial">Kanker District Urban Public Service Society(KANDUPSS)</font></option>
+							
+								<option value="160"><font size="2" face="Arial">Kawardha District Urban Public Service Society(KAWDUPSS)</font></option>
+							
+								<option value="157"><font size="2" face="Arial">Kondagaon District Urban Public Service Society(KONUPSS)</font></option>
+							
+								<option value="147"><font size="2" face="Arial">Korba District Urban Public Service Society(KJUPSS)</font></option>
+							
+								<option value="50"><font size="2" face="Arial">Korba Urban Public Service Society  (KRBAUPSS)</font></option>
+							
+								<option value="148"><font size="2" face="Arial">Korea District Urban Public Service Society(KDUPSS)</font></option>
+							
+								<option value="47"><font size="2" face="Arial">Koriya Urban Public Transport Society (KRYAUPTS)</font></option>
+							
+								<option value="83"><font size="2" face="Arial">Lauh Purush Sugar Plant, Pandariya(LSPSSKM)</font></option>
+							
+								<option value="31"><font size="2" face="Arial">Livestock Development Department(LDD)</font></option>
+							
+								<option value="187"><font size="2" face="Arial">Maa danteshwari Maize processing and marketing cooperative society ltd. Kondagaon(MDMPMCSL)</font></option>
+							
+								<option value="118"><font size="2" face="Arial">Maa Mahamaya Shahkari Shakkar Karkhana Maryadit Ambikapur(MMSSKM)</font></option>
+							
+								<option value="165"><font size="2" face="Arial">Mahasamund District Urban Public Service Society(MDUPSS)</font></option>
+							
+								<option value="185"><font size="2" face="Arial">Mahatma Gandhi University of Horticulture and Forestry(MGUHF)</font></option>
+							
+								<option value="52"><font size="2" face="Arial">Mineral Resources Department -Mining (MRD)</font></option>
+							
+								<option value="166"><font size="2" face="Arial">Mungeli District Urban Public Service Society(MUDUPSS)</font></option>
+							
+								<option value="158"><font size="2" face="Arial">Narayanpur District Urban Public Service Society(NDUPSS)</font></option>
+							
+								<option value="123"><font size="2" face="Arial">Nava Raipur Atal Nagar Smart City Corporation Limited(NRANSCCL)</font></option>
+							
+								<option value="30"><font size="2" face="Arial">Nava Raipur Atal Nagar Vikas Pradhikaran (NRANVP)</font></option>
+							
+								<option value="210"><font size="2" face="Arial">OFFICE DISTRICT PROJECT LIVELIHOOD COLLEGE SOCIETY SUKMA DIST (C.G)(ODPLCSCD)</font></option>
+							
+								<option value="99"><font size="2" face="Arial">Office of Chief Electoral Officer, Chhattisgarh(OCEO)</font></option>
+							
+								<option value="204"><font size="2" face="Arial">Office of collector Raigarh(OCR)</font></option>
+							
+								<option value="194"><font size="2" face="Arial">Office of Commissioner Land Records Chhattisgarh(OCLR)</font></option>
+							
+								<option value="202"><font size="2" face="Arial">Office of District Collector Tribal welfare Department Bijapur(ODCTWDB)</font></option>
+							
+								<option value="213"><font size="2" face="Arial">Office of District Collector, Sarangarh &ndash; Bilaigarh(ODCSB)</font></option>
+							
+								<option value="206"><font size="2" face="Arial">Office of Superintendent of Police, District- Mahasamund(OSPM)</font></option>
+							
+								<option value="207"><font size="2" face="Arial">Office of Superintendent of Police, District-Balod(OSPDB)</font></option>
+							
+								<option value="212"><font size="2" face="Arial">Office of the Collector Sukma (C.G)(OOCS)</font></option>
+							
+								<option value="216"><font size="2" face="Arial">Office of the collector,Bastar (C.G)(OOTCB)</font></option>
+							
+								<option value="209"><font size="2" face="Arial">office of the collectrorate Gariyaband(OCGBND)</font></option>
+							
+								<option value="221"><font size="2" face="Arial">Office of the Superintendent  of Police -District  manendragarh-chitmiri-bharatpur(OSPDMCB)</font></option>
+							
+								<option value="29"><font size="2" face="Arial">Panchayat and Rural Development (PARD)</font></option>
+							
+								<option value="171"><font size="2" face="Arial">Police Headquarter Chhattisgarh(PHQ)</font></option>
+							
+								<option value="64"><font size="2" face="Arial">Public Health Engineering Department (PHED)</font></option>
+							
+								<option value="22"><font size="2" face="Arial">Public Works Department (PWD)</font></option>
+							
+								<option value="149"><font size="2" face="Arial">Raigarh District Urban Public Transport Society(RDUPTS)</font></option>
+							
+								<option value="37"><font size="2" face="Arial">Raigarh Urban Public Service Society (RIGUPSS)</font></option>
+							
+								<option value="44"><font size="2" face="Arial">Raipur Collectorate (RC)</font></option>
+							
+								<option value="42"><font size="2" face="Arial">Raipur Development Authority (RDA)</font></option>
+							
+								<option value="151"><font size="2" face="Arial">Raipur District Urban Public Service Society(RAIPURDUPS)</font></option>
+							
+								<option value="78"><font size="2" face="Arial">Raipur Smart City Limited(RSCL)</font></option>
+							
+								<option value="36"><font size="2" face="Arial">Raipur Urban Public Transport Society (RUPTS)</font></option>
+							
+								<option value="150"><font size="2" face="Arial">Rajnandgaon District Urban Public Service Society(RDUPSS)</font></option>
+							
+								<option value="41"><font size="2" face="Arial">Rajnandgaon Urban Public Service Society  (RNDGUPSS)</font></option>
+							
+								<option value="33"><font size="2" face="Arial">Rural Engineering Services (RES)</font></option>
+							
+								<option value="85"><font size="2" face="Arial">Samagra Shiksha Chhattisgarh (SSC)</font></option>
+							
+								<option value="152"><font size="2" face="Arial">Sarguja District Urban Public Service Society(SRDGUPSS)</font></option>
+							
+								<option value="48"><font size="2" face="Arial">Sarguja Urban Public Service Society (SUPSS)</font></option>
+							
+								<option value="218"><font size="2" face="Arial">Sirpur Special Area Development Authority(SADA)</font></option>
+							
+								<option value="94"><font size="2" face="Arial">State Tax Chhattisgarh(STCG)</font></option>
+							
+								<option value="26"><font size="2" face="Arial">State Urban Development Agency (SUDA)</font></option>
+							
+								<option value="155"><font size="2" face="Arial">Sukma District Urban Public Service Society(SUKDUPSS)</font></option>
+							
+								<option value="169"><font size="2" face="Arial">Surajpur District Urban Public Service Society(SRJDUPSS)</font></option>
+							
+								<option value="136"><font size="2" face="Arial">Swachh Bharat Mission (Gramin) Panchayat and Rural Development Department(SBMPARDD)</font></option>
+							
+								<option value="189"><font size="2" face="Arial">Tribal and Scheduled Caste Development Department(Mohla Manpur Ambagarh Chauki)(TASCDDMMAC)</font></option>
+							
+								<option value="199"><font size="2" face="Arial">Tribal Welfare Department, District Sukma(TWDDS)</font></option>
+							
+								<option value="138"><font size="2" face="Arial">Tribal Welfare Development Department ( Balrampur-Ramanujganj)(TWDDBR)</font></option>
+							
+								<option value="89"><font size="2" face="Arial">Tribal Welfare Development Department (Balod- Collectorate)(TWDDBALOD)</font></option>
+							
+								<option value="130"><font size="2" face="Arial">Tribal Welfare Development Department (Bilaspur)(TWDDBILASP)</font></option>
+							
+								<option value="179"><font size="2" face="Arial">Tribal Welfare Development Department (Dhamtari)(TWDDDT)</font></option>
+							
+								<option value="86"><font size="2" face="Arial">Tribal Welfare Development Department (Gariyaband)(TWDD)</font></option>
+							
+								<option value="132"><font size="2" face="Arial">Tribal Welfare Development Department (Gaurella-Pendra-Marwahi-Collectorate)(TWDDGPM)</font></option>
+							
+								<option value="90"><font size="2" face="Arial">Tribal Welfare Development Department (Jagdalpur- Collectorate)(TWDDJDP)</font></option>
+							
+								<option value="135"><font size="2" face="Arial">Tribal Welfare Development Department (Kabeerdham Collectorate)(TWDDKC)</font></option>
+							
+								<option value="88"><font size="2" face="Arial">Tribal Welfare Development Department (Kanker)(TWDDKANKER)</font></option>
+							
+								<option value="91"><font size="2" face="Arial">Tribal Welfare Development Department (Koriya)(TWDDKORIYA)</font></option>
+							
+								<option value="175"><font size="2" face="Arial">Tribal welfare development Department (Mahasamund)(TWDDMSD)</font></option>
+							
+								<option value="141"><font size="2" face="Arial">Tribal Welfare Development Department (Mungeli-Collectorate)(TWDDMC)</font></option>
+							
+								<option value="93"><font size="2" face="Arial">Tribal Welfare Development Department (Rajnandgaon  Collectorate)(TWDDRJN)</font></option>
+							
+								<option value="140"><font size="2" face="Arial">Tribal Welfare Development Department (Surajpur Collectorate)(TWDDSC)</font></option>
+							
+								<option value="184"><font size="2" face="Arial">Tribal Welfare Development Department Balodabaza Bhatapara(TWDDBB)</font></option>
+							
+								<option value="124"><font size="2" face="Arial">Tribal Welfare Development Department Durg(TWDDD)</font></option>
+							
+								<option value="198"><font size="2" face="Arial">Tribal Welfare Development Department Khairagarh -Chhuikhadan -Gandai (Collectorate)(TWDDKCG)</font></option>
+							
+								<option value="191"><font size="2" face="Arial">Tribal Welfare Development Department Kondagaon(TWDDK)</font></option>
+							
+								<option value="131"><font size="2" face="Arial">Tribal Welfare Development Department Raigarh(TWDDRG)</font></option>
+							
+								<option value="98"><font size="2" face="Arial">Tribal Welfare Development Department, Jashpur(TWDDJSP)</font></option>
+							
+								<option value="134"><font size="2" face="Arial">Tribal Welfare Development Department(Ambikapur-Collectorate)(TWDDABK)</font></option>
+							
+								<option value="104"><font size="2" face="Arial">Tribal Welfare Development Department(Bemetara Collectorate)(TWDDBC)</font></option>
+							
+								<option value="102"><font size="2" face="Arial">Tribal Welfare Development Department(Korba-Collectorate)(TWDDKORBA)</font></option>
+							
+								<option value="106"><font size="2" face="Arial">Tribal Welfare Development Department(Raipur-Collectorate)(TWDDRC)</font></option>
+							
+								<option value="103"><font size="2" face="Arial">Tribal Welfare DevelopmentDepartment(Janjgir-Champa-Collectorate)(TWDDJCC)</font></option>
+							
+								<option value="53"><font size="2" face="Arial">Urban Administration and Development Department (UADD)</font></option>
+							
+								<option value="24"><font size="2" face="Arial">Water Resources Department (WRD)</font></option>
+							
+								<option value="201"><font size="2" face="Arial">Zila Nirman Samiti Bijapur(ZNSB)</font></option>
+							
+								<option value="203"><font size="2" face="Arial">Zila Panchayat Dhamtari(ZPD)</font></option>
+							
+								<option value="80"><font size="2" face="Arial">Zila Panchayat Raipur(ZPR)</font></option></select>
+					</div>
+					<a href="#" class="labelClass"
+						onclick="passEncrypt();submitForm();javascript: return BrowserDetect.checkBrowser();"
+						style="font-size: 11px;"> LOGIN</a> | <a
+						href="../admin/userPanInput.screen" class="labelClass"
+						style="font-size: 11px; color: #069">Register </a> | 
+	                <a href="javascript:forgotPassword();"
+						class="labelClass" style="font-size: 11px;">Password Recovery Using Email</a>	 |
+	                <a href="javascript:forgotPasswordDsc();"
+						class="labelClass" style="font-size: 11px;">Password Recovery Using DSC or OTP</a>
+				<INPUT type=hidden name=OWASP_CSRFTOKEN value=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW><INPUT type=hidden name=pkiEnabledOrg id=pkiEnabledOrg value=false></form>
+				<br />
+			
+			<div class="container-fluid" style="padding: 0px 0px 10px 0px">
+				<div class="btn-group btn-group-justified">
+					<a style="color: #ffffff; font-size: xx-small;"
+						href="javascript:void(0);" class="btn btn-primary"
+						onclick="toogleDivView('helpDesk');">HELP DESK</a> <a
+						style="color: #ffffff; font-size: xx-small;"
+						href="javascript:void(0);" class="btn btn-primary"
+						onclick="toogleDivView('newsList');">LATEST NEWS</a> <a
+						style="color: #ffffff; font-size: xx-small;"
+						href="javascript:void(0);" class="btn btn-primary"
+						onclick="toogleDivView('noticeList');">LATEST NOTICE</a>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="col-md-12" style="background-color: #FFFFFF;">
+		<div class="well" style="padding: 10px 20px 10px 20px; display: none;"
+			id="helpDesk">
+			<center>
+				<table align="center" width="100%" border="0" cellspacing="0"
+					cellpadding="0">
+					<tr>
+						<td align="center"><span> <a
+								style="font-size: 12px; color: red;"
+								href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=downloadJRE&fileName=Escalation_Matrix.pdf">Escalation
+									Matrix</a>
+						</span></td>
+					</tr>
+					<tr>
+						<td align="center"><img
+							src='../image/help-desk1.png?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW' border='0'
+							alt='Help Desk' border='0' /></td>
+					</tr>
+					<tr>
+						<td align="center">1800 419 9140 (Toll free) <br> (From
+							9.00 AM to 11.00 PM)
+						</td>
+					</tr>
+					<tr>
+						<td class='header' align="center" style="font-size: 12px;">
+							helpdesk.cgeproc@mjunction.in</td>
+					</tr>
+				</table>
+			</center>
+		</div>
+
+
+		<div class="well" style="padding: 10px 20px 10px 20px; display: none;"
+			id="newsList">
+			<center>
+				<div>
+					<img src='../image/news1.png?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW' border='0'
+						alt='Latest News' border='0' />
+				</div>
+				<table align="center" width="100%" border="0" cellspacing="0"
+					cellpadding="0">
+					
+						
+						
+							<tr>
+								<td class="news_notices">Sorry, no news today !</td>
+							</tr>
+						
+					
+				</table>
+			</center>
+		</div>
+
+		<div class="well" style="padding: 10px 20px 10px 20px; display: none;"
+			id="noticeList">
+			<center>
+				<div>
+					<img src='../image/notice-1.png?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW' border='0'
+						alt='Latest Notices' border='0' />
+				</div>
+				<table align="center" width="100%" border="0" cellspacing="0"
+					cellpadding="0">
+					
+						
+						
+							<tr>
+								<td class="news_notices">Sorry, no notice today !</td>
+							</tr>
+						
+					
+				</table>
+			</center>
+		</div>
+
+		
+		<span> <a style="font-size: 12px; color: blue;"
+			href="/CHEPS/business/admin.action?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW&methodName=downloadJRE&fileName=CHIPS Department wise Tender-en-us.mht">MIS
+				DASHBOARD</a>
+		</span>
+		<div class="well" style="padding: 10px 20px 10px 20px"
+			style="background-color: #FFFFFF;">
+
+			<center>
+				<img src="../images/chattisgarh-map.png?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW" />
+			</center>
+		</div>
+
+	</div>
+</div>
+
+<div id="newsModal" class="modal fade" role="dialog"
+	data-backdrop="false">
+	<div class="modal-dialog draggable">
+		<!-- Modal content-->
+		<div class="modal-content">
+			<div class="modal-header">
+				<button type="button" class="close" data-dismiss="modal">&times;</button>
+				<h4 class="modal-title">News List</h4>
+			</div>
+			<div class="modal-body">
+				<table align="center" width="100%" border="0" cellspacing="0"
+					cellpadding="0">
+					<tbody>
+						<tr>
+							<th class="dataTableHeader" align="left">TITLE</th>
+							<th class="dataTableHeader" align="left">PUBLISH DATE</th>
+							<th class="dataTableHeader" align="left">DEPT</th>
+						</tr>
+
+						
+
+					</tbody>
+				</table>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+
+	</div>
+</div>
+
+<div id="noticeModal" class="modal fade" role="dialog"
+	data-backdrop="false">
+	<div class="modal-dialog draggable">
+		<!-- Modal content-->
+		<div class="modal-content">
+			<div class="modal-header">
+				<button type="button" class="close" data-dismiss="modal">&times;</button>
+				<h4 class="modal-title">Notice List</h4>
+			</div>
+			<div class="modal-body">
+				<table align="center" width="100%" border="0" cellspacing="0"
+					cellpadding="0">
+					<tbody>
+						<tr>
+							<th class="dataTableHeader" align="left">TITLE</th>
+							<th class="dataTableHeader" align="left">PUBLISH DATE</th>
+							<th class="dataTableHeader" align="left">DEPT</th>
+						</tr>
+
+						
+
+					</tbody>
+				</table>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+			</div>
+		</div>
+
+	</div>
+</div> 
+								<!--End Right Section-->
+							</td>
+							
+						</tr>
+					</table>
+					<!-- End Body Content -->
+				</div>
+			</td>
+		</tr>
+		 <tr class="epsFooterSection">
+		   <td class='footerTD'>
+					<!-- Start Footer -->
+					
+
+<script type="text/javascript">
+	$(document).ready(function() {
+		// Slide in elements on scroll
+		$(window).scroll(function() {
+			$(".slideanim").each(function() {
+				var pos = $(this).offset().top;
+
+				var winTop = $(window).scrollTop();
+				if (pos < winTop + 600) {
+					$(this).addClass("slide");
+				}
+			});
+		});
+	})
+</script>
+
+
+<footer class="container-fluid">
+	<p style="font-size: 14px;">
+		<img src="../img/chips-logo.png?OWASP_CSRFTOKEN=2NGD-E1G2-P6V1-4AG5-WG9O-ATDQ-97C3-CBNW"> &copy; 2020 Chhattisgarh
+		Infotech Promotion Society (CHiPS) 3rd Floor, State Data Centre
+		Building, Opp. New Circuit House, Civil Lines, Raipur-492001,
+		Chhattisgarh
+	</p>
+</footer>
+					<!-- End Footer -->
+		   </td>
+		 </tr>
+    </tr></table>
+  </td>
+ </tr>
+</table>
+</body>
+</html>

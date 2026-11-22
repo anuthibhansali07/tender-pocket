@@ -698,4 +698,136 @@ class EmailSyncServiceTest {
         assertEquals("2026_AIIMS_12345_1", tenders.get(0).get("ref_no"));
         assertEquals("https://eprocure.gov.in", tenders.get(0).get("nameof_website"));
     }
+
+    @Test
+    @DisplayName("When Tender247's full list fails, the email's own table is read and the email is flagged for a retry")
+    void fullListFailureFallsBackToTable() throws Exception {
+        when(restTemplate.postForEntity(contains("/api/auth/login/user/key"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenThrow(new org.springframework.web.client.ResourceAccessException("Read timed out"));
+        String html = "<html><body>" +
+                "<a href='https://www.tender247.com/mail?key=abc123'>View All</a>" +
+                "<table>" +
+                "<tr><td>TENDER DETAILS</td><td>ORGANIZATION & LOCATION</td><td>VALUE & DEADLINE</td></tr>" +
+                "<tr>" +
+                "<td>T247 ID : 100575724<br><a href='https://r.tenders.bidsnrfp.com/tr/cl/xyz'>Supply of Deep Freezer (GEM/2026/B/7439555)</a></td>" +
+                "<td><b>AIIMS</b><br>Raipur</td>" +
+                "<td>1.44 Cr<br>12-06-2026</td>" +
+                "</tr>" +
+                "</table></body></html>";
+
+        EmailSyncService.ParsedEmail parsed = emailSyncService.parseAlertEmail(html);
+        assertEquals(1, parsed.tenders.size());
+        assertEquals("100575724", parsed.tenders.get(0).get("id"));
+        assertNotNull(parsed.fullListError);
+        assertTrue(parsed.fullListError.contains("Read timed out"));
+    }
+
+    @Test
+    @DisplayName("Tender247 search request carries every field Tender247 now requires, with the right types")
+    void searchPayloadHasRequiredFields() {
+        Map<String, Object> p = EmailSyncService.searchPayload(1003059L, 313651L, "2026-11-16", 2);
+        assertEquals(1003059L, p.get("user_id"));
+        assertEquals(313651L, p.get("user_email_service_query_id"));
+        assertEquals(2, p.get("page_no"));
+        assertEquals("2026-11-16", p.get("mail_date"));
+        for (String f : List.of("tender_number", "search_text", "keyword_id", "nameof_website", "quantity", "state_ids")) {
+            assertEquals("", p.get(f), f);
+        }
+        for (String f : List.of("gem", "sort_by", "search_by", "guest_user_id", "quantity_operator", "tender_value_to")) {
+            assertEquals(0, p.get(f), f);
+        }
+        for (String f : List.of("search_by_location", "exact_search", "is_tender_doc_uploaded")) {
+            assertEquals(false, p.get(f), f);
+        }
+    }
+
+    @Test
+    @DisplayName("The View All tracking link is followed until the Tender247 key appears")
+    void viewAllTrackingLinkIsFollowed() {
+        EmailSyncService s = new EmailSyncService() {
+            @Override
+            String nextRedirect(String url) {
+                return url.startsWith("https://r.tenders.bidsnrfp.com/") ? "http://bidsnrfp.com/MailTenders?key=abc%2B123" : null;
+            }
+        };
+        assertEquals("abc+123", s.resolveViewAllKey("https://r.tenders.bidsnrfp.com/tr/cl/xyz"));
+        assertEquals("direct", s.resolveViewAllKey("https://www.tender247.com/mail?key=direct"));
+        assertNull(s.resolveViewAllKey("https://example.com/no-redirect"));
+    }
+
+    private ObjectNode t247Doc(long id) {
+        ObjectNode d = objectMapper.createObjectNode();
+        d.put("tender_id", id);
+        d.put("requirement_workbrief", "Supply of item " + id);
+        d.put("organization_name", "AIIMS");
+        d.put("tender_number", "REF/" + id);
+        d.put("estimatedcost", "125000");
+        return d;
+    }
+
+    @Test
+    @DisplayName("The full Tender247 list is read page by page, once per search and day, without detail lookups when the number is present")
+    void fullListIsPaginatedOncePerSearch() throws Exception {
+        ObjectNode loginData = objectMapper.createObjectNode();
+        loginData.put("token", "jwt");
+        loginData.put("user_id", 1003059);
+        loginData.put("user_query_id", 313651);
+        loginData.put("mail_date", "2026-11-16");
+        ObjectNode loginRoot = objectMapper.createObjectNode();
+        loginRoot.set("Data", objectMapper.createArrayNode().add(loginData));
+        when(restTemplate.postForEntity(contains("/api/auth/login/user/key"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenReturn(new ResponseEntity<>(loginRoot, HttpStatus.OK));
+
+        ArrayNode page1 = objectMapper.createArrayNode();
+        for (int i = 0; i < 100; i++) page1.add(t247Doc(1000 + i));
+        ArrayNode page2 = objectMapper.createArrayNode();
+        for (int i = 0; i < 7; i++) page2.add(t247Doc(2000 + i));
+        ObjectNode r1 = objectMapper.createObjectNode();
+        r1.set("Data", page1);
+        ObjectNode r2 = objectMapper.createObjectNode();
+        r2.set("Data", page2);
+        when(restTemplate.postForEntity(contains("/search-tender"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenReturn(new ResponseEntity<>(r1, HttpStatus.OK), new ResponseEntity<>(r2, HttpStatus.OK));
+
+        Method fetch = EmailSyncService.class.getDeclaredMethod("fetchTendersFromT247Api", String.class);
+        fetch.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> first = (List<Map<String, String>>) fetch.invoke(emailSyncService, "key-noon");
+        assertEquals(107, first.size());
+        assertEquals("REF/1000", first.get(0).get("ref_no"));
+        assertEquals("125000", first.get(0).get("estimated_cost_raw"));
+
+        // The evening alert of the same search opens the same list: not read again in this run.
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> again = (List<Map<String, String>>) fetch.invoke(emailSyncService, "key-evening");
+        assertTrue(again.isEmpty());
+
+        verify(restTemplate, times(2)).postForEntity(contains("/search-tender"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+        verify(restTemplate, never()).postForEntity(contains("/tender-detail/"), any(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+    }
+
+    @Test
+    @DisplayName("Only Tender247's own wildcard certificate name is accepted for its underscore host")
+    void certificateNameCheck() throws Exception {
+        java.security.cert.X509Certificate cert = mock(java.security.cert.X509Certificate.class);
+        when(cert.getSubjectAlternativeNames()).thenReturn(List.of(List.of(2, "*.tender247.com"), List.of(2, "tender247.com")));
+        assertTrue(EmailSyncService.certificateCovers("t247_api.tender247.com", cert));
+        assertTrue(EmailSyncService.certificateCovers("tender247.com", cert));
+        assertFalse(EmailSyncService.certificateCovers("a.t247_api.tender247.com", cert));
+        assertFalse(EmailSyncService.certificateCovers("t247_api.tender247.com.evil.com", cert));
+        assertFalse(EmailSyncService.certificateCovers("evil.com", cert));
+    }
+
+    @Test
+    @DisplayName("An alert email is recognised again by its Message-ID, so it is imported only once")
+    void alertEmailKeyIsStable() throws Exception {
+        jakarta.mail.Message a = mock(jakarta.mail.Message.class);
+        jakarta.mail.Message b = mock(jakarta.mail.Message.class);
+        when(a.getHeader("Message-ID")).thenReturn(new String[]{"<abc@bidsnrfp.com>"});
+        when(b.getHeader("Message-ID")).thenReturn(new String[]{"<def@bidsnrfp.com>"});
+        String k1 = EmailSyncService.alertEmailKey(a, "x", "s", null);
+        assertEquals(k1, EmailSyncService.alertEmailKey(a, "other", "other", new java.util.Date()));
+        assertNotEquals(k1, EmailSyncService.alertEmailKey(b, "x", "s", null));
+        assertEquals(64, k1.length());
+    }
 }

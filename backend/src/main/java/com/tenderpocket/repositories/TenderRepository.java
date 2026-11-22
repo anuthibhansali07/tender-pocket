@@ -80,6 +80,7 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     boolean existsBySourceId(String sourceId);
     Optional<Tender> findFirstByRefNo(String refNo);
     Optional<Tender> findFirstBySourceId(String sourceId);
+    Optional<Tender> findFirstByEprocurementPortalId(String eprocurementPortalId);
 
     List<Tender> findByAssignedMisMemberSpec(String assignedMisMemberSpec);
 

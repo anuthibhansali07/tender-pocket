@@ -80,6 +80,28 @@ public class TenderController {
     @Autowired
     private com.tenderpocket.services.EmailSyncService emailSyncService;
 
+    @Autowired(required = false)
+    private com.tenderpocket.services.FetchStatusRecorder fetchStatusRecorder;
+
+    /** Header "Sync" skips GeM when it was checked this recently (same gap as the Fetch Status page). */
+    @org.springframework.beans.factory.annotation.Value("${fetch-status.manual-cooldown-minutes:30}")
+    private long gemSyncCooldownMinutes = 30;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.state.StateTenderSyncService stateTenderSyncService;
+
+    @Autowired(required = false)
+    private com.tenderpocket.scheduler.SyncRetryTracker syncRetryTracker;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.FetchStatusReportService fetchStatusReportService;
+
+    @Autowired(required = false)
+    private com.tenderpocket.scheduler.SyncScheduler syncScheduler;
+
+    @Autowired(required = false)
+    private com.tenderpocket.services.state.StateDocumentService stateDocumentService;
+
     @Autowired
     private com.tenderpocket.notifications.DailyDigestService dailyDigestService;
 
@@ -250,10 +272,29 @@ public class TenderController {
                     .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
         }
         try {
+            // One GeM sync at a time: a second run in parallel only doubles the load on GeM.
+            if (geMScraperService.isSyncRunning()) {
+                return ResponseEntity.ok(Map.of("success", true, "alreadyRunning", true,
+                        "message", "GeM is already being updated. New tenders will appear when it finishes."));
+            }
+            // A full GeM run takes 15-30 minutes. Pressing Sync right after one finished only
+            // repeats it, so wait out the same gap as the Fetch Status page's "Check again".
+            java.time.LocalDateTime lastGemCheck = fetchStatusRecorder == null ? null
+                    : fetchStatusRecorder.find(com.tenderpocket.services.FetchStatusRecorder.GEM)
+                        .map(com.tenderpocket.models.PortalFetchStatus::getLastAttemptAt).orElse(null);
+            java.time.LocalDateTime nowIst = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+            if (lastGemCheck != null && lastGemCheck.isAfter(nowIst.minusMinutes(gemSyncCooldownMinutes))) {
+                java.time.format.DateTimeFormatter clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH);
+                return ResponseEntity.ok(Map.of("success", true, "recentlyChecked", true,
+                        "message", "GeM was checked at " + clock.format(lastGemCheck) + ", so it wasn't checked again yet. "
+                                + "To re-check products that were missed, use the Fetch Status page."));
+            }
             System.out.println("[API Trigger] Initiating manual GeM sync in background...");
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
                     geMScraperService.syncTenders(false, Collections.emptyList());
+                } catch (com.tenderpocket.services.GeMScraperService.SyncAlreadyRunningException e) {
+                    System.out.println("[API Trigger] Manual GeM sync skipped: another GeM sync started first.");
                 } catch (Exception e) {
                     System.err.println("Background manual GeM sync failed: " + e.getMessage());
                 }
@@ -264,6 +305,156 @@ public class TenderController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("success", false, "error", "Failed to start GeM sync: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Starts a background sync of the NIC state/central eProcurement portals.
+     * Optional query params: portals=MH,UP (codes from state-portals.json; default all enabled)
+     * and dryRun=true (fetch and filter, but write nothing).
+     */
+    @PostMapping("/sync-state")
+    public ResponseEntity<?> syncStatePortals(
+            @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole,
+            @RequestParam(value = "portals", required = false) String portals,
+            @RequestParam(value = "dryRun", required = false, defaultValue = "false") boolean dryRun) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS Executive".equalsIgnoreCase(userRole) && !"Tender Executive".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin, MIS Team, or Executive only"));
+        }
+        if (stateTenderSyncService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "State portal sync is not available"));
+        }
+        List<String> codes = portals == null || portals.isBlank()
+                ? Collections.emptyList()
+                : Arrays.asList(portals.split(","));
+        boolean started = stateTenderSyncService.startAsync(codes, dryRun);
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "error", "A state portal sync is already running"));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "dryRun", dryRun,
+                "message", "State portal sync started in the background. Check /api/tenders/sync-state/status for progress."));
+    }
+
+    /**
+     * Step 1 of fetching a state-portal tender's documents: opens the tender on its portal and
+     * returns the portal's CAPTCHA image for the executive to read (or the files, if the portal
+     * did not ask for one).
+     */
+    @PostMapping("/{id}/portal-documents/captcha")
+    public ResponseEntity<?> startPortalDocumentDownload(@PathVariable("id") String id) {
+        ResponseEntity<?> denied = denyPortalDocumentAccess();
+        if (denied != null) return denied;
+        var result = stateDocumentService.start(id);
+        return ResponseEntity.status("ERROR".equals(result.status()) ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK)
+                .body(result.toMap());
+    }
+
+    /** Step 2: submits what the executive typed; on success the documents are stored like GeM bid documents. */
+    @PostMapping("/{id}/portal-documents/captcha/{token}")
+    public ResponseEntity<?> submitPortalDocumentCaptcha(@PathVariable("id") String id,
+                                                         @PathVariable("token") String token,
+                                                         @RequestBody(required = false) Map<String, String> body) {
+        ResponseEntity<?> denied = denyPortalDocumentAccess();
+        if (denied != null) return denied;
+        String answer = body != null ? body.get("answer") : null;
+        var result = stateDocumentService.submit(id, token, answer);
+        if ("DOWNLOADED".equals(result.status())) {
+            String username = WorkflowPermissions.username();
+            activityLogRepository.save(new ActivityLog(
+                    username, WorkflowPermissions.role(), "Downloaded Portal Tender Documents", id,
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
+                    result.files().size() + " file(s) downloaded from the state eProcurement portal"));
+        }
+        return ResponseEntity.status("ERROR".equals(result.status()) ? HttpStatus.UNPROCESSABLE_ENTITY : HttpStatus.OK)
+                .body(result.toMap());
+    }
+
+    private ResponseEntity<?> denyPortalDocumentAccess() {
+        if (stateDocumentService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Portal document download is not available"));
+        }
+        String role = WorkflowPermissions.role();
+        if (!WorkflowPermissions.allowed(UPLOAD_SPEC) && !"MIS Team".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Only Tender Executives, MIS Team or Admin can fetch portal documents"));
+        }
+        return null;
+    }
+
+    @GetMapping("/sync-state/status")
+    public ResponseEntity<?> statePortalSyncStatus() {
+        if (stateTenderSyncService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "State portal sync is not available"));
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("success", true);
+        body.put("running", stateTenderSyncService.isRunning());
+        body.put("enabledPortals", stateTenderSyncService.getPortals().stream()
+                .filter(com.tenderpocket.services.state.GepnicPortal::enabled)
+                .map(com.tenderpocket.services.state.GepnicPortal::code).toList());
+        var last = stateTenderSyncService.getLastRun();
+        body.put("lastRun", last != null ? last.toMap() : null);
+        // Failed GeM / portal syncs waiting for their 2-hour retry.
+        body.put("pendingRetries", syncRetryTracker != null ? syncRetryTracker.snapshot() : java.util.List.of());
+        return ResponseEntity.ok(body);
+    }
+
+    /** Plain-language import status per portal, for the MIS Team "Tender Fetch Status" page. */
+    @GetMapping("/fetch-status")
+    public ResponseEntity<?> tenderFetchStatus(@RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Access denied: Admin or MIS Team only"));
+        }
+        if (fetchStatusReportService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Fetch status is not available right now"));
+        }
+        return ResponseEntity.ok(fetchStatusReportService.buildReport());
+    }
+
+    /**
+     * "Check again now" on the Fetch Status page: re-checks one source only - a state/UT/central
+     * portal code (e.g. MH) or GEM (only the product keywords that did not finish last time).
+     */
+    @PostMapping("/fetch-status/{source}/recheck")
+    public ResponseEntity<?> recheckFetchSource(@PathVariable String source,
+                                                @RequestHeader(value = "x-user-role", required = false, defaultValue = "Admin") String userRole) {
+        userRole = resolveUserRole(userRole);
+        if (!"Admin".equalsIgnoreCase(userRole) && !"MIS Team".equalsIgnoreCase(userRole) && !"MIS".equalsIgnoreCase(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "error", "Only the MIS Team and Admin can start a check."));
+        }
+        if (syncScheduler == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("success", false, "error", "Checking is not available right now."));
+        }
+        var result = syncScheduler.startManualRecheck(source);
+        java.time.format.DateTimeFormatter clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH);
+        return switch (result.outcome()) {
+            case STARTED -> ResponseEntity.ok(Map.of("success", true, "started", true,
+                    "message", "GEM".equalsIgnoreCase(source.trim()) && result.keywordCount() > 0
+                            ? "Checking GeM again for the " + result.keywordCount() + " product(s) that were missed. This can take a few minutes."
+                            : "TENDER247".equalsIgnoreCase(source.trim())
+                            ? "Reading the Tender247 alert emails again now. The page updates by itself."
+                            : "Checking again now. This can take a few minutes; the page updates by itself."));
+            case ALREADY_RUNNING -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Another update is already in progress. Please try again in a few minutes."));
+            case COOLDOWN -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "This was checked a moment ago. You can check it again at " + clock.format(result.availableAt()) + "."));
+            case UNKNOWN_SOURCE -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "error", "This portal can't be checked from here."));
+            case DISABLED -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Portal checks are turned off right now."));
+            case NOT_SET_UP -> ResponseEntity.ok(Map.of("success", true, "started", false,
+                    "message", "Tender247 isn't connected yet. Please ask the tech team to connect the Tender247 alert inbox."));
+        };
     }
 
     @PostMapping("/sync-emails")
@@ -310,6 +501,7 @@ public class TenderController {
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "location", required = false) String location,
             @RequestParam(value = "sector", required = false) String sector,
+            @RequestParam(value = "source", required = false) String source,
             @RequestParam(value = "mis_executive", required = false) String misExecutive,
             @RequestParam(value = "minCost", required = false) Double minCost,
             @RequestParam(value = "maxCost", required = false) Double maxCost,
@@ -453,6 +645,17 @@ public class TenderController {
                 continue;
             }
 
+            // Filter by source: "STATE" matches every state/central eProcurement portal (GePNIC-* and STATE-*)
+            if (source != null && !source.isEmpty()) {
+                String ts = t.getSource() == null ? "" : t.getSource().trim();
+                boolean match = "STATE".equalsIgnoreCase(source)
+                        ? (ts.startsWith("GePNIC-") || ts.startsWith("STATE-"))
+                        : "Tender247".equalsIgnoreCase(source)
+                            ? ts.equalsIgnoreCase("Tender247") || ts.equalsIgnoreCase("Tender 247")
+                            : ts.equalsIgnoreCase(source);
+                if (!match) continue;
+            }
+
             // Filter by minCost & maxCost
             if (minCost != null && (t.getEstimatedCost() == null || t.getEstimatedCost() < minCost)) {
                 continue;
@@ -568,7 +771,7 @@ public class TenderController {
             Double maxCost,
             String sortBy,
             String order) {
-        return getTenders(userRole, username, search, status, location, sector, misExecutive, minCost, maxCost, sortBy, order, null, null, null, null);
+        return getTenders(userRole, username, search, status, location, sector, null, misExecutive, minCost, maxCost, sortBy, order, null, null, null, null);
     }
 
     /** "Corrigendum Alerts Only" in the Tender Repository: a corrigendum flag, or a note mentioning one. */

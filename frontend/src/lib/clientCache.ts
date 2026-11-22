@@ -113,6 +113,7 @@ export type DashboardMemory = {
     statusFilter: string;
     locationFilter: string;
     sectorFilter: string;
+    sourceFilter?: string;
     misExecutiveFilter: string;
     sortBy: string;
     sortOrder: string;

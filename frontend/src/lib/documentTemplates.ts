@@ -143,6 +143,10 @@ export function generateHtmlTemplates(data: any): string {
             <td><strong>Email address</strong></td>
             <td>: <strong>info@markworld.com</strong> / <strong>tender@markenworld.com</strong></td>
           </tr>
+          <tr>
+            <td><strong>Witness</strong></td>
+            <td>: ${profile.witnessDetails || 'Mr. Korra Praveen Naik'}</td>
+          </tr>
         </tbody>
       ` : `
         <tbody>
@@ -201,7 +205,7 @@ export function generateHtmlTemplates(data: any): string {
     </table>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: isThemeA ? 'BIDDER PARTICULARS' : 'BIDDER INFORMATION',
+    title: 'BIDDER PARTICULARS', // client-required title, same for both companies
     docDate: docDate,
     pageClass: 'page-doc-1'
   });
@@ -324,11 +328,12 @@ export function generateHtmlTemplates(data: any): string {
         <li>In case any provision of this bid / tender are found violated, your department / organization shall be at liberty to reject this and we shall not have any claim/ right against the department in satisfaction of this condition.</li>
       </ol>
     `}
-    ${isThemeA ? '<p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>' : '<p class="closing-line">Yours faithfully,</p>'}
+    ${isThemeA ? '<p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>' : '' /* Theme B signatory block already opens with "Yours faithfully," */}
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: isThemeA ? 'UNDERTAKING' : 'ACCEPTANCE OF TENDER TERMS AND CONDITIONS',
-    subtitle: isThemeA ? '(Acceptance of Tender Terms and Conditions as per Bid)' : undefined,
+    // Client-required title/subtitle, same for both companies
+    title: 'UNDERTAKING',
+    subtitle: '(Acceptance of Tender Terms and Conditions as per Bid)',
     docDate: docDate,
     pageClass: 'page-doc-6'
   });
@@ -634,8 +639,9 @@ export function generateHtmlTemplates(data: any): string {
     <p class="closing-line">Thanking you and assuring you of our best services at all the times.</p>
     ${renderer.renderSignatoryBlock(renderOpts, { place, date: docDate })}
   `, {
-    title: isThemeA ? 'ESCALATION MATRIX' : 'ESCALATION MATRIX FOR SERVICE SUPPORT',
-    subtitle: isThemeA ? '(For Service Support)' : undefined,
+    // Client-required title/subtitle, same for both companies
+    title: 'ESCALATION MATRIX',
+    subtitle: '(For Service Support)',
     docDate: docDate,
     pageClass: 'page-doc-15'
   });
@@ -647,7 +653,7 @@ export function generateHtmlTemplates(data: any): string {
     { city: 'Ambala, Haryana.', addr: '5337, Punjabi Mohalla, Ambala Cantt, Ambala, Haryana, 133001', contact: 'Mr. Deepak Pawaiya,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
     { city: 'Jaipur, Rajasthan.', addr: 'Plot No.438, Vivek Vihar Colony, New Sanganer Road, Sodala. Jaipur - 302001, Rajasthan', contact: 'Mr. Devendra Hire,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
     { city: 'Lucknow, Uttar Pradesh.', addr: '14 - Manas nagar colony, Jiamau, Hazratganj, Opp. RTD, DGP Jagmohan Yadav Residency, Lucknow – 226001 Uttar Pradesh.', contact: 'Mr. Anil Aher,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
-    { city: 'Hyderabad, Telangana.', addr: 'P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Lucknow, Uttar Pradesh', contact: 'Mr. Chandu,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
+    { city: 'Hyderabad, Telangana.', addr: 'P NO.478, Lane Number 4 IDA Cherlapally, Hyderabad, Medchal Malkajgiri-500051 Telangana', contact: 'Mr. Chandu,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
     { city: 'Ahmedabad, Gujarat.', addr: 'M/s. Sevamed Solutions Private Limited, Ahmedabad, Gujarat – 382421', contact: 'Mr. Paresh Sohni,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
     { city: 'Jammu, Jammu & Kashmir', addr: 'M/s. Facio Marketing Solutions, 1st Floor, GQ Building, Near Rahat Hospital, Bathindi Morh, Sunjwan Road, Jammu - 181152', contact: 'Mr. Zeeshan,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
     { city: 'Kolkata, West Bengal.', addr: 'P Bhogilal Pvt Ltd, 117b, Chittaranjan Avenue, Central Avenue, Kolkata - 700073 West Bengal', contact: 'Mr. Nilesh Mehta,\nMr. Shreedhar Shingare', email: 'info@markworld.com\nsupport@markenworld.com\ntender@markenworld.com', mob: '9175559646\n+91 90111 04332' },
@@ -796,51 +802,19 @@ export function generateHtmlTemplates(data: any): string {
   // =========================================================================
   const pages: string[] = [];
 
-  if (isThemeA) {
-    // Theme A (Mark Enterprises): 20 documents in original sequence
-    pages.push(
-      renderDocBidderInfo(),              // Page 1: Bidder Information / Particulars
-      renderDocOemDeclaration(),         // Page 2: OEM Declaration
-      renderDocManufacturerDeclaration(),// Page 3: Manufacturer Declaration
-      renderDocBidForm(),                // Page 4: Bid Form
-      renderDocBidSecurity(),            // Page 5: Bid Security Declaration Form
-      renderDocAcceptanceOfTerms(),      // Page 6: Acceptance of Tender Terms and Conditions
-      renderDocSpareParts(),             // Page 7: Declaration for Availability of Spare Parts
-      renderDocWarrantyThemeA(),         // Page 8: Undertaking for Warranty
-      renderDocPriceDeclaration(),       // Page 9: Price Declaration
-      renderDocDemonstration(),          // Page 10: Declaration for Demonstration
-      renderDocNonBlacklisting(),        // Page 11: Declaration on Non-Blacklisting / Debarring
-      renderDocFinancialStanding(),      // Page 12: Undertaking for Financial Standing
-      renderDocCountryOfOrigin(),        // Page 13: Declaration for Certificate of Country of Origin
-      renderDocLocalContentP1(),         // Page 14: Declaration Certificate for Local Content (Page 1)
-      renderDocLocalContentP2(),         // Page 15: Declaration Certificate for Local Content (Page 2)
-      renderDocEscalationMatrix(),       // Page 16: Escalation Matrix for Service Support
-      renderDocAfterSalesP1(),           // Page 17: Details of After Sales Service Station (Page 1)
-      renderDocAfterSalesP2(),           // Page 18: Details of After Sales Service Station (Page 2)
-      renderDocTurnoverExemption(),      // Page 19: Experience and Turnover Exemption
-      renderDocEmdExemption()            // Page 20: Earnest Money Deposit (EMD) Exemption
-    );
-  } else {
-    // Theme B (Marken Healthtech): Exact 14 documents (16 pages) confirmed from sample doc
-    pages.push(
-      renderDocBidForm(),           // Page 1: Bid Form
-      renderDocBidSecurity(),       // Page 2: Bid Security Declaration Form
-      renderDocBidderInfo(),        // Page 3: Bidder Information
-      renderDocLocalContentP1(),    // Page 4: Declaration Certificate for Local Content (Page 1)
-      renderDocLocalContentP2(),    // Page 5: Declaration Certificate for Local Content (Page 2)
-      renderDocDemonstration(),     // Page 6: Declaration for Demonstration
-      renderDocCountryOfOrigin(),   // Page 7: Declaration for Certificate of Country of Origin
-      renderDocNonBlacklisting(),   // Page 8: Declaration on Non-Blacklisting / Debarring
-      renderDocWarrantyGeneral(),   // Page 9: Undertaking for Warranty (General Scope)
-      renderDocAcceptanceOfTerms(), // Page 10: Acceptance of Tender Terms and Conditions
-      renderDocPriceDeclaration(),  // Page 11: Price Declaration
-      renderDocFinancialStanding(), // Page 12: Undertaking for Financial Standing
-      renderDocWarrantyProduct(),   // Page 13: Undertaking for Warranty (Product-Specific Scope)
-      renderDocAfterSalesP1(),      // Page 14: Details of After Sales Service Station (Page 1)
-      renderDocAfterSalesP2(),      // Page 15: Details of After Sales Service Station (Page 2)
-      renderDocEscalationMatrix()   // Page 16: Escalation Matrix for Service Support
-    );
-  }
+  // Client-required package (both Mark Enterprises and Marken Healthtech): 8 documents, 9 pages.
+  // Other document renderers above are kept but intentionally not included in the package.
+  pages.push(
+    renderDocBidderInfo(),              // Page 1: Bidder Particulars / Information
+    renderDocOemDeclaration(),          // Page 2: OEM Declaration
+    renderDocManufacturerDeclaration(), // Page 3: Manufacturer Declaration
+    renderDocAcceptanceOfTerms(),       // Page 4: Acceptance of Tender Terms and Conditions
+    renderDocSpareParts(),              // Page 5: Declaration for Availability of Spare Parts
+    renderDocWarrantyThemeA(),          // Page 6: Undertaking for Warranty (Acceptance of Warranty Period)
+    renderDocEscalationMatrix(),        // Page 7: Escalation Matrix for Service Support
+    renderDocAfterSalesP1(),            // Page 8: Details of After Sales Service Station (Page 1)
+    renderDocAfterSalesP2()             // Page 9: Details of After Sales Service Station (Page 2)
+  );
 
   // Assemble all pages with base CSS styles
   return `

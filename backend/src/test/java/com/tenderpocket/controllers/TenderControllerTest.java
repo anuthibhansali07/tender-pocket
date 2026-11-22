@@ -1658,7 +1658,7 @@ public class TenderControllerTest {
     }
 
     private Map<?, ?> listAsAdmin(String sortBy, String order, Integer page, Integer limit, String view, Boolean corrigendumOnly) {
-        ResponseEntity<?> response = tenderController.getTenders("Admin", "admin", null, null, null, null, null, null, null,
+        ResponseEntity<?> response = tenderController.getTenders("Admin", "admin", null, null, null, null, null, null, null, null,
                 sortBy, order, page, limit, view, corrigendumOnly);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         return (Map<?, ?>) response.getBody();
@@ -1736,9 +1736,9 @@ public class TenderControllerTest {
         tender3.setMisFinalPrice(null);
         tender3.setStatus(null);
 
-        ResponseEntity<?> plain = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null,
+        ResponseEntity<?> plain = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null, null,
                 null, null, "scraped_at", "desc", null, null, null, null);
-        ResponseEntity<?> repository = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null,
+        ResponseEntity<?> repository = tenderController.getTenders("TPC Pricing Team", "tpc_user", null, "Pending", null, null, null, null,
                 null, null, "scraped_at", "desc", null, null, "repository", null);
 
         List<String> plainIds = ((List<Tender>) ((Map<?, ?>) plain.getBody()).get("tenders")).stream().map(Tender::getId).toList();

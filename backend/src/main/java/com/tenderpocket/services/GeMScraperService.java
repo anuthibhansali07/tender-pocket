@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenderpocket.models.Tender;
 import com.tenderpocket.repositories.TenderRepository;
 import com.tenderpocket.utils.TenderClassifier;
+import com.tenderpocket.utils.TenderKeywords;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -68,6 +69,10 @@ public class GeMScraperService {
      * last - were never reached. Bid-Start-Date-Latest puts the most recently published bids on
      * the first page, which is what an incremental sync needs.
      */
+    /** Command that starts Python 3 for scripts/parse-gem-pdf.py; empty means detect it. */
+    @Value("${python.command:}")
+    private String pythonCommand;
+
     @Value("${gem.sort:Bid-Start-Date-Latest}")
     private String gemSort;
 
@@ -95,62 +100,129 @@ public class GeMScraperService {
     @Value("${gem.first-page-index:1}")
     private int firstPageIndex;
 
+    /**
+     * Stop a sync once this many keywords in a row failed on their first page even after a fresh
+     * session: GeM is then refusing all searches, and carrying on through 130 keywords only extends
+     * the block. 0 disables the check.
+     */
+    @Value("${gem.max-consecutive-failed-keywords:5}")
+    private int maxConsecutiveFailedKeywords;
+
+    static boolean shouldStopAfterFailures(int consecutiveFailedKeywords, int limit) {
+        return limit > 0 && consecutiveFailedKeywords >= limit;
+    }
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String cachedCookieHeader = null;
     private String cachedCsrfHash = null;
 
-    private static final List<String> RAW_KEYWORDS = Arrays.asList(
-            "EXAMINATION TABLE", "Active Cold Box", "BIPAP", "Blood Bag Sealer", "Blood Bag Tube Sealer", 
-            "Boyle's Machine", "C-ARM Machine", "Cautery Machine", "Cell Counter", "Chemistry Analyser", 
-            "Colorimeter", "Colour Doppler", "CPAP", "Crash Cart", "CTG Machine", "Defibrillator", 
-            "Ward Plain Bed", "Dielectric Sealer", "Digital Analytical Balance", "Digital X-Ray", 
-            "Double Pan Balance", "Dressing Drum", "Dressing Trolley", "DVT Pump", "ECG Machine", 
-            "Electric Bed", "Electro Surgical Unit", "Electrolyte", "Electrosurgical Device", 
-            "Examination Couch", "Fetal Doppler", "Fogger Machine", "Foot Step", "Four Seater Chair Cushion", 
-            "Fowler Bed", "Gel Card Incubator", "Haematology Analyzer", "Hematology Analyzer", 
-            "Hemoglobin Analyzer", "Hemoglobinometer", "Holder Machine", "Hospital Bed", "Hospital Chair", 
-            "Hospital Furniture", "Hospital Table", "Hospital Trolley", "ICU Bed", "Instrument Trolley", 
-            "IV Rod", "Modular Operation Theatre", "Laminar Cabinet", "Laparoscopy Set", "Laparoscopy Trolley", 
-            "LDR Bed", "Mattress for ICU", "Mattress for Semi Fowler", "Medical Equipment", 
-            "Medical Gas Pipeline System", "Medical Hospital Lamps", "Microscope", "Modular Multipara Monitor", 
-            "Office Chair", "Operating Theatre Pendant", "Operation Table", "OT LED Light Double Dome", 
-            "OT Pendant", "OT Table Electric cum Manual", "Over Bed Table", "Oxygen Concentrator", 
-            "Patient Monitor", "Pediatric Bed", "PH Meter", "Plain Bed", "Pulse Oximeter", "Radiant Warmer", 
-            "Radiology & Imaging", "Recovery Trolley Hydraulic", "Revolving Stool", "RH View Box", 
-            "Rolling Hypothermia Treatment Carts", "Fradi", "Semi Auto Analyser", "Semi Fowler Bed", 
-            "Sterile Connecting Device", "Stretcher", "Suction Machine", "Syringe Pump", "Thermometer", 
-            "Three Seater Chair", "TMT Machine", "Tube Stripper", "Ultrasonic Cleaner", "Ultrasound Machine", 
-            "Ultrasound USG Machine", "USG Machine", "VDRL Shaker", "Ventilator", "Visi Cooler", 
-            "Visual Light Box", "Volumetric Infusion Pump", "Weighing Scale", "X-Ray Machine", "IVD Pathology", 
-            "Laproscopy and endoscopy", "Commercial Refrigeration", "Freezer / Deep Freezer", "Chest Freezer", 
-            "Chiller", "Insulated Truck / Vehicles", "Insulated Van / Vehicles", "Refrigerated Vans / Trucks / Vehicles", 
-            "Refrigerator", "Remote Temperature Monitoring Device (WHO Tested)", 
-            "Solar Walk In Cooler and Freezer / Cold Room", "Walk-In-Freezer / Cold Room", "Steel Cupboards & Funriture Range", 
-            "3 door steel cupboards", "2 door steel cupboards", "Office steel cupboards", 
-            "Particle Board Box bed Particle Board", "Particle Board Single Bed", "Particle Board Double Bed", 
-            "Particle Board Diwan", "Particle Board 3 Door Cupboard", "Particle Board 2 Door Cupboard", 
-            "Particle Board Dressing Table", "Particle Board TV Showcase", "Particle Board Office Table", 
-            "Steel Funriture", "ALMIRAH"
-    );
+    /** Shared with the state portal crawler; see {@link TenderKeywords}. */
+    private static final List<String> RAW_KEYWORDS = TenderKeywords.RAW_KEYWORDS;
 
     public int syncTenders(boolean allDates, List<String> customKeywords) throws Exception {
+        return syncTendersDetailed(allDates, customKeywords).imported;
+    }
+
+    /** Outcome of one GeM sync: how many bids were imported and which keywords did not finish. */
+    public static final class SyncResult {
+        public final int imported;
+        /** Keywords whose search failed (even after re-authentication) or were never reached because the sync stopped early. */
+        public final List<String> failedKeywords;
+
+        SyncResult(int imported, List<String> failedKeywords) {
+            this.imported = imported;
+            this.failedKeywords = List.copyOf(failedKeywords);
+        }
+
+        public boolean hasFailures() {
+            return !failedKeywords.isEmpty();
+        }
+    }
+
+    @Autowired(required = false)
+    private FetchStatusRecorder fetchStatusRecorder;
+
+    /** Thrown when a GeM sync is requested while another one is still running. */
+    public static class SyncAlreadyRunningException extends Exception {
+        public SyncAlreadyRunningException() {
+            super("A GeM sync is already running");
+        }
+    }
+
+    /** Only one GeM sync at a time: parallel runs multiply the load on GeM and trigger its rate limiting. */
+    private final java.util.concurrent.atomic.AtomicBoolean syncRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public boolean isSyncRunning() {
+        return syncRunning.get();
+    }
+
+    /**
+     * Like {@link #syncTenders} but also reports the keywords that failed, so a retry can repeat only those.
+     *
+     * @throws SyncAlreadyRunningException when another GeM sync (scheduled or manual) is in progress
+     */
+    public SyncResult syncTendersDetailed(boolean allDates, List<String> customKeywords) throws Exception {
+        if (!syncRunning.compareAndSet(false, true)) {
+            System.out.println("[GeM] A GeM sync is already running; this request was skipped.");
+            throw new SyncAlreadyRunningException();
+        }
+        try {
+            return syncWithStatus(allDates, customKeywords);
+        } finally {
+            syncRunning.set(false);
+        }
+    }
+
+    private SyncResult syncWithStatus(boolean allDates, List<String> customKeywords) throws Exception {
+        List<String> searched = customKeywords == null ? List.of() : customKeywords;
+        if (fetchStatusRecorder != null) fetchStatusRecorder.markStarted(List.of(FetchStatusRecorder.GEM));
+        try {
+            SyncResult result = runSync(allDates, customKeywords);
+            if (fetchStatusRecorder != null) {
+                fetchStatusRecorder.recordGem(searched, result.failedKeywords, result.imported, false);
+            }
+            return result;
+        } catch (Exception e) {
+            if (fetchStatusRecorder != null) fetchStatusRecorder.recordGem(searched, List.of(), 0, true);
+            throw e;
+        } finally {
+            if (fetchStatusRecorder != null) fetchStatusRecorder.markFinished(List.of(FetchStatusRecorder.GEM));
+        }
+    }
+
+    private SyncResult runSync(boolean allDates, List<String> customKeywords) throws Exception {
         List<String> keywords = customKeywords != null && !customKeywords.isEmpty() ? customKeywords : RAW_KEYWORDS;
         int importCount = 0;
+        List<String> failedKeywords = new ArrayList<>();
 
         System.out.println("--- GeM Java Sync Engine Started ---");
         System.out.println("Processing keyword count: " + keywords.size());
+        int consecutiveFailedKeywords = 0;
 
         for (int i = 0; i < keywords.size(); i++) {
             String keyword = keywords.get(i).trim();
             if (keyword.length() < 3) continue;
+            if (shouldStopAfterFailures(consecutiveFailedKeywords, maxConsecutiveFailedKeywords)) {
+                System.err.println(String.format(
+                        "[GeM] %d keywords in a row failed even with a fresh session; GeM is refusing searches "
+                                + "(likely rate limiting). Stopping this sync at keyword %d/%d; the next scheduled sync will retry.",
+                        consecutiveFailedKeywords, i + 1, keywords.size()));
+                for (int j = i; j < keywords.size(); j++) {
+                    String rest = keywords.get(j).trim();
+                    if (rest.length() >= 3) failedKeywords.add(rest);
+                }
+                break;
+            }
             System.out.println(String.format("[%d/%d] Querying GeM for: \"%s\"...", i + 1, keywords.size(), keyword));
 
             int page = firstPageIndex;
             int pagesFetched = 0;
             int consecutiveKnown = 0;
             boolean caughtUp = false;
+            Set<String> seenBefore = seenBidsFor(keyword);
+            Set<String> seenNow = new HashSet<>();
 
             while (!caughtUp && pagesFetched < maxPagesPerKeyword) {
                 JsonNode docs = searchKeywordWithRetry(keyword, page);
@@ -158,7 +230,12 @@ public class GeMScraperService {
 
                 // null means the page failed twice, including after re-authentication. Give up on
                 // this keyword rather than silently treating it as "no more results".
-                if (docs == null) break;
+                if (docs == null) {
+                    if (pagesFetched == 1) consecutiveFailedKeywords++;
+                    failedKeywords.add(keyword);
+                    break;
+                }
+                if (pagesFetched == 1) consecutiveFailedKeywords = 0;
 
                 System.out.println(String.format("  - page %d: %d ongoing bid(s) for \"%s\"",
                         page, docs.size(), keyword));
@@ -203,12 +280,18 @@ public class GeMScraperService {
 
                         enrichExistingRecordFromGeM(existing, officialRefNo, bidNo, officialUrl, doc);
                         tenderRepository.save(existing);
+                        // Only after the save above, so the PDF link and the details read from the
+                        // PDF are not overwritten (that made every run download the same PDFs again).
+                        if (needsGemPdf(existing)) {
+                            downloadAndParseGemPdf(existing.getId(), officialUrl, bidNo, doc);
+                        }
                         System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s from GeM",
                                 existing.getId(), existing.getRefNo()));
 
                         if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
                             retryPendingS3UploadIfPresent(existing.getId());
                         }
+                        seenNow.add(bidNo);
                         consecutiveKnown++;
                         if (consecutiveKnown >= stopAfterKnown) {
                             System.out.println(String.format(
@@ -219,7 +302,6 @@ public class GeMScraperService {
                         }
                         continue;
                     }
-                    consecutiveKnown = 0;
 
                     String start = getJsonString(doc, "final_start_date_sort");
                     String formattedStartDate = (start != null && start.contains("T")) ? start.split("T")[0] : "";
@@ -259,6 +341,24 @@ public class GeMScraperService {
                         }
                     }
 
+                    // Checked under this keyword in an earlier run and not imported (it did not
+                    // match a product). Counts as "known" like a saved tender, so a run that has
+                    // caught up stops after a couple of pages instead of re-reading the same
+                    // unrelated bids every time.
+                    if (seenBefore.contains(bidNo)) {
+                        seenNow.add(bidNo);
+                        consecutiveKnown++;
+                        if (consecutiveKnown >= stopAfterKnown) {
+                            System.out.println(String.format(
+                                    "  - caught up on \"%s\" after %d bid(s) already checked earlier",
+                                    keyword, consecutiveKnown));
+                            caughtUp = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    consecutiveKnown = 0;
+
                     String items = getJsonString(doc, "b_category_name");
                     String dept = getJsonString(doc, "ba_official_details_deptName");
 
@@ -267,6 +367,7 @@ public class GeMScraperService {
                     int keywordMatches = countMatchingKeywords(fullSearchableText, keywords);
                     if (keywordMatches < 1) {
                         System.out.println(String.format("  - Skipping GeM Bid %s (\"%s\"): No keyword matched.", bidNo, items));
+                        seenNow.add(bidNo);
                         continue;
                     }
 
@@ -334,6 +435,7 @@ public class GeMScraperService {
 
                     tenderRepository.save(tender);
                     System.out.println(String.format("  - Registered new GeM Bid: %s", bidNo));
+                    seenNow.add(bidNo);
 
                     // Download document PDF and run python PDF parser
                     downloadAndParseGemPdf(tender.getId(), url, bidNo, doc);
@@ -355,12 +457,36 @@ public class GeMScraperService {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     System.err.println("[GeM Sync] Interrupted; returning early with " + importCount + " import(s).");
-                    return importCount;
+                    return new SyncResult(importCount, failedKeywords);
                 }
             }
+
+            // Remember only when the keyword finished: if a page failed, the retry must read it
+            // all again instead of stopping early on bids from the pages that did load.
+            if (!failedKeywords.contains(keyword)) rememberSeenBids(keyword, seenNow);
         }
 
-        return importCount;
+        return new SyncResult(importCount, failedKeywords);
+    }
+
+    /** Bid numbers already checked for a keyword in earlier runs, kept for {@link #SEEN_BID_KEEP_DAYS} days. */
+    private final Map<String, Map<String, LocalDate>> seenBidsByKeyword = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Bids older than this fall outside the 2-day search window anyway. */
+    static final int SEEN_BID_KEEP_DAYS = 3;
+
+    Set<String> seenBidsFor(String keyword) {
+        Map<String, LocalDate> seen = seenBidsByKeyword.get(keyword.toLowerCase(Locale.ROOT));
+        return seen == null ? Set.of() : new HashSet<>(seen.keySet());
+    }
+
+    void rememberSeenBids(String keyword, Set<String> bidNos) {
+        if (bidNos.isEmpty()) return;
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        Map<String, LocalDate> seen = seenBidsByKeyword.computeIfAbsent(
+                keyword.toLowerCase(Locale.ROOT), k -> new java.util.concurrent.ConcurrentHashMap<>());
+        for (String b : bidNos) seen.put(b, today);
+        seen.values().removeIf(d -> d.isBefore(today.minusDays(SEEN_BID_KEEP_DAYS)));
     }
 
     /**
@@ -448,10 +574,13 @@ public class GeMScraperService {
             }
         }
 
-        // Attach official GeM bid document PDF if missing
-        if (existing.getDocumentUrl() == null || existing.getDocumentUrl().isBlank()) {
-            downloadAndParseGemPdf(existing.getId(), officialUrl, bidNo, doc);
-        }
+        // The bid PDF is attached by the caller after this record is saved: downloadAndParseGemPdf
+        // saves its own copy of the tender, which a later save of this (older) object would undo.
+    }
+
+    /** True when an existing tender still needs its official GeM bid PDF. */
+    static boolean needsGemPdf(Tender t) {
+        return t.getDocumentUrl() == null || t.getDocumentUrl().isBlank();
     }
 
     private void retryPendingS3UploadIfPresent(String tenderId) {
@@ -504,18 +633,33 @@ public class GeMScraperService {
                     }
                 }
 
-                // Call external python parser
-                ProcessBuilder pb = new ProcessBuilder("python3", "scripts/parse-gem-pdf.py", outputPath);
+                // Call external python parser ("python3" on Linux/Docker, "python" or "py -3" on Windows)
+                List<String> command = new ArrayList<>(com.tenderpocket.utils.PythonCommand.resolve(pythonCommand));
+                command.add("scripts/parse-gem-pdf.py");
+                command.add(outputPath);
+                ProcessBuilder pb = new ProcessBuilder(command);
+                // stderr goes to a file so an unread error stream can never block the script,
+                // and its message can be shown when parsing fails (e.g. pypdf not installed).
+                File errFile = File.createTempFile("parse-gem-pdf-", ".err");
+                pb.redirectError(errFile);
+                // Windows Python writes cp1252 by default; the JSON is read back as UTF-8.
+                pb.environment().put("PYTHONIOENCODING", "utf-8");
                 Process process = pb.start();
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
                 StringBuilder sb = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) {
                     sb.append(line);
                 }
-                
+
                 int exitCode = process.waitFor();
+                if (exitCode != 0) {
+                    String err = Files.readString(errFile.toPath()).trim();
+                    String lastLine = err.isEmpty() ? "no error output" : err.substring(err.lastIndexOf('\n') + 1);
+                    System.err.println("  - PDF parser exited with code " + exitCode + " for " + tenderId + ": " + lastLine);
+                }
+                Files.deleteIfExists(errFile.toPath());
                 Optional<Tender> opt = tenderRepository.findById(tenderId);
                 if (opt.isPresent()) {
                     Tender t = opt.get();
@@ -600,7 +744,7 @@ public class GeMScraperService {
      * rather than "no more results" - the previous code skipped a failed keyword outright,
      * losing roughly 7% of keywords per sync to transient non-200 responses with no retry.
      */
-    private JsonNode searchKeywordWithRetry(String keyword, int page) {
+    JsonNode searchKeywordWithRetry(String keyword, int page) {
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
                 return searchKeyword(keyword, page);
@@ -632,7 +776,7 @@ public class GeMScraperService {
         String url = "https://bidplus.gem.gov.in/all-bids-data";
 
         Map<String, Object> param = new HashMap<>();
-        param.put("searchBid", keyword);
+        param.put("searchBid", searchTextFor(keyword));
         param.put("searchType", "fullText");
 
         Map<String, Object> filter = new HashMap<>();
@@ -671,13 +815,76 @@ public class GeMScraperService {
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonNode node = objectMapper.readTree(response.body());
 
+        // GeM issues a new CSRF token with every search reply (cookie csrf_gem_cookie, which is also
+        // the csrf_bd_gem_nk form value), as a browser session would. Reusing the first token made
+        // every search after the first in a session fail with code 500.
+        cachedCookieHeader = mergeCookies(cachedCookieHeader, response.headers().allValues("Set-Cookie"));
+        String rotatedCsrf = cookieValue(cachedCookieHeader, "csrf_gem_cookie");
+        if (rotatedCsrf != null && !rotatedCsrf.isBlank()) cachedCsrfHash = rotatedCsrf;
+
+        JsonNode node;
+        try {
+            node = objectMapper.readTree(response.body());
+        } catch (Exception e) {
+            throw new Exception("GeM search returned HTTP " + response.statusCode() + " with a non-JSON body");
+        }
         if (node.has("code") && node.get("code").asInt() == 200) {
             return node.get("response").get("response").get("docs");
-        } else {
-            throw new Exception("GeM search returned non-200 status code");
         }
+        String message = node.has("message") ? node.get("message").asText() : "no message";
+        if (isNoResults(node.path("code").asInt(), message)) {
+            // GeM answers "404: No data found" when a search simply has no ongoing bids. That is an
+            // empty result, not a failure: no retry, no new session, no "missed product" warning.
+            return objectMapper.createArrayNode();
+        }
+        throw new Exception("GeM search returned non-200 status code (HTTP " + response.statusCode()
+                + ", code " + node.path("code").asText("?") + ": " + message + ")");
+    }
+
+    /** GeM's reply for a search with no ongoing bids. */
+    static boolean isNoResults(int code, String message) {
+        return code == 404 && message != null && message.toLowerCase(Locale.ROOT).contains("no data");
+    }
+
+    /**
+     * The text sent to GeM's search for a keyword. GeM's search fails with "500: Something went
+     * wrong" whenever the text contains a slash ("Freezer / Deep Freezer"), so slashes become
+     * spaces. Matching bids against the keyword list is unchanged.
+     */
+    static String searchTextFor(String keyword) {
+        return keyword == null ? "" : keyword.replace('/', ' ').replace('\\', ' ').replaceAll("\\s+", " ").trim();
+    }
+
+    /** Applies Set-Cookie headers to a "name=value; name=value" Cookie header, replacing changed values. */
+    static String mergeCookies(String cookieHeader, List<String> setCookies) {
+        LinkedHashMap<String, String> cookies = new LinkedHashMap<>();
+        if (cookieHeader != null) {
+            for (String part : cookieHeader.split(";")) {
+                int eq = part.indexOf('=');
+                if (eq > 0) cookies.put(part.substring(0, eq).trim(), part.substring(eq + 1).trim());
+            }
+        }
+        if (setCookies != null) {
+            for (String c : setCookies) {
+                String pair = c.split(";", 2)[0];
+                int eq = pair.indexOf('=');
+                if (eq > 0) cookies.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        cookies.forEach((k, v) -> sb.append(sb.length() == 0 ? "" : "; ").append(k).append('=').append(v));
+        return sb.toString();
+    }
+
+    /** Value of one cookie in a Cookie header, or null. */
+    static String cookieValue(String cookieHeader, String name) {
+        if (cookieHeader == null) return null;
+        for (String part : cookieHeader.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq > 0 && part.substring(0, eq).trim().equals(name)) return part.substring(eq + 1).trim();
+        }
+        return null;
     }
 
     private synchronized void getCredentials() throws Exception {
@@ -702,12 +909,7 @@ public class GeMScraperService {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         
         // Parse cookies
-        List<String> cookies = response.headers().allValues("Set-Cookie");
-        StringBuilder cookieBuilder = new StringBuilder();
-        for (String c : cookies) {
-            cookieBuilder.append(c.split(";")[0]).append("; ");
-        }
-        cachedCookieHeader = cookieBuilder.toString().trim();
+        cachedCookieHeader = mergeCookies(null, response.headers().allValues("Set-Cookie"));
 
         // Parse CSRF
         String html = response.body();
@@ -785,21 +987,6 @@ public class GeMScraperService {
     }
 
     public static int countMatchingKeywords(String content, List<String> keywords) {
-        if (content == null || content.trim().isEmpty() || keywords == null || keywords.isEmpty()) {
-            return 0;
-        }
-        String lowerContent = content.toLowerCase();
-        Set<String> matchedKeywords = new HashSet<>();
-
-        for (String kw : keywords) {
-            if (kw == null) continue;
-            String trimmedKw = kw.trim().toLowerCase();
-            if (trimmedKw.length() < 3) continue;
-
-            if (lowerContent.contains(trimmedKw)) {
-                matchedKeywords.add(trimmedKw);
-            }
-        }
-        return matchedKeywords.size();
+        return TenderKeywords.countMatchingKeywords(content, keywords);
     }
 }

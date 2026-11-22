@@ -15,6 +15,8 @@ import java.sql.Statement;
 public class TenderPocketApplication {
     public static void main(String[] args) {
         loadDotEnvIfPresent();
+        // System.out / System.err lines also go to the log file (logging.file.name).
+        com.tenderpocket.config.StdoutLogBridge.install();
         SpringApplication.run(TenderPocketApplication.class, args);
     }
 
