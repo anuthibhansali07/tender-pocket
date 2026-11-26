@@ -49,6 +49,8 @@ class EmailSyncServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(emailSyncService, "restTemplate", restTemplate);
         ReflectionTestUtils.setField(emailSyncService, "tenderRepository", tenderRepository);
+        // Tracking links in the fixtures are not followed over the network in these tests.
+        emailSyncService.redirectFollower = href -> href;
     }
 
     @Test
