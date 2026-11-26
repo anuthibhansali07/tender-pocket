@@ -253,10 +253,15 @@ public class EmailSyncService {
 
             if (existingOpt.isPresent()) {
                 Tender existing = existingOpt.get();
+                // A full alert list repeats hundreds of tenders already in the database on every sync, so a
+                // tender is written back only when the alert actually filled something in.
+                String before = enrichableFields(existing);
                 enrichExistingRecordFromTender247(existing, tData, refNo, link);
-                tenderRepository.save(existing);
-                System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
-                        existing.getId(), existing.getRefNo(), existing.getTenderType()));
+                if (!before.equals(enrichableFields(existing))) {
+                    tenderRepository.save(existing);
+                    System.out.println(String.format("[EmailSync] Enriched existing tender id=%s refNo=%s with classification=%s",
+                            existing.getId(), existing.getRefNo(), existing.getTenderType()));
+                }
                 alreadyPresent++;
                 continue;
             }
@@ -299,6 +304,14 @@ public class EmailSyncService {
             imported++;
         }
         return new int[]{imported, alreadyPresent, expired};
+    }
+
+    /** The fields enrichExistingRecordFromTender247 may fill, as one string, to tell whether it changed anything. */
+    private static String enrichableFields(Tender t) {
+        return String.join("\u0001", String.valueOf(t.getRefNo()), String.valueOf(t.getSourceId()),
+                String.valueOf(t.getOriginalUrl()), String.valueOf(t.getAuthority()), String.valueOf(t.getLocation()),
+                String.valueOf(t.getDueDate()), String.valueOf(t.getEstimatedCostRaw()), String.valueOf(t.getEmdRaw()),
+                String.valueOf(t.getDocumentFeeRaw()), String.valueOf(t.getSector()));
     }
 
     /** True when the due date can be read and is before today. Dates in a format not recognised count as not past. */
