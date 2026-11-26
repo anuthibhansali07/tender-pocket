@@ -1,0 +1,137 @@
+package com.tenderpocket.utils;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Decides whether a GeM item name is one of the products named by a keyword.
+ *
+ * A keyword matches when every one of its words is found in the same item of the bid (a multi-item bid
+ * lists its items separated by commas), close together and in any order. Words are compared without regard
+ * to capitals, punctuation, GeM's "(V2)" tags, UK/US spelling and plurals. A long word may also differ in
+ * its ending ("Operation Table" matches "Operating Table") or sit inside a compound ("Chemistry Analyser"
+ * matches "Biochemistry Analyzer"). Short words and one-word keywords must match exactly, apart from the
+ * plural, so "Table" never matches "Cable" and "Ventilator" never matches "Ventilation".
+ */
+public final class KeywordMatcher {
+
+    private KeywordMatcher() {}
+
+    private static final Set<String> STOP_WORDS =
+            Set.of("and", "of", "for", "the", "with", "cum", "or", "in", "to", "on", "by", "as", "per", "is");
+
+    private static final Map<String, String> SPELLINGS = Map.of(
+            "analyser", "analyzer", "haematology", "hematology", "haemoglobin", "hemoglobin", "colour", "color",
+            "theatre", "theater", "paediatric", "pediatric", "litre", "liter", "centre", "center");
+
+    private static final String[] ENDINGS =
+            {"ation", "ating", "ions", "ion", "ing", "ers", "ors", "er", "or", "ed", "es", "s"};
+
+    /** Words shorter than this must match exactly (apart from the plural). */
+    private static final int MIN_FLEXIBLE_LENGTH = 7;
+
+    private static final Pattern VERSION_TAG = Pattern.compile("\\((?:v\\d+|q\\d+)\\)");
+    private static final Pattern WORD = Pattern.compile("[a-z0-9]+");
+
+    static List<String> words(String text) {
+        List<String> out = new ArrayList<>();
+        if (text == null) return out;
+        Matcher m = WORD.matcher(VERSION_TAG.matcher(text.toLowerCase()).replaceAll(" "));
+        while (m.find()) {
+            String word = SPELLINGS.getOrDefault(m.group(), m.group());
+            if (!STOP_WORDS.contains(word)) out.add(word);
+        }
+        return out;
+    }
+
+    private static String singular(String word) {
+        return word.length() > 3 && word.endsWith("s") && !word.endsWith("ss")
+                ? word.substring(0, word.length() - 1) : word;
+    }
+
+    private static String stem(String word) {
+        for (String ending : ENDINGS) {
+            if (word.endsWith(ending) && word.length() - ending.length() >= 5) {
+                return word.substring(0, word.length() - ending.length());
+            }
+        }
+        return word;
+    }
+
+    /** 2 = same word, 1 = same word with a different ending or inside a compound, 0 = different words. */
+    private static int wordMatch(String keywordWord, String itemWord, boolean singleWordKeyword) {
+        if (keywordWord.equals(itemWord) || singular(keywordWord).equals(singular(itemWord))) return 2;
+        if (singleWordKeyword) return 0;
+        if (keywordWord.length() < MIN_FLEXIBLE_LENGTH || itemWord.length() < MIN_FLEXIBLE_LENGTH) return 0;
+        if (stem(keywordWord).equals(stem(itemWord))) return 1;
+        if (itemWord.length() > keywordWord.length() && itemWord.endsWith(keywordWord)) return 1;
+        return 0;
+    }
+
+    /** How many of the keyword's words are found in one item, or -1 when all are found but too far apart. */
+    private static int wordsFound(List<String> keywordWords, List<String> itemWords) {
+        boolean single = keywordWords.size() == 1;
+        int found = 0, first = Integer.MAX_VALUE, last = -1;
+        for (String keywordWord : keywordWords) {
+            int position = -1, best = 0;
+            for (int i = 0; i < itemWords.size() && best < 2; i++) {
+                int quality = wordMatch(keywordWord, itemWords.get(i), single);
+                if (quality > best) {
+                    best = quality;
+                    position = i;
+                }
+            }
+            if (position < 0) continue;
+            found++;
+            first = Math.min(first, position);
+            last = Math.max(last, position);
+        }
+        if (found == keywordWords.size() && last - first > keywordWords.size() + 1) return -1;
+        return found;
+    }
+
+    public static boolean matches(String keyword, String itemName) {
+        List<String> keywordWords = words(keyword);
+        if (keywordWords.isEmpty() || itemName == null) return false;
+        for (String item : itemName.split("[,;]")) {
+            if (wordsFound(keywordWords, words(item)) == keywordWords.size()) return true;
+        }
+        return false;
+    }
+
+    /** The first keyword that matches the item name, or null. */
+    public static String firstMatch(List<String> keywords, String itemName) {
+        if (keywords == null || itemName == null || itemName.isBlank()) return null;
+        for (String keyword : keywords) {
+            if (keyword != null && matches(keyword, itemName)) return keyword;
+        }
+        return null;
+    }
+
+    /**
+     * A keyword of three or more words that the item misses by exactly one word, or null. Used only to report
+     * rejected bids that came close, so a gap in the keyword list is noticed. Two-word keywords are left out:
+     * one word of two matches far too many unrelated items.
+     */
+    public static String nearMiss(List<String> keywords, String itemName) {
+        if (keywords == null || itemName == null || itemName.isBlank()) return null;
+        for (String keyword : keywords) {
+            List<String> keywordWords = words(keyword);
+            if (keywordWords.size() < 3) continue;
+            for (String item : itemName.split("[,;]")) {
+                if (wordsFound(keywordWords, words(item)) == keywordWords.size() - 1) return keyword;
+            }
+        }
+        return null;
+    }
+
+    /** The text sent to GeM's search for a keyword: hyphens, slashes and apostrophes make that search find nothing. */
+    public static String searchText(String keyword) {
+        if (keyword == null) return "";
+        return keyword.replace("'", "").replaceAll("[-/]", " ").replaceAll("\\s+", " ").trim();
+    }
+}
