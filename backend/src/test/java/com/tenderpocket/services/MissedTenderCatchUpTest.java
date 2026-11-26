@@ -35,7 +35,7 @@ class MissedTenderCatchUpTest {
 
         verify(gemSync).importBidsByNumber(argThat(bids -> bids.size() == 43 && bids.contains("GEM/2026/B/8273521")));
         verify(emailSync).catchUpFromAlertEmails(45, true);
-        verify(gemSync).catchUp(45, 30);
+        verify(gemSync).catchUp(45, 10);
         verify(markers).save(argThat((SyncMarker m) -> MissedTenderCatchUp.MARKER.equals(m.getName())));
     }
 
@@ -55,7 +55,7 @@ class MissedTenderCatchUpTest {
         catchUp.run();
 
         verify(emailSync).catchUpFromAlertEmails(45, true);
-        verify(gemSync).catchUp(45, 30);
+        verify(gemSync).catchUp(45, 10);
     }
 
     @Test
@@ -64,7 +64,7 @@ class MissedTenderCatchUpTest {
 
         catchUp.run();
 
-        verify(gemSync).catchUp(45, 30);            // the other steps still run
+        verify(gemSync).catchUp(45, 10);            // the other steps still run
         verify(markers, never()).save(any());       // but it is not recorded as done
     }
 }

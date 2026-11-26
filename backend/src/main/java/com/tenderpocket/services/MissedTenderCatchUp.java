@@ -46,8 +46,8 @@ public class MissedTenderCatchUp {
     boolean skipExpired = true;
 
     /** Pages of 10 results read per keyword on GeM during the catch-up. */
-    @Value("${catchup.gem-max-pages:30}")
-    int gemMaxPages = 30;
+    @Value("${catchup.gem-max-pages:10}")
+    int gemMaxPages = 10;
 
     long startDelayMs = 90_000;
 

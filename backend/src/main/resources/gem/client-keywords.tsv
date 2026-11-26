@@ -1,0 +1,1360 @@
+# Client's master keyword list (Master_Tender_Search_Keywords_1.xlsx, received November 2026).
+# One keyword per line: type, keyword, product id, category, product. Tab-separated.
+# Primary and General keywords are searched on GeM; Alternative keywords are only used to recognise a bid.
+type	keyword	product_id	category	product
+Primary	Blood Bank Refrigerator	P0001	Blood Bank	Blood Bank Refrigerator
+Alternative	Blood Bank Fridge	P0001	Blood Bank	Blood Bank Refrigerator
+Alternative	BBR	P0001	Blood Bank	Blood Bank Refrigerator
+Alternative	Blood Storage Refrigerator	P0001	Blood Bank	Blood Bank Refrigerator
+Alternative	Blood Refrigerator	P0001	Blood Bank	Blood Bank Refrigerator
+Alternative	Blood Storage Cabinet	P0001	Blood Bank	Blood Bank Refrigerator
+Primary	Platelet Agitator and Incubator	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	Platelet Agitator	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	Platelet Incubator	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	Platelet Agitator Cum Incubator	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	Platelet Shaker	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	Platelet Storage System	P0002	Blood Bank	Platelet Agitator and Incubator
+Alternative	PAI	P0002	Blood Bank	Platelet Agitator and Incubator
+Primary	Deep Freezer	P0003	Blood Bank	Deep Freezer
+Alternative	Deepfreezer	P0003	Blood Bank	Deep Freezer
+Alternative	Blood Bank Deep Freezer	P0003	Blood Bank	Deep Freezer
+Alternative	Plasma Freezer	P0003	Blood Bank	Deep Freezer
+Alternative	-40 Degree Freezer	P0003	Blood Bank	Deep Freezer
+Alternative	-30 Degree Freezer	P0003	Blood Bank	Deep Freezer
+Primary	Ultra Low Temperature Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Alternative	ULT Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Alternative	Ultra Deep Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Alternative	Ultra Low Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Alternative	-80 Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Alternative	-86 Freezer	P0004	Blood Bank	Ultra Low Temperature Freezer
+Primary	Plasma Thawing Bath	P0005	Blood Bank	Plasma Thawing Bath
+Alternative	Plasma Thawing System	P0005	Blood Bank	Plasma Thawing Bath
+Alternative	Plasma Thawer	P0005	Blood Bank	Plasma Thawing Bath
+Alternative	Plasma Thawing Equipment	P0005	Blood Bank	Plasma Thawing Bath
+Alternative	FFP Thawing Bath	P0005	Blood Bank	Plasma Thawing Bath
+Primary	Plasma Expresser	P0006	Blood Bank	Plasma Expresser
+Alternative	Plasma Expressor	P0006	Blood Bank	Plasma Expresser
+Alternative	Plasma Extractor	P0006	Blood Bank	Plasma Expresser
+Alternative	Plasma Separator	P0006	Blood Bank	Plasma Expresser
+Alternative	Plasma Expressing Device	P0006	Blood Bank	Plasma Expresser
+Primary	Automatic Component Extractor	P0007	Blood Bank	Automatic Component Extractor
+Alternative	Automatic Plasma Expresser	P0007	Blood Bank	Automatic Component Extractor
+Alternative	Blood Component Extractor	P0007	Blood Bank	Automatic Component Extractor
+Alternative	Blood Component Separator	P0007	Blood Bank	Automatic Component Extractor
+Primary	Blood Bag Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	Blood Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	Dielectric Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	RF Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	Blood Bag Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	Portable Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Alternative	Bench Top Tube Sealer	P0008	Blood Bank	Blood Bag Tube Sealer
+Primary	Blood Collection Monitor	P0009	Blood Bank	Blood Collection Monitor
+Alternative	Blood Collection Mixer	P0009	Blood Bank	Blood Collection Monitor
+Alternative	Blood Bag Mixer	P0009	Blood Bank	Blood Collection Monitor
+Alternative	Blood Donation Monitor	P0009	Blood Bank	Blood Collection Monitor
+Alternative	BCM	P0009	Blood Bank	Blood Collection Monitor
+Primary	Blood Donor Couch	P0010	Blood Bank	Blood Donor Couch
+Alternative	Blood Donation Chair	P0010	Blood Bank	Blood Donor Couch
+Alternative	Donor Chair	P0010	Blood Bank	Blood Donor Couch
+Alternative	Donor Bed	P0010	Blood Bank	Blood Donor Couch
+Alternative	Blood Collection Couch	P0010	Blood Bank	Blood Donor Couch
+Alternative	Phlebotomy Chair	P0010	Blood Bank	Blood Donor Couch
+Primary	Refrigerated Centrifuge	P0011	Blood Bank	Refrigerated Centrifuge
+Alternative	Blood Bank Centrifuge	P0011	Blood Bank	Refrigerated Centrifuge
+Alternative	Blood Bag Centrifuge	P0011	Blood Bank	Refrigerated Centrifuge
+Alternative	Refrigerated Centrifuse	P0011	Blood Bank	Refrigerated Centrifuge
+Alternative	Refrigerated Centrifuser	P0011	Blood Bank	Refrigerated Centrifuge
+Alternative	Component Separation Centrifuge	P0011	Blood Bank	Refrigerated Centrifuge
+Primary	Contact Shock Freezer	P0012	Blood Bank	Contact Shock Freezer
+Alternative	Plasma Shock Freezer	P0012	Blood Bank	Contact Shock Freezer
+Alternative	Shock Freezer	P0012	Blood Bank	Contact Shock Freezer
+Alternative	Contact Freezer	P0012	Blood Bank	Contact Shock Freezer
+Alternative	Rapid Plasma Freezer	P0012	Blood Bank	Contact Shock Freezer
+Alternative	Blast Plasma Freezer	P0012	Blood Bank	Contact Shock Freezer
+Primary	Blood Transportation Box	P0013	Blood Bank	Blood Transportation Box
+Alternative	Blood Transport Box	P0013	Blood Bank	Blood Transportation Box
+Alternative	Blood Carrier Box	P0013	Blood Bank	Blood Transportation Box
+Alternative	Blood Bag Transport Container	P0013	Blood Bank	Blood Transportation Box
+Alternative	Blood Cold Box	P0013	Blood Bank	Blood Transportation Box
+Primary	Blood Bag Weighing Scale	P0014	Blood Bank	Blood Bag Weighing Scale
+Alternative	Blood Bag Balance	P0014	Blood Bank	Blood Bag Weighing Scale
+Alternative	Blood Bank Weighing Scale	P0014	Blood Bank	Blood Bag Weighing Scale
+Alternative	Blood Component Balance	P0014	Blood Bank	Blood Bag Weighing Scale
+Primary	Blood Bag Stripper	P0015	Blood Bank	Blood Bag Stripper
+Alternative	Tube Stripper	P0015	Blood Bank	Blood Bag Stripper
+Alternative	Blood Tubing Stripper	P0015	Blood Bank	Blood Bag Stripper
+Alternative	Blood Bag Tube Stripper	P0015	Blood Bank	Blood Bag Stripper
+Primary	Sterile Connecting Device	P0016	Blood Bank	Sterile Connecting Device
+Alternative	Sterile Tubing Welder	P0016	Blood Bank	Sterile Connecting Device
+Alternative	Sterile Connection Device	P0016	Blood Bank	Sterile Connecting Device
+Alternative	SCD	P0016	Blood Bank	Sterile Connecting Device
+Alternative	Tube Welder	P0016	Blood Bank	Sterile Connecting Device
+Primary	Apheresis Machine	P0017	Blood Bank	Apheresis Machine
+Alternative	Cell Separator	P0017	Blood Bank	Apheresis Machine
+Alternative	Blood Cell Separator	P0017	Blood Bank	Apheresis Machine
+Alternative	Plateletpheresis Machine	P0017	Blood Bank	Apheresis Machine
+Alternative	Plasmapheresis Machine	P0017	Blood Bank	Apheresis Machine
+Primary	Immunohematology Analyzer	P0018	Blood Bank	Immunohematology Analyzer
+Alternative	Immunohaematology Analyser	P0018	Blood Bank	Immunohematology Analyzer
+Alternative	Blood Grouping Analyzer	P0018	Blood Bank	Immunohematology Analyzer
+Alternative	Blood Grouping System	P0018	Blood Bank	Immunohematology Analyzer
+Primary	Gel Card Centrifuge	P0019	Blood Bank	Gel Card Centrifuge
+Alternative	Gel Centrifuge	P0019	Blood Bank	Gel Card Centrifuge
+Alternative	Gel Card System	P0019	Blood Bank	Gel Card Centrifuge
+Alternative	Blood Grouping Centrifuge	P0019	Blood Bank	Gel Card Centrifuge
+Primary	Gel Card Incubator	P0020	Blood Bank	Gel Card Incubator
+Alternative	Gel Incubator	P0020	Blood Bank	Gel Card Incubator
+Alternative	Gel Card Heating System	P0020	Blood Bank	Gel Card Incubator
+Primary	Blood Bag	P0021	Blood Bank	Blood Bag
+Alternative	Blood Collection Bag	P0021	Blood Bank	Blood Bag
+Alternative	Single Blood Bag	P0021	Blood Bank	Blood Bag
+Alternative	Double Blood Bag	P0021	Blood Bank	Blood Bag
+Alternative	Triple Blood Bag	P0021	Blood Bank	Blood Bag
+Alternative	Quadruple Blood Bag	P0021	Blood Bank	Blood Bag
+Primary	Blood Irradiator	P0022	Blood Bank	Blood Irradiator
+Alternative	Blood Bag Irradiator	P0022	Blood Bank	Blood Irradiator
+Alternative	X-Ray Blood Irradiator	P0022	Blood Bank	Blood Irradiator
+Alternative	Gamma Blood Irradiator	P0022	Blood Bank	Blood Irradiator
+Primary	Haemoglobin Meter	P0023	Blood Bank	Haemoglobin Meter
+Alternative	Hemoglobin Meter	P0023	Blood Bank	Haemoglobin Meter
+Alternative	Hb Meter	P0023	Blood Bank	Haemoglobin Meter
+Alternative	Hemoglobinometer	P0023	Blood Bank	Haemoglobin Meter
+Alternative	Haemoglobinometer	P0023	Blood Bank	Haemoglobin Meter
+Primary	Blood Bank Management System	P0024	Blood Bank	Blood Bank Management System
+Alternative	Blood Bank Software	P0024	Blood Bank	Blood Bank Management System
+Alternative	BBMS	P0024	Blood Bank	Blood Bank Management System
+Alternative	Blood Centre Management Software	P0024	Blood Bank	Blood Bank Management System
+Primary	Ice Lined Refrigerator	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Alternative	ILR	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Alternative	Ice-Lined Refrigerator	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Alternative	Ice Line Refrigerator	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Alternative	Icelined Refrigerator	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Alternative	Ice Lined Refrigerators	P0025	Cold Chain and Refrigeration	Ice Lined Refrigerator
+Primary	Vaccine Refrigerator	P0026	Cold Chain and Refrigeration	Vaccine Refrigerator
+Alternative	Vaccine Fridge	P0026	Cold Chain and Refrigeration	Vaccine Refrigerator
+Alternative	Vaccine Storage Refrigerator	P0026	Cold Chain and Refrigeration	Vaccine Refrigerator
+Alternative	Immunization Refrigerator	P0026	Cold Chain and Refrigeration	Vaccine Refrigerator
+Primary	Solar Direct Drive Refrigerator	P0027	Cold Chain and Refrigeration	Solar Direct Drive Refrigerator
+Alternative	SDD Refrigerator	P0027	Cold Chain and Refrigeration	Solar Direct Drive Refrigerator
+Alternative	Solar Vaccine Refrigerator	P0027	Cold Chain and Refrigeration	Solar Direct Drive Refrigerator
+Alternative	Solar ILR	P0027	Cold Chain and Refrigeration	Solar Direct Drive Refrigerator
+Alternative	Solar Powered Refrigerator	P0027	Cold Chain and Refrigeration	Solar Direct Drive Refrigerator
+Primary	Vaccine Deep Freezer	P0028	Cold Chain and Refrigeration	Vaccine Deep Freezer
+Alternative	Ice Pack Freezer	P0028	Cold Chain and Refrigeration	Vaccine Deep Freezer
+Alternative	Vaccine Freezer	P0028	Cold Chain and Refrigeration	Vaccine Deep Freezer
+Alternative	Immunization Freezer	P0028	Cold Chain and Refrigeration	Vaccine Deep Freezer
+Primary	Walk In Cooler	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Alternative	WIC	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Alternative	Walk-in Cooler	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Alternative	Walkin Cooler	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Alternative	Walk In Cold Room	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Alternative	Vaccine Cold Room	P0029	Cold Chain and Refrigeration	Walk In Cooler
+Primary	Walk In Freezer	P0030	Cold Chain and Refrigeration	Walk In Freezer
+Alternative	WIF	P0030	Cold Chain and Refrigeration	Walk In Freezer
+Alternative	Walk-in Freezer	P0030	Cold Chain and Refrigeration	Walk In Freezer
+Alternative	Walkin Freezer	P0030	Cold Chain and Refrigeration	Walk In Freezer
+Alternative	Freezer Room	P0030	Cold Chain and Refrigeration	Walk In Freezer
+Primary	Cold Room	P0031	Cold Chain and Refrigeration	Cold Room
+Alternative	Cold Storage Room	P0031	Cold Chain and Refrigeration	Cold Room
+Alternative	Refrigerated Room	P0031	Cold Chain and Refrigeration	Cold Room
+Alternative	Modular Cold Room	P0031	Cold Chain and Refrigeration	Cold Room
+Alternative	Cold Chamber	P0031	Cold Chain and Refrigeration	Cold Room
+Primary	Cold Box	P0032	Cold Chain and Refrigeration	Cold Box
+Alternative	Vaccine Cold Box	P0032	Cold Chain and Refrigeration	Cold Box
+Alternative	Passive Cold Box	P0032	Cold Chain and Refrigeration	Cold Box
+Alternative	Active Cold Box	P0032	Cold Chain and Refrigeration	Cold Box
+Alternative	Insulated Cold Box	P0032	Cold Chain and Refrigeration	Cold Box
+Primary	Vaccine Carrier	P0033	Cold Chain and Refrigeration	Vaccine Carrier
+Alternative	Vaccine Carrier Box	P0033	Cold Chain and Refrigeration	Vaccine Carrier
+Alternative	Vaccine Transportation Box	P0033	Cold Chain and Refrigeration	Vaccine Carrier
+Alternative	Vaccine Carrying Box	P0033	Cold Chain and Refrigeration	Vaccine Carrier
+Alternative	Vaccine Transport Carrier	P0033	Cold Chain and Refrigeration	Vaccine Carrier
+Primary	Ice Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	Icepack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	Cool Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	Water Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	Gel Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	Coolant Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Alternative	PCM Pack	P0034	Cold Chain and Refrigeration	Ice Pack
+Primary	Laboratory Refrigerator	P0035	Cold Chain and Refrigeration	Laboratory Refrigerator
+Alternative	Lab Refrigerator	P0035	Cold Chain and Refrigeration	Laboratory Refrigerator
+Alternative	Laboratory Fridge	P0035	Cold Chain and Refrigeration	Laboratory Refrigerator
+Alternative	Scientific Refrigerator	P0035	Cold Chain and Refrigeration	Laboratory Refrigerator
+Alternative	Medical Refrigerator	P0035	Cold Chain and Refrigeration	Laboratory Refrigerator
+Primary	Pharmacy Refrigerator	P0036	Cold Chain and Refrigeration	Pharmacy Refrigerator
+Alternative	Pharmaceutical Refrigerator	P0036	Cold Chain and Refrigeration	Pharmacy Refrigerator
+Alternative	Medicine Refrigerator	P0036	Cold Chain and Refrigeration	Pharmacy Refrigerator
+Alternative	Drug Storage Refrigerator	P0036	Cold Chain and Refrigeration	Pharmacy Refrigerator
+Primary	Reagent Refrigerator	P0037	Cold Chain and Refrigeration	Reagent Refrigerator
+Alternative	Kit and Reagent Refrigerator	P0037	Cold Chain and Refrigeration	Reagent Refrigerator
+Alternative	Refrigerators for Kits and Reagents	P0037	Cold Chain and Refrigeration	Reagent Refrigerator
+Alternative	Reagent Storage Cabinet	P0037	Cold Chain and Refrigeration	Reagent Refrigerator
+Primary	Biomedical Freezer	P0038	Cold Chain and Refrigeration	Biomedical Freezer
+Alternative	Medical Freezer	P0038	Cold Chain and Refrigeration	Biomedical Freezer
+Alternative	Laboratory Freezer	P0038	Cold Chain and Refrigeration	Biomedical Freezer
+Alternative	Scientific Freezer	P0038	Cold Chain and Refrigeration	Biomedical Freezer
+Primary	Chest Freezer	P0039	Cold Chain and Refrigeration	Chest Freezer
+Alternative	Horizontal Freezer	P0039	Cold Chain and Refrigeration	Chest Freezer
+Alternative	Chest Type Deep Freezer	P0039	Cold Chain and Refrigeration	Chest Freezer
+Alternative	Top Opening Freezer	P0039	Cold Chain and Refrigeration	Chest Freezer
+Primary	Upright Freezer	P0040	Cold Chain and Refrigeration	Upright Freezer
+Alternative	Vertical Freezer	P0040	Cold Chain and Refrigeration	Upright Freezer
+Alternative	Upright Deep Freezer	P0040	Cold Chain and Refrigeration	Upright Freezer
+Alternative	Vertical Deep Freezer	P0040	Cold Chain and Refrigeration	Upright Freezer
+Primary	Combination Refrigerator Freezer	P0041	Cold Chain and Refrigeration	Combination Refrigerator Freezer
+Alternative	Combined Refrigerator Freezer	P0041	Cold Chain and Refrigeration	Combination Refrigerator Freezer
+Alternative	Dual Temperature Refrigerator	P0041	Cold Chain and Refrigeration	Combination Refrigerator Freezer
+Alternative	Vaccine Refrigerator Cum Freezer	P0041	Cold Chain and Refrigeration	Combination Refrigerator Freezer
+Primary	Temperature Data Logger	P0042	Cold Chain and Refrigeration	Temperature Data Logger
+Alternative	Temperature Logger	P0042	Cold Chain and Refrigeration	Temperature Data Logger
+Alternative	Electronic Data Logger	P0042	Cold Chain and Refrigeration	Temperature Data Logger
+Alternative	EDL	P0042	Cold Chain and Refrigeration	Temperature Data Logger
+Alternative	Digital Data Logger	P0042	Cold Chain and Refrigeration	Temperature Data Logger
+Primary	Temperature Monitoring System	P0043	Cold Chain and Refrigeration	Temperature Monitoring System
+Alternative	Equipment Monitoring System	P0043	Cold Chain and Refrigeration	Temperature Monitoring System
+Alternative	EMS	P0043	Cold Chain and Refrigeration	Temperature Monitoring System
+Alternative	Remote Temperature Monitoring Device	P0043	Cold Chain and Refrigeration	Temperature Monitoring System
+Alternative	RTMD	P0043	Cold Chain and Refrigeration	Temperature Monitoring System
+Primary	Freeze Indicator	P0044	Cold Chain and Refrigeration	Freeze Indicator
+Alternative	Electronic Freeze Indicator	P0044	Cold Chain and Refrigeration	Freeze Indicator
+Alternative	Vaccine Freeze Indicator	P0044	Cold Chain and Refrigeration	Freeze Indicator
+Alternative	Freeze Alert	P0044	Cold Chain and Refrigeration	Freeze Indicator
+Primary	Pre Cooling Chamber	P0045	Cold Chain and Refrigeration	Pre Cooling Chamber
+Alternative	Precooling Chamber	P0045	Cold Chain and Refrigeration	Pre Cooling Chamber
+Alternative	Pre-Cooling Unit	P0045	Cold Chain and Refrigeration	Pre Cooling Chamber
+Alternative	Pre Cooler	P0045	Cold Chain and Refrigeration	Pre Cooling Chamber
+Alternative	Pre Cooling Room	P0045	Cold Chain and Refrigeration	Pre Cooling Chamber
+Primary	Ripening Chamber	P0046	Cold Chain and Refrigeration	Ripening Chamber
+Alternative	Fruit Ripening Chamber	P0046	Cold Chain and Refrigeration	Ripening Chamber
+Alternative	Banana Ripening Chamber	P0046	Cold Chain and Refrigeration	Ripening Chamber
+Alternative	Ripening Room	P0046	Cold Chain and Refrigeration	Ripening Chamber
+Primary	Blast Freezer	P0047	Cold Chain and Refrigeration	Blast Freezer
+Alternative	Blast Chiller	P0047	Cold Chain and Refrigeration	Blast Freezer
+Alternative	Quick Freezer	P0047	Cold Chain and Refrigeration	Blast Freezer
+Alternative	Rapid Freezing Equipment	P0047	Cold Chain and Refrigeration	Blast Freezer
+Primary	Refrigeration Unit	P0048	Cold Chain and Refrigeration	Refrigeration Unit
+Alternative	Cooling Unit	P0048	Cold Chain and Refrigeration	Refrigeration Unit
+Alternative	Condensing Unit	P0048	Cold Chain and Refrigeration	Refrigeration Unit
+Alternative	Cold Room Refrigeration System	P0048	Cold Chain and Refrigeration	Refrigeration Unit
+Primary	PUF Panel	P0049	Cold Chain and Refrigeration	PUF Panel
+Alternative	Insulated Panel	P0049	Cold Chain and Refrigeration	PUF Panel
+Alternative	Polyurethane Foam Panel	P0049	Cold Chain and Refrigeration	PUF Panel
+Alternative	Cold Room Panel	P0049	Cold Chain and Refrigeration	PUF Panel
+Alternative	Sandwich Panel	P0049	Cold Chain and Refrigeration	PUF Panel
+Primary	Milk Cooler	P0050	Cold Chain and Refrigeration	Milk Cooler
+Alternative	Bulk Milk Cooler	P0050	Cold Chain and Refrigeration	Milk Cooler
+Alternative	BMC	P0050	Cold Chain and Refrigeration	Milk Cooler
+Alternative	Milk Chilling Unit	P0050	Cold Chain and Refrigeration	Milk Cooler
+Primary	Cryogenic Storage System	P0051	Cold Chain and Refrigeration	Cryogenic Storage System
+Alternative	Liquid Nitrogen Container	P0051	Cold Chain and Refrigeration	Cryogenic Storage System
+Alternative	LN2 Container	P0051	Cold Chain and Refrigeration	Cryogenic Storage System
+Alternative	Cryogenic Freezer	P0051	Cold Chain and Refrigeration	Cryogenic Storage System
+Alternative	Cryocan	P0051	Cold Chain and Refrigeration	Cryogenic Storage System
+Primary	Biochemistry Analyzer	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Biochemistry Analyser	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Bio Chemistry Analyzer	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Bio-Chemistry Analyser	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Clinical Chemistry Analyzer	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Semi Auto Biochemistry Analyzer	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Alternative	Fully Automatic Biochemistry Analyzer	P0052	Laboratory and Diagnostic	Biochemistry Analyzer
+Primary	Hematology Analyzer	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	Haematology Analyser	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	Hematology Analyser	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	CBC Analyzer	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	Blood Cell Counter	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	3 Part Cell Counter	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Alternative	5 Part Cell Counter	P0053	Laboratory and Diagnostic	Hematology Analyzer
+Primary	Centrifuge	P0054	Laboratory and Diagnostic	Centrifuge
+Alternative	Centrifuse	P0054	Laboratory and Diagnostic	Centrifuge
+Alternative	Centrifuser	P0054	Laboratory and Diagnostic	Centrifuge
+Alternative	Centrifug	P0054	Laboratory and Diagnostic	Centrifuge
+Alternative	Laboratory Centrifuge	P0054	Laboratory and Diagnostic	Centrifuge
+Alternative	Lab Centrifuge	P0054	Laboratory and Diagnostic	Centrifuge
+Primary	Micro Centrifuge	P0055	Laboratory and Diagnostic	Micro Centrifuge
+Alternative	Microcentrifuge	P0055	Laboratory and Diagnostic	Micro Centrifuge
+Alternative	Micro Centrifuser	P0055	Laboratory and Diagnostic	Micro Centrifuge
+Alternative	Mini Centrifuge	P0055	Laboratory and Diagnostic	Micro Centrifuge
+Alternative	Eppendorf Centrifuge	P0055	Laboratory and Diagnostic	Micro Centrifuge
+Primary	Clinical Centrifuge	P0056	Laboratory and Diagnostic	Clinical Centrifuge
+Alternative	Doctor Centrifuge	P0056	Laboratory and Diagnostic	Clinical Centrifuge
+Alternative	Pathology Centrifuge	P0056	Laboratory and Diagnostic	Clinical Centrifuge
+Alternative	Table Top Centrifuge	P0056	Laboratory and Diagnostic	Clinical Centrifuge
+Primary	High Speed Centrifuge	P0057	Laboratory and Diagnostic	High Speed Centrifuge
+Alternative	Highspeed Centrifuge	P0057	Laboratory and Diagnostic	High Speed Centrifuge
+Alternative	High Speed Refrigerated Centrifuge	P0057	Laboratory and Diagnostic	High Speed Centrifuge
+Primary	Ultracentrifuge	P0058	Laboratory and Diagnostic	Ultracentrifuge
+Alternative	Ultra Centrifuge	P0058	Laboratory and Diagnostic	Ultracentrifuge
+Alternative	Ultra Speed Centrifuge	P0058	Laboratory and Diagnostic	Ultracentrifuge
+Primary	Hematocrit Centrifuge	P0059	Laboratory and Diagnostic	Hematocrit Centrifuge
+Alternative	Haematocrit Centrifuge	P0059	Laboratory and Diagnostic	Hematocrit Centrifuge
+Alternative	Micro Hematocrit Centrifuge	P0059	Laboratory and Diagnostic	Hematocrit Centrifuge
+Alternative	PCV Centrifuge	P0059	Laboratory and Diagnostic	Hematocrit Centrifuge
+Primary	Hot Air Oven	P0060	Laboratory and Diagnostic	Hot Air Oven
+Alternative	Hotair Oven	P0060	Laboratory and Diagnostic	Hot Air Oven
+Alternative	Laboratory Oven	P0060	Laboratory and Diagnostic	Hot Air Oven
+Alternative	Dry Heat Oven	P0060	Laboratory and Diagnostic	Hot Air Oven
+Alternative	Dry Heat Sterilizer	P0060	Laboratory and Diagnostic	Hot Air Oven
+Primary	Bacteriological Incubator	P0061	Laboratory and Diagnostic	Bacteriological Incubator
+Alternative	Bacterial Incubator	P0061	Laboratory and Diagnostic	Bacteriological Incubator
+Alternative	Laboratory Incubator	P0061	Laboratory and Diagnostic	Bacteriological Incubator
+Alternative	Lab Incubator	P0061	Laboratory and Diagnostic	Bacteriological Incubator
+Alternative	Bacteriology Incubator	P0061	Laboratory and Diagnostic	Bacteriological Incubator
+Primary	BOD Incubator	P0062	Laboratory and Diagnostic	BOD Incubator
+Alternative	B.O.D Incubator	P0062	Laboratory and Diagnostic	BOD Incubator
+Alternative	Biochemical Oxygen Demand Incubator	P0062	Laboratory and Diagnostic	BOD Incubator
+Alternative	Cooling Incubator	P0062	Laboratory and Diagnostic	BOD Incubator
+Primary	CO2 Incubator	P0063	Laboratory and Diagnostic	CO2 Incubator
+Alternative	Carbon Dioxide Incubator	P0063	Laboratory and Diagnostic	CO2 Incubator
+Alternative	Cell Culture Incubator	P0063	Laboratory and Diagnostic	CO2 Incubator
+Alternative	CO₂ Incubator	P0063	Laboratory and Diagnostic	CO2 Incubator
+Primary	Shaking Incubator	P0064	Laboratory and Diagnostic	Shaking Incubator
+Alternative	Incubator Shaker	P0064	Laboratory and Diagnostic	Shaking Incubator
+Alternative	Orbital Shaking Incubator	P0064	Laboratory and Diagnostic	Shaking Incubator
+Primary	Laminar Air Flow	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Alternative	Laminar Airflow	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Alternative	Laminar Flow Cabinet	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Alternative	LAF	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Alternative	Laminar Flow Bench	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Alternative	Clean Air Bench	P0065	Laboratory and Diagnostic	Laminar Air Flow
+Primary	Biosafety Cabinet	P0066	Laboratory and Diagnostic	Biosafety Cabinet
+Alternative	Bio Safety Cabinet	P0066	Laboratory and Diagnostic	Biosafety Cabinet
+Alternative	BSC	P0066	Laboratory and Diagnostic	Biosafety Cabinet
+Alternative	Biological Safety Cabinet	P0066	Laboratory and Diagnostic	Biosafety Cabinet
+Alternative	Class II Safety Cabinet	P0066	Laboratory and Diagnostic	Biosafety Cabinet
+Primary	Fume Hood	P0067	Laboratory and Diagnostic	Fume Hood
+Alternative	Fume Cupboard	P0067	Laboratory and Diagnostic	Fume Hood
+Alternative	Chemical Fume Hood	P0067	Laboratory and Diagnostic	Fume Hood
+Alternative	Laboratory Fume Hood	P0067	Laboratory and Diagnostic	Fume Hood
+Primary	Microscope	P0068	Laboratory and Diagnostic	Microscope
+Alternative	Micro Scope	P0068	Laboratory and Diagnostic	Microscope
+Alternative	Biological Microscope	P0068	Laboratory and Diagnostic	Microscope
+Alternative	Compound Microscope	P0068	Laboratory and Diagnostic	Microscope
+Alternative	Binocular Microscope	P0068	Laboratory and Diagnostic	Microscope
+Primary	Digital Microscope	P0069	Laboratory and Diagnostic	Digital Microscope
+Alternative	Trinocular Microscope	P0069	Laboratory and Diagnostic	Digital Microscope
+Alternative	Imaging Microscope	P0069	Laboratory and Diagnostic	Digital Microscope
+Alternative	Video Microscope	P0069	Laboratory and Diagnostic	Digital Microscope
+Primary	Fluorescence Microscope	P0070	Laboratory and Diagnostic	Fluorescence Microscope
+Alternative	Fluorescent Microscope	P0070	Laboratory and Diagnostic	Fluorescence Microscope
+Alternative	Fluorescence Microscopy System	P0070	Laboratory and Diagnostic	Fluorescence Microscope
+Primary	Water Bath	P0071	Laboratory and Diagnostic	Water Bath
+Alternative	Laboratory Water Bath	P0071	Laboratory and Diagnostic	Water Bath
+Alternative	Digital Water Bath	P0071	Laboratory and Diagnostic	Water Bath
+Alternative	Thermostatic Water Bath	P0071	Laboratory and Diagnostic	Water Bath
+Primary	Serological Water Bath	P0072	Laboratory and Diagnostic	Serological Water Bath
+Alternative	Serology Water Bath	P0072	Laboratory and Diagnostic	Serological Water Bath
+Alternative	Serological Bath	P0072	Laboratory and Diagnostic	Serological Water Bath
+Primary	Shaking Water Bath	P0073	Laboratory and Diagnostic	Shaking Water Bath
+Alternative	Water Bath Shaker	P0073	Laboratory and Diagnostic	Shaking Water Bath
+Alternative	Orbital Water Bath	P0073	Laboratory and Diagnostic	Shaking Water Bath
+Primary	Dry Bath	P0074	Laboratory and Diagnostic	Dry Bath
+Alternative	Dry Block Heater	P0074	Laboratory and Diagnostic	Dry Bath
+Alternative	Dry Bath Incubator	P0074	Laboratory and Diagnostic	Dry Bath
+Alternative	Heating Block	P0074	Laboratory and Diagnostic	Dry Bath
+Primary	Colony Counter	P0075	Laboratory and Diagnostic	Colony Counter
+Alternative	Bacterial Colony Counter	P0075	Laboratory and Diagnostic	Colony Counter
+Alternative	Digital Colony Counter	P0075	Laboratory and Diagnostic	Colony Counter
+Primary	ELISA Reader	P0076	Laboratory and Diagnostic	ELISA Reader
+Alternative	Microplate Reader	P0076	Laboratory and Diagnostic	ELISA Reader
+Alternative	Elisa Plate Reader	P0076	Laboratory and Diagnostic	ELISA Reader
+Alternative	Enzyme Immunoassay Reader	P0076	Laboratory and Diagnostic	ELISA Reader
+Primary	ELISA Washer	P0077	Laboratory and Diagnostic	ELISA Washer
+Alternative	Microplate Washer	P0077	Laboratory and Diagnostic	ELISA Washer
+Alternative	Elisa Plate Washer	P0077	Laboratory and Diagnostic	ELISA Washer
+Primary	PCR Machine	P0078	Laboratory and Diagnostic	PCR Machine
+Alternative	Thermal Cycler	P0078	Laboratory and Diagnostic	PCR Machine
+Alternative	Thermocycler	P0078	Laboratory and Diagnostic	PCR Machine
+Alternative	Polymerase Chain Reaction Machine	P0078	Laboratory and Diagnostic	PCR Machine
+Primary	Real Time PCR	P0079	Laboratory and Diagnostic	Real Time PCR
+Alternative	RT PCR	P0079	Laboratory and Diagnostic	Real Time PCR
+Alternative	qPCR	P0079	Laboratory and Diagnostic	Real Time PCR
+Alternative	Real-Time PCR	P0079	Laboratory and Diagnostic	Real Time PCR
+Alternative	Quantitative PCR	P0079	Laboratory and Diagnostic	Real Time PCR
+Primary	Spectrophotometer	P0080	Laboratory and Diagnostic	Spectrophotometer
+Alternative	Spectro Photometer	P0080	Laboratory and Diagnostic	Spectrophotometer
+Alternative	UV Spectrophotometer	P0080	Laboratory and Diagnostic	Spectrophotometer
+Alternative	UV Visible Spectrophotometer	P0080	Laboratory and Diagnostic	Spectrophotometer
+Primary	Colorimeter	P0081	Laboratory and Diagnostic	Colorimeter
+Alternative	Colourimeter	P0081	Laboratory and Diagnostic	Colorimeter
+Alternative	Photo Colorimeter	P0081	Laboratory and Diagnostic	Colorimeter
+Alternative	Digital Colorimeter	P0081	Laboratory and Diagnostic	Colorimeter
+Primary	Electrolyte Analyzer	P0082	Laboratory and Diagnostic	Electrolyte Analyzer
+Alternative	Electrolyte Analyser	P0082	Laboratory and Diagnostic	Electrolyte Analyzer
+Alternative	ISE Analyzer	P0082	Laboratory and Diagnostic	Electrolyte Analyzer
+Primary	Blood Gas Analyzer	P0083	Laboratory and Diagnostic	Blood Gas Analyzer
+Alternative	ABG Analyzer	P0083	Laboratory and Diagnostic	Blood Gas Analyzer
+Alternative	Arterial Blood Gas Analyser	P0083	Laboratory and Diagnostic	Blood Gas Analyzer
+Primary	Coagulation Analyzer	P0084	Laboratory and Diagnostic	Coagulation Analyzer
+Alternative	Coagulation Analyser	P0084	Laboratory and Diagnostic	Coagulation Analyzer
+Alternative	Coagulometer	P0084	Laboratory and Diagnostic	Coagulation Analyzer
+Alternative	Clotting Analyzer	P0084	Laboratory and Diagnostic	Coagulation Analyzer
+Primary	Urine Analyzer	P0085	Laboratory and Diagnostic	Urine Analyzer
+Alternative	Urine Analyser	P0085	Laboratory and Diagnostic	Urine Analyzer
+Alternative	Urinalysis Analyzer	P0085	Laboratory and Diagnostic	Urine Analyzer
+Alternative	Urine Strip Reader	P0085	Laboratory and Diagnostic	Urine Analyzer
+Primary	Immunoassay Analyzer	P0086	Laboratory and Diagnostic	Immunoassay Analyzer
+Alternative	CLIA Analyzer	P0086	Laboratory and Diagnostic	Immunoassay Analyzer
+Alternative	Chemiluminescence Analyzer	P0086	Laboratory and Diagnostic	Immunoassay Analyzer
+Alternative	Immunoassay System	P0086	Laboratory and Diagnostic	Immunoassay Analyzer
+Primary	ESR Analyzer	P0087	Laboratory and Diagnostic	ESR Analyzer
+Alternative	ESR Analyser	P0087	Laboratory and Diagnostic	ESR Analyzer
+Alternative	ESR Machine	P0087	Laboratory and Diagnostic	ESR Analyzer
+Alternative	Sedimentation Rate Analyzer	P0087	Laboratory and Diagnostic	ESR Analyzer
+Primary	Vortex Mixer	P0088	Laboratory and Diagnostic	Vortex Mixer
+Alternative	Vortex Shaker	P0088	Laboratory and Diagnostic	Vortex Mixer
+Alternative	Tube Mixer	P0088	Laboratory and Diagnostic	Vortex Mixer
+Alternative	Vortexer	P0088	Laboratory and Diagnostic	Vortex Mixer
+Primary	Magnetic Stirrer	P0089	Laboratory and Diagnostic	Magnetic Stirrer
+Alternative	Magnetic Hot Plate Stirrer	P0089	Laboratory and Diagnostic	Magnetic Stirrer
+Alternative	Laboratory Stirrer	P0089	Laboratory and Diagnostic	Magnetic Stirrer
+Primary	Orbital Shaker	P0090	Laboratory and Diagnostic	Orbital Shaker
+Alternative	Laboratory Shaker	P0090	Laboratory and Diagnostic	Orbital Shaker
+Alternative	Platform Shaker	P0090	Laboratory and Diagnostic	Orbital Shaker
+Alternative	Rotary Shaker	P0090	Laboratory and Diagnostic	Orbital Shaker
+Primary	Rotary Evaporator	P0091	Laboratory and Diagnostic	Rotary Evaporator
+Alternative	Rotavapor	P0091	Laboratory and Diagnostic	Rotary Evaporator
+Alternative	Rotovap	P0091	Laboratory and Diagnostic	Rotary Evaporator
+Alternative	Vacuum Evaporator	P0091	Laboratory and Diagnostic	Rotary Evaporator
+Primary	Analytical Balance	P0092	Laboratory and Diagnostic	Analytical Balance
+Alternative	Precision Balance	P0092	Laboratory and Diagnostic	Analytical Balance
+Alternative	Electronic Analytical Balance	P0092	Laboratory and Diagnostic	Analytical Balance
+Alternative	Laboratory Weighing Balance	P0092	Laboratory and Diagnostic	Analytical Balance
+Primary	pH Meter	P0093	Laboratory and Diagnostic	pH Meter
+Alternative	Digital pH Meter	P0093	Laboratory and Diagnostic	pH Meter
+Alternative	Laboratory pH Meter	P0093	Laboratory and Diagnostic	pH Meter
+Primary	Conductivity Meter	P0094	Laboratory and Diagnostic	Conductivity Meter
+Alternative	EC Meter	P0094	Laboratory and Diagnostic	Conductivity Meter
+Alternative	Digital Conductivity Meter	P0094	Laboratory and Diagnostic	Conductivity Meter
+Primary	TDS Meter	P0095	Laboratory and Diagnostic	TDS Meter
+Alternative	Total Dissolved Solids Meter	P0095	Laboratory and Diagnostic	TDS Meter
+Primary	Water Distillation Unit	P0096	Laboratory and Diagnostic	Water Distillation Unit
+Alternative	Water Still	P0096	Laboratory and Diagnostic	Water Distillation Unit
+Alternative	Distilled Water Plant	P0096	Laboratory and Diagnostic	Water Distillation Unit
+Alternative	Water Distillation Apparatus	P0096	Laboratory and Diagnostic	Water Distillation Unit
+Primary	Water Purification System	P0097	Laboratory and Diagnostic	Water Purification System
+Alternative	Laboratory RO Plant	P0097	Laboratory and Diagnostic	Water Purification System
+Alternative	Ultrapure Water System	P0097	Laboratory and Diagnostic	Water Purification System
+Alternative	Milli-Q Water System	P0097	Laboratory and Diagnostic	Water Purification System
+Primary	Micropipette	P0098	Laboratory and Diagnostic	Micropipette
+Alternative	Micro Pipette	P0098	Laboratory and Diagnostic	Micropipette
+Alternative	Adjustable Pipette	P0098	Laboratory and Diagnostic	Micropipette
+Alternative	Variable Volume Pipette	P0098	Laboratory and Diagnostic	Micropipette
+Primary	Microtome	P0099	Laboratory and Diagnostic	Microtome
+Alternative	Rotary Microtome	P0099	Laboratory and Diagnostic	Microtome
+Alternative	Semi Automatic Microtome	P0099	Laboratory and Diagnostic	Microtome
+Alternative	Tissue Sectioning Machine	P0099	Laboratory and Diagnostic	Microtome
+Primary	Cryostat	P0100	Laboratory and Diagnostic	Cryostat
+Alternative	Cryostat Microtome	P0100	Laboratory and Diagnostic	Cryostat
+Alternative	Frozen Section Machine	P0100	Laboratory and Diagnostic	Cryostat
+Primary	Tissue Processor	P0101	Laboratory and Diagnostic	Tissue Processor
+Alternative	Histopathology Tissue Processor	P0101	Laboratory and Diagnostic	Tissue Processor
+Alternative	Automatic Tissue Processing System	P0101	Laboratory and Diagnostic	Tissue Processor
+Primary	Tissue Embedding Station	P0102	Laboratory and Diagnostic	Tissue Embedding Station
+Alternative	Paraffin Embedding Station	P0102	Laboratory and Diagnostic	Tissue Embedding Station
+Alternative	Tissue Embedding System	P0102	Laboratory and Diagnostic	Tissue Embedding Station
+Primary	Slide Stainer	P0103	Laboratory and Diagnostic	Slide Stainer
+Alternative	Automatic Slide Stainer	P0103	Laboratory and Diagnostic	Slide Stainer
+Alternative	Histology Stainer	P0103	Laboratory and Diagnostic	Slide Stainer
+Alternative	H&E Stainer	P0103	Laboratory and Diagnostic	Slide Stainer
+Primary	Electrophoresis System	P0104	Laboratory and Diagnostic	Electrophoresis System
+Alternative	Gel Electrophoresis	P0104	Laboratory and Diagnostic	Electrophoresis System
+Alternative	Electrophoresis Apparatus	P0104	Laboratory and Diagnostic	Electrophoresis System
+Primary	Gel Documentation System	P0105	Laboratory and Diagnostic	Gel Documentation System
+Alternative	Gel Doc	P0105	Laboratory and Diagnostic	Gel Documentation System
+Alternative	Gel Imaging System	P0105	Laboratory and Diagnostic	Gel Documentation System
+Primary	Lyophilizer	P0106	Laboratory and Diagnostic	Lyophilizer
+Alternative	Lyophiliser	P0106	Laboratory and Diagnostic	Lyophilizer
+Alternative	Freeze Dryer	P0106	Laboratory and Diagnostic	Lyophilizer
+Alternative	Freeze Drying Machine	P0106	Laboratory and Diagnostic	Lyophilizer
+Primary	Homogenizer	P0107	Laboratory and Diagnostic	Homogenizer
+Alternative	Homogeniser	P0107	Laboratory and Diagnostic	Homogenizer
+Alternative	Tissue Homogenizer	P0107	Laboratory and Diagnostic	Homogenizer
+Alternative	Laboratory Homogenizer	P0107	Laboratory and Diagnostic	Homogenizer
+Primary	Autoclave	P0108	Laboratory and Diagnostic	Autoclave
+Alternative	Auto Clave	P0108	Laboratory and Diagnostic	Autoclave
+Alternative	Autoclav	P0108	Laboratory and Diagnostic	Autoclave
+Alternative	Autocleave	P0108	Laboratory and Diagnostic	Autoclave
+Alternative	Steam Sterilizer	P0108	Laboratory and Diagnostic	Autoclave
+Primary	Turbidity Meter	P0109	Laboratory and Diagnostic	Turbidity Meter
+Alternative	Turbidimeter	P0109	Laboratory and Diagnostic	Turbidity Meter
+Alternative	Nephelometer	P0109	Laboratory and Diagnostic	Turbidity Meter
+Primary	Laboratory Glassware	P0110	Laboratory and Diagnostic	Laboratory Glassware
+Alternative	Lab Glassware	P0110	Laboratory and Diagnostic	Laboratory Glassware
+Alternative	Scientific Glassware	P0110	Laboratory and Diagnostic	Laboratory Glassware
+Alternative	Laboratory Glass Apparatus	P0110	Laboratory and Diagnostic	Laboratory Glassware
+Primary	Hospital Bed	P0111	Hospital Furniture	Hospital Bed
+Alternative	Patient Bed	P0111	Hospital Furniture	Hospital Bed
+Alternative	Medical Bed	P0111	Hospital Furniture	Hospital Bed
+Alternative	Ward Bed	P0111	Hospital Furniture	Hospital Bed
+Alternative	Hospital Cot	P0111	Hospital Furniture	Hospital Bed
+Primary	Fowler Bed	P0112	Hospital Furniture	Fowler Bed
+Alternative	Full Fowler Bed	P0112	Hospital Furniture	Fowler Bed
+Alternative	Fowler Hospital Bed	P0112	Hospital Furniture	Fowler Bed
+Alternative	Fowlers Bed	P0112	Hospital Furniture	Fowler Bed
+Primary	Semi Fowler Bed	P0113	Hospital Furniture	Semi Fowler Bed
+Alternative	Semi-Fowler Bed	P0113	Hospital Furniture	Semi Fowler Bed
+Alternative	Semi Fowler Cot	P0113	Hospital Furniture	Semi Fowler Bed
+Primary	ICU Bed	P0114	Hospital Furniture	ICU Bed
+Alternative	Intensive Care Bed	P0114	Hospital Furniture	ICU Bed
+Alternative	Five Function Bed	P0114	Hospital Furniture	ICU Bed
+Alternative	5 Function ICU Bed	P0114	Hospital Furniture	ICU Bed
+Alternative	Critical Care Bed	P0114	Hospital Furniture	ICU Bed
+Primary	Electric Hospital Bed	P0115	Hospital Furniture	Electric Hospital Bed
+Alternative	Motorized Hospital Bed	P0115	Hospital Furniture	Electric Hospital Bed
+Alternative	Motorised Patient Bed	P0115	Hospital Furniture	Electric Hospital Bed
+Alternative	Electrical Bed	P0115	Hospital Furniture	Electric Hospital Bed
+Primary	Examination Table	P0116	Hospital Furniture	Examination Table
+Alternative	Examination Couch	P0116	Hospital Furniture	Examination Table
+Alternative	Patient Examination Bed	P0116	Hospital Furniture	Examination Table
+Alternative	Medical Examination Table	P0116	Hospital Furniture	Examination Table
+Primary	Delivery Table	P0117	Hospital Furniture	Delivery Table
+Alternative	Labour Table	P0117	Hospital Furniture	Delivery Table
+Alternative	Labor Table	P0117	Hospital Furniture	Delivery Table
+Alternative	Obstetric Table	P0117	Hospital Furniture	Delivery Table
+Alternative	Delivery Bed	P0117	Hospital Furniture	Delivery Table
+Primary	Gynaecological Examination Table	P0118	Hospital Furniture	Gynaecological Examination Table
+Alternative	Gynecological Table	P0118	Hospital Furniture	Gynaecological Examination Table
+Alternative	Gynae Table	P0118	Hospital Furniture	Gynaecological Examination Table
+Alternative	Gynaec Examination Couch	P0118	Hospital Furniture	Gynaecological Examination Table
+Primary	Dermatology Procedure Chair	P0119	Hospital Furniture	Dermatology Procedure Chair
+Alternative	Dermatology Chair	P0119	Hospital Furniture	Dermatology Procedure Chair
+Alternative	Derma Chair	P0119	Hospital Furniture	Dermatology Procedure Chair
+Alternative	Procedure Couch	P0119	Hospital Furniture	Dermatology Procedure Chair
+Alternative	Dermatological Examination Chair	P0119	Hospital Furniture	Dermatology Procedure Chair
+Primary	Dialysis Chair	P0120	Hospital Furniture	Dialysis Chair
+Alternative	Dialysis Couch	P0120	Hospital Furniture	Dialysis Chair
+Alternative	Dialysis Bed	P0120	Hospital Furniture	Dialysis Chair
+Alternative	Haemodialysis Chair	P0120	Hospital Furniture	Dialysis Chair
+Primary	Chemotherapy Chair	P0121	Hospital Furniture	Chemotherapy Chair
+Alternative	Chemo Chair	P0121	Hospital Furniture	Chemotherapy Chair
+Alternative	Infusion Chair	P0121	Hospital Furniture	Chemotherapy Chair
+Alternative	Oncology Chair	P0121	Hospital Furniture	Chemotherapy Chair
+Primary	Dental Chair	P0122	Hospital Furniture	Dental Chair
+Alternative	Dental Unit	P0122	Hospital Furniture	Dental Chair
+Alternative	Dental Chair Unit	P0122	Hospital Furniture	Dental Chair
+Alternative	Dental Treatment Chair	P0122	Hospital Furniture	Dental Chair
+Primary	Wheelchair	P0123	Hospital Furniture	Wheelchair
+Alternative	Wheel Chair	P0123	Hospital Furniture	Wheelchair
+Alternative	Patient Wheelchair	P0123	Hospital Furniture	Wheelchair
+Alternative	Invalid Wheelchair	P0123	Hospital Furniture	Wheelchair
+Primary	Stretcher	P0124	Hospital Furniture	Stretcher
+Alternative	Patient Stretcher	P0124	Hospital Furniture	Stretcher
+Alternative	Hospital Stretcher	P0124	Hospital Furniture	Stretcher
+Alternative	Emergency Stretcher	P0124	Hospital Furniture	Stretcher
+Primary	Stretcher Trolley	P0125	Hospital Furniture	Stretcher Trolley
+Alternative	Patient Transfer Trolley	P0125	Hospital Furniture	Stretcher Trolley
+Alternative	Emergency Trolley	P0125	Hospital Furniture	Stretcher Trolley
+Alternative	Patient Transport Trolley	P0125	Hospital Furniture	Stretcher Trolley
+Primary	Crash Cart	P0126	Hospital Furniture	Crash Cart
+Alternative	Crash Cart Trolley	P0126	Hospital Furniture	Crash Cart
+Alternative	Emergency Crash Cart	P0126	Hospital Furniture	Crash Cart
+Alternative	Resuscitation Trolley	P0126	Hospital Furniture	Crash Cart
+Primary	Dressing Trolley	P0127	Hospital Furniture	Dressing Trolley
+Alternative	Dressing Cart	P0127	Hospital Furniture	Dressing Trolley
+Alternative	Medical Dressing Trolley	P0127	Hospital Furniture	Dressing Trolley
+Primary	Instrument Trolley	P0128	Hospital Furniture	Instrument Trolley
+Alternative	Surgical Instrument Trolley	P0128	Hospital Furniture	Instrument Trolley
+Alternative	OT Instrument Trolley	P0128	Hospital Furniture	Instrument Trolley
+Primary	Medicine Trolley	P0129	Hospital Furniture	Medicine Trolley
+Alternative	Drug Trolley	P0129	Hospital Furniture	Medicine Trolley
+Alternative	Medication Cart	P0129	Hospital Furniture	Medicine Trolley
+Primary	Anaesthesia Trolley	P0130	Hospital Furniture	Anaesthesia Trolley
+Alternative	Anesthesia Cart	P0130	Hospital Furniture	Anaesthesia Trolley
+Alternative	Anaesthesia Cart	P0130	Hospital Furniture	Anaesthesia Trolley
+Primary	Bedside Locker	P0131	Hospital Furniture	Bedside Locker
+Alternative	Bed Side Locker	P0131	Hospital Furniture	Bedside Locker
+Alternative	Patient Locker	P0131	Hospital Furniture	Bedside Locker
+Alternative	Hospital Bedside Cabinet	P0131	Hospital Furniture	Bedside Locker
+Primary	Overbed Table	P0132	Hospital Furniture	Overbed Table
+Alternative	Over Bed Table	P0132	Hospital Furniture	Overbed Table
+Alternative	Cardiac Table	P0132	Hospital Furniture	Overbed Table
+Alternative	Patient Food Table	P0132	Hospital Furniture	Overbed Table
+Primary	IV Stand	P0133	Hospital Furniture	IV Stand
+Alternative	Intravenous Stand	P0133	Hospital Furniture	IV Stand
+Alternative	Saline Stand	P0133	Hospital Furniture	IV Stand
+Alternative	Infusion Stand	P0133	Hospital Furniture	IV Stand
+Alternative	Drip Stand	P0133	Hospital Furniture	IV Stand
+Primary	Foot Step	P0134	Hospital Furniture	Foot Step
+Alternative	Footstep	P0134	Hospital Furniture	Foot Step
+Alternative	Hospital Step Stool	P0134	Hospital Furniture	Foot Step
+Alternative	Double Foot Step	P0134	Hospital Furniture	Foot Step
+Primary	Bedside Screen	P0135	Hospital Furniture	Bedside Screen
+Alternative	Ward Screen	P0135	Hospital Furniture	Bedside Screen
+Alternative	Patient Privacy Screen	P0135	Hospital Furniture	Bedside Screen
+Alternative	Three Fold Screen	P0135	Hospital Furniture	Bedside Screen
+Primary	Hospital Mattress	P0136	Hospital Furniture	Hospital Mattress
+Alternative	Medical Mattress	P0136	Hospital Furniture	Hospital Mattress
+Alternative	Patient Bed Mattress	P0136	Hospital Furniture	Hospital Mattress
+Alternative	Hospital Foam Mattress	P0136	Hospital Furniture	Hospital Mattress
+Primary	Air Mattress	P0137	Hospital Furniture	Air Mattress
+Alternative	Anti Bedsore Mattress	P0137	Hospital Furniture	Air Mattress
+Alternative	Alternating Pressure Mattress	P0137	Hospital Furniture	Air Mattress
+Alternative	Ripple Mattress	P0137	Hospital Furniture	Air Mattress
+Primary	Hospital Stool	P0138	Hospital Furniture	Hospital Stool
+Alternative	Revolving Stool	P0138	Hospital Furniture	Hospital Stool
+Alternative	Doctor Stool	P0138	Hospital Furniture	Hospital Stool
+Alternative	Examination Stool	P0138	Hospital Furniture	Hospital Stool
+Primary	Medical Cabinet	P0139	Hospital Furniture	Medical Cabinet
+Alternative	Medicine Cabinet	P0139	Hospital Furniture	Medical Cabinet
+Alternative	Hospital Cupboard	P0139	Hospital Furniture	Medical Cabinet
+Alternative	Medical Storage Cabinet	P0139	Hospital Furniture	Medical Cabinet
+Primary	Hospital Waiting Chair	P0140	Hospital Furniture	Hospital Waiting Chair
+Alternative	Waiting Bench	P0140	Hospital Furniture	Hospital Waiting Chair
+Alternative	Patient Waiting Chair	P0140	Hospital Furniture	Hospital Waiting Chair
+Alternative	Visitor Chair	P0140	Hospital Furniture	Hospital Waiting Chair
+Primary	Attendant Bed	P0141	Hospital Furniture	Attendant Bed
+Alternative	Attendant Couch	P0141	Hospital Furniture	Attendant Bed
+Alternative	Patient Attendant Cot	P0141	Hospital Furniture	Attendant Bed
+Primary	Linen Trolley	P0142	Hospital Furniture	Linen Trolley
+Alternative	Laundry Trolley	P0142	Hospital Furniture	Linen Trolley
+Alternative	Soiled Linen Trolley	P0142	Hospital Furniture	Linen Trolley
+Primary	Baby Cradle	P0143	Hospital Furniture	Baby Cradle
+Alternative	Hospital Baby Cot	P0143	Hospital Furniture	Baby Cradle
+Alternative	Infant Cot	P0143	Hospital Furniture	Baby Cradle
+Alternative	Newborn Cradle	P0143	Hospital Furniture	Baby Cradle
+Primary	Laboratory Furniture	P0144	Hospital Furniture	Laboratory Furniture
+Alternative	Lab Furniture	P0144	Hospital Furniture	Laboratory Furniture
+Alternative	Laboratory Workbench	P0144	Hospital Furniture	Laboratory Furniture
+Alternative	Lab Working Table	P0144	Hospital Furniture	Laboratory Furniture
+Primary	Operation Theatre Table	P0145	Operation Theatre and Surgical	Operation Theatre Table
+Alternative	OT Table	P0145	Operation Theatre and Surgical	Operation Theatre Table
+Alternative	Operation Table	P0145	Operation Theatre and Surgical	Operation Theatre Table
+Alternative	Operating Table	P0145	Operation Theatre and Surgical	Operation Theatre Table
+Alternative	Surgical Table	P0145	Operation Theatre and Surgical	Operation Theatre Table
+Primary	Hydraulic OT Table	P0146	Operation Theatre and Surgical	Hydraulic OT Table
+Alternative	Hydraulic Operation Table	P0146	Operation Theatre and Surgical	Hydraulic OT Table
+Alternative	Manual Hydraulic Surgical Table	P0146	Operation Theatre and Surgical	Hydraulic OT Table
+Primary	Electric OT Table	P0147	Operation Theatre and Surgical	Electric OT Table
+Alternative	Motorized OT Table	P0147	Operation Theatre and Surgical	Electric OT Table
+Alternative	Electro Hydraulic OT Table	P0147	Operation Theatre and Surgical	Electric OT Table
+Alternative	Electrical Operating Table	P0147	Operation Theatre and Surgical	Electric OT Table
+Primary	C Arm Compatible OT Table	P0148	Operation Theatre and Surgical	C Arm Compatible OT Table
+Alternative	C-Arm Table	P0148	Operation Theatre and Surgical	C Arm Compatible OT Table
+Alternative	Radiolucent OT Table	P0148	Operation Theatre and Surgical	C Arm Compatible OT Table
+Alternative	Imaging Surgical Table	P0148	Operation Theatre and Surgical	C Arm Compatible OT Table
+Primary	Operation Theatre Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Alternative	OT Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Alternative	Operation Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Alternative	Surgical Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Alternative	Operating Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Alternative	Shadowless Light	P0149	Operation Theatre and Surgical	Operation Theatre Light
+Primary	Portable OT Light	P0150	Operation Theatre and Surgical	Portable OT Light
+Alternative	Mobile OT Light	P0150	Operation Theatre and Surgical	Portable OT Light
+Alternative	Mobile Surgical Light	P0150	Operation Theatre and Surgical	Portable OT Light
+Alternative	Examination Light	P0150	Operation Theatre and Surgical	Portable OT Light
+Primary	Ceiling OT Light	P0151	Operation Theatre and Surgical	Ceiling OT Light
+Alternative	Ceiling Mounted Surgical Light	P0151	Operation Theatre and Surgical	Ceiling OT Light
+Alternative	Ceiling Mounted OT Light	P0151	Operation Theatre and Surgical	Ceiling OT Light
+Primary	LED OT Light	P0152	Operation Theatre and Surgical	LED OT Light
+Alternative	LED Surgical Light	P0152	Operation Theatre and Surgical	LED OT Light
+Alternative	LED Shadowless Light	P0152	Operation Theatre and Surgical	LED OT Light
+Primary	Electrosurgical Unit	P0153	Operation Theatre and Surgical	Electrosurgical Unit
+Alternative	ESU	P0153	Operation Theatre and Surgical	Electrosurgical Unit
+Alternative	Surgical Cautery	P0153	Operation Theatre and Surgical	Electrosurgical Unit
+Alternative	Diathermy Machine	P0153	Operation Theatre and Surgical	Electrosurgical Unit
+Alternative	Electrocautery	P0153	Operation Theatre and Surgical	Electrosurgical Unit
+Primary	Surgical Suction Machine	P0154	Operation Theatre and Surgical	Surgical Suction Machine
+Alternative	Suction Apparatus	P0154	Operation Theatre and Surgical	Surgical Suction Machine
+Alternative	Suction Pump	P0154	Operation Theatre and Surgical	Surgical Suction Machine
+Alternative	Medical Suction Unit	P0154	Operation Theatre and Surgical	Surgical Suction Machine
+Primary	Laparoscopy System	P0155	Operation Theatre and Surgical	Laparoscopy System
+Alternative	Laparoscopic System	P0155	Operation Theatre and Surgical	Laparoscopy System
+Alternative	Laparoscopy Tower	P0155	Operation Theatre and Surgical	Laparoscopy System
+Alternative	Laparoscopic Equipment	P0155	Operation Theatre and Surgical	Laparoscopy System
+Primary	Endoscopy System	P0156	Operation Theatre and Surgical	Endoscopy System
+Alternative	Endoscope	P0156	Operation Theatre and Surgical	Endoscopy System
+Alternative	Endoscopy Tower	P0156	Operation Theatre and Surgical	Endoscopy System
+Alternative	Video Endoscopy System	P0156	Operation Theatre and Surgical	Endoscopy System
+Primary	Arthroscopy System	P0157	Operation Theatre and Surgical	Arthroscopy System
+Alternative	Arthroscope	P0157	Operation Theatre and Surgical	Arthroscopy System
+Alternative	Arthroscopy Tower	P0157	Operation Theatre and Surgical	Arthroscopy System
+Primary	Surgical Microscope	P0158	Operation Theatre and Surgical	Surgical Microscope
+Alternative	Operating Microscope	P0158	Operation Theatre and Surgical	Surgical Microscope
+Alternative	Operation Microscope	P0158	Operation Theatre and Surgical	Surgical Microscope
+Primary	Surgical Drill	P0159	Operation Theatre and Surgical	Surgical Drill
+Alternative	Orthopaedic Drill	P0159	Operation Theatre and Surgical	Surgical Drill
+Alternative	Bone Drill	P0159	Operation Theatre and Surgical	Surgical Drill
+Alternative	Surgical Power Tool	P0159	Operation Theatre and Surgical	Surgical Drill
+Primary	Tourniquet Machine	P0160	Operation Theatre and Surgical	Tourniquet Machine
+Alternative	Pneumatic Tourniquet	P0160	Operation Theatre and Surgical	Tourniquet Machine
+Alternative	Surgical Tourniquet System	P0160	Operation Theatre and Surgical	Tourniquet Machine
+Primary	OT Pendant	P0161	Operation Theatre and Surgical	OT Pendant
+Alternative	Surgical Pendant	P0161	Operation Theatre and Surgical	OT Pendant
+Alternative	Ceiling Pendant	P0161	Operation Theatre and Surgical	OT Pendant
+Alternative	Medical Pendant	P0161	Operation Theatre and Surgical	OT Pendant
+Primary	Scrub Station	P0162	Operation Theatre and Surgical	Scrub Station
+Alternative	Surgical Scrub Sink	P0162	Operation Theatre and Surgical	Scrub Station
+Alternative	OT Scrub Station	P0162	Operation Theatre and Surgical	Scrub Station
+Alternative	Scrub Unit	P0162	Operation Theatre and Surgical	Scrub Station
+Primary	Modular Operation Theatre	P0163	Operation Theatre and Surgical	Modular Operation Theatre
+Alternative	Modular OT	P0163	Operation Theatre and Surgical	Modular Operation Theatre
+Alternative	MOT	P0163	Operation Theatre and Surgical	Modular Operation Theatre
+Alternative	Modular Operating Room	P0163	Operation Theatre and Surgical	Modular Operation Theatre
+Primary	Surgical Instrument Set	P0164	Operation Theatre and Surgical	Surgical Instrument Set
+Alternative	General Surgery Instrument Set	P0164	Operation Theatre and Surgical	Surgical Instrument Set
+Alternative	Surgical Tools	P0164	Operation Theatre and Surgical	Surgical Instrument Set
+Alternative	Surgical Instruments	P0164	Operation Theatre and Surgical	Surgical Instrument Set
+Primary	Surgical Headlight	P0165	Operation Theatre and Surgical	Surgical Headlight
+Alternative	Surgeon Headlight	P0165	Operation Theatre and Surgical	Surgical Headlight
+Alternative	LED Surgical Head Lamp	P0165	Operation Theatre and Surgical	Surgical Headlight
+Primary	Patient Warming System	P0166	Operation Theatre and Surgical	Patient Warming System
+Alternative	Patient Warmer	P0166	Operation Theatre and Surgical	Patient Warming System
+Alternative	Forced Air Warming System	P0166	Operation Theatre and Surgical	Patient Warming System
+Alternative	Warming Blanket	P0166	Operation Theatre and Surgical	Patient Warming System
+Primary	Horizontal Autoclave	P0167	CSSD and Sterilization	Horizontal Autoclave
+Alternative	Horizontal Steam Sterilizer	P0167	CSSD and Sterilization	Horizontal Autoclave
+Alternative	Horizontal Cylindrical Autoclave	P0167	CSSD and Sterilization	Horizontal Autoclave
+Alternative	Horizontal Rectangular Autoclave	P0167	CSSD and Sterilization	Horizontal Autoclave
+Primary	Vertical Autoclave	P0168	CSSD and Sterilization	Vertical Autoclave
+Alternative	Vertical Steam Sterilizer	P0168	CSSD and Sterilization	Vertical Autoclave
+Alternative	Laboratory Autoclave	P0168	CSSD and Sterilization	Vertical Autoclave
+Primary	Table Top Autoclave	P0169	CSSD and Sterilization	Table Top Autoclave
+Alternative	Tabletop Autoclave	P0169	CSSD and Sterilization	Table Top Autoclave
+Alternative	Bench Top Autoclave	P0169	CSSD and Sterilization	Table Top Autoclave
+Alternative	Benchtop Sterilizer	P0169	CSSD and Sterilization	Table Top Autoclave
+Primary	Dental Autoclave	P0170	CSSD and Sterilization	Dental Autoclave
+Alternative	Class B Autoclave	P0170	CSSD and Sterilization	Dental Autoclave
+Alternative	Dental Sterilizer	P0170	CSSD and Sterilization	Dental Autoclave
+Alternative	Dental Steam Sterilizer	P0170	CSSD and Sterilization	Dental Autoclave
+Primary	High Pressure Sterilizer	P0171	CSSD and Sterilization	High Pressure Sterilizer
+Alternative	High Pressure Autoclave	P0171	CSSD and Sterilization	High Pressure Sterilizer
+Alternative	Steam Pressure Sterilizer	P0171	CSSD and Sterilization	High Pressure Sterilizer
+Primary	ETO Sterilizer	P0172	CSSD and Sterilization	ETO Sterilizer
+Alternative	EO Sterilizer	P0172	CSSD and Sterilization	ETO Sterilizer
+Alternative	Ethylene Oxide Sterilizer	P0172	CSSD and Sterilization	ETO Sterilizer
+Alternative	ETO Machine	P0172	CSSD and Sterilization	ETO Sterilizer
+Primary	Plasma Sterilizer	P0173	CSSD and Sterilization	Plasma Sterilizer
+Alternative	Hydrogen Peroxide Sterilizer	P0173	CSSD and Sterilization	Plasma Sterilizer
+Alternative	Low Temperature Plasma Sterilizer	P0173	CSSD and Sterilization	Plasma Sterilizer
+Primary	Ultrasonic Cleaner	P0174	CSSD and Sterilization	Ultrasonic Cleaner
+Alternative	Ultrasonic Cleaning Machine	P0174	CSSD and Sterilization	Ultrasonic Cleaner
+Alternative	Ultrasonic Cleaning Bath	P0174	CSSD and Sterilization	Ultrasonic Cleaner
+Primary	Washer Disinfector	P0175	CSSD and Sterilization	Washer Disinfector
+Alternative	Instrument Washer	P0175	CSSD and Sterilization	Washer Disinfector
+Alternative	Automatic Washer Disinfector	P0175	CSSD and Sterilization	Washer Disinfector
+Primary	Instrument Sterilizer	P0176	CSSD and Sterilization	Instrument Sterilizer
+Alternative	Surgical Instrument Sterilizer	P0176	CSSD and Sterilization	Instrument Sterilizer
+Alternative	Electric Sterilizer	P0176	CSSD and Sterilization	Instrument Sterilizer
+Primary	UV Sterilizer	P0177	CSSD and Sterilization	UV Sterilizer
+Alternative	UV Chamber	P0177	CSSD and Sterilization	UV Sterilizer
+Alternative	Ultraviolet Sterilizer	P0177	CSSD and Sterilization	UV Sterilizer
+Alternative	UV Cabinet	P0177	CSSD and Sterilization	UV Sterilizer
+Primary	CSSD Equipment	P0178	CSSD and Sterilization	CSSD Equipment
+Alternative	Central Sterile Supply Department Equipment	P0178	CSSD and Sterilization	CSSD Equipment
+Alternative	Central Sterilization Equipment	P0178	CSSD and Sterilization	CSSD Equipment
+Primary	Sterilization Pouch Sealer	P0179	CSSD and Sterilization	Sterilization Pouch Sealer
+Alternative	Medical Pouch Sealing Machine	P0179	CSSD and Sterilization	Sterilization Pouch Sealer
+Alternative	Rotary Sealer	P0179	CSSD and Sterilization	Sterilization Pouch Sealer
+Alternative	Heat Sealer	P0179	CSSD and Sterilization	Sterilization Pouch Sealer
+Primary	Steam Generator	P0180	CSSD and Sterilization	Steam Generator
+Alternative	Electric Steam Generator	P0180	CSSD and Sterilization	Steam Generator
+Alternative	Autoclave Steam Generator	P0180	CSSD and Sterilization	Steam Generator
+Primary	Sterilization Indicator	P0181	CSSD and Sterilization	Sterilization Indicator
+Alternative	Biological Indicator	P0181	CSSD and Sterilization	Sterilization Indicator
+Alternative	Chemical Indicator	P0181	CSSD and Sterilization	Sterilization Indicator
+Alternative	Bowie Dick Test	P0181	CSSD and Sterilization	Sterilization Indicator
+Primary	Ventilator	P0182	ICU Emergency and Anaesthesia	Ventilator
+Alternative	Medical Ventilator	P0182	ICU Emergency and Anaesthesia	Ventilator
+Alternative	ICU Ventilator	P0182	ICU Emergency and Anaesthesia	Ventilator
+Alternative	Mechanical Ventilator	P0182	ICU Emergency and Anaesthesia	Ventilator
+Alternative	Critical Care Ventilator	P0182	ICU Emergency and Anaesthesia	Ventilator
+Primary	Transport Ventilator	P0183	ICU Emergency and Anaesthesia	Transport Ventilator
+Alternative	Portable Ventilator	P0183	ICU Emergency and Anaesthesia	Transport Ventilator
+Alternative	Ambulance Ventilator	P0183	ICU Emergency and Anaesthesia	Transport Ventilator
+Primary	Anaesthesia Workstation	P0184	ICU Emergency and Anaesthesia	Anaesthesia Workstation
+Alternative	Anesthesia Workstation	P0184	ICU Emergency and Anaesthesia	Anaesthesia Workstation
+Alternative	Anaesthesia Machine	P0184	ICU Emergency and Anaesthesia	Anaesthesia Workstation
+Alternative	Anesthesia Machine	P0184	ICU Emergency and Anaesthesia	Anaesthesia Workstation
+Alternative	Boyle's Apparatus	P0184	ICU Emergency and Anaesthesia	Anaesthesia Workstation
+Primary	Patient Monitor	P0185	ICU Emergency and Anaesthesia	Patient Monitor
+Alternative	Multipara Monitor	P0185	ICU Emergency and Anaesthesia	Patient Monitor
+Alternative	Multiparameter Monitor	P0185	ICU Emergency and Anaesthesia	Patient Monitor
+Alternative	Multi Parameter Monitor	P0185	ICU Emergency and Anaesthesia	Patient Monitor
+Alternative	Bedside Monitor	P0185	ICU Emergency and Anaesthesia	Patient Monitor
+Primary	ECG Machine	P0186	ICU Emergency and Anaesthesia	ECG Machine
+Alternative	Electrocardiograph	P0186	ICU Emergency and Anaesthesia	ECG Machine
+Alternative	Electrocardiogram Machine	P0186	ICU Emergency and Anaesthesia	ECG Machine
+Alternative	12 Channel ECG	P0186	ICU Emergency and Anaesthesia	ECG Machine
+Primary	Defibrillator	P0187	ICU Emergency and Anaesthesia	Defibrillator
+Alternative	Cardiac Defibrillator	P0187	ICU Emergency and Anaesthesia	Defibrillator
+Alternative	Biphasic Defibrillator	P0187	ICU Emergency and Anaesthesia	Defibrillator
+Alternative	AED	P0187	ICU Emergency and Anaesthesia	Defibrillator
+Primary	Pulse Oximeter	P0188	ICU Emergency and Anaesthesia	Pulse Oximeter
+Alternative	Pulseoximeter	P0188	ICU Emergency and Anaesthesia	Pulse Oximeter
+Alternative	SPO2 Monitor	P0188	ICU Emergency and Anaesthesia	Pulse Oximeter
+Alternative	Oxygen Saturation Monitor	P0188	ICU Emergency and Anaesthesia	Pulse Oximeter
+Primary	Syringe Pump	P0189	ICU Emergency and Anaesthesia	Syringe Pump
+Alternative	Syringe Infusion Pump	P0189	ICU Emergency and Anaesthesia	Syringe Pump
+Alternative	Automatic Syringe Pump	P0189	ICU Emergency and Anaesthesia	Syringe Pump
+Primary	Infusion Pump	P0190	ICU Emergency and Anaesthesia	Infusion Pump
+Alternative	Volumetric Infusion Pump	P0190	ICU Emergency and Anaesthesia	Infusion Pump
+Alternative	IV Infusion Pump	P0190	ICU Emergency and Anaesthesia	Infusion Pump
+Primary	Oxygen Concentrator	P0191	ICU Emergency and Anaesthesia	Oxygen Concentrator
+Alternative	O2 Concentrator	P0191	ICU Emergency and Anaesthesia	Oxygen Concentrator
+Alternative	Medical Oxygen Concentrator	P0191	ICU Emergency and Anaesthesia	Oxygen Concentrator
+Primary	Oxygen Flow Meter	P0192	ICU Emergency and Anaesthesia	Oxygen Flow Meter
+Alternative	Oxygen Flowmeter	P0192	ICU Emergency and Anaesthesia	Oxygen Flow Meter
+Alternative	Oxygen Regulator	P0192	ICU Emergency and Anaesthesia	Oxygen Flow Meter
+Primary	CPAP Machine	P0193	ICU Emergency and Anaesthesia	CPAP Machine
+Alternative	Continuous Positive Airway Pressure Machine	P0193	ICU Emergency and Anaesthesia	CPAP Machine
+Alternative	CPAP System	P0193	ICU Emergency and Anaesthesia	CPAP Machine
+Primary	BiPAP Machine	P0194	ICU Emergency and Anaesthesia	BiPAP Machine
+Alternative	Bilevel Positive Airway Pressure	P0194	ICU Emergency and Anaesthesia	BiPAP Machine
+Alternative	Bi Level PAP	P0194	ICU Emergency and Anaesthesia	BiPAP Machine
+Primary	HFNC System	P0195	ICU Emergency and Anaesthesia	HFNC System
+Alternative	High Flow Nasal Cannula	P0195	ICU Emergency and Anaesthesia	HFNC System
+Alternative	High Flow Oxygen Therapy	P0195	ICU Emergency and Anaesthesia	HFNC System
+Primary	Nebulizer	P0196	ICU Emergency and Anaesthesia	Nebulizer
+Alternative	Nebuliser	P0196	ICU Emergency and Anaesthesia	Nebulizer
+Alternative	Compressor Nebulizer	P0196	ICU Emergency and Anaesthesia	Nebulizer
+Alternative	Nebulization Machine	P0196	ICU Emergency and Anaesthesia	Nebulizer
+Primary	Digital BP Monitor	P0197	ICU Emergency and Anaesthesia	Digital BP Monitor
+Alternative	Blood Pressure Monitor	P0197	ICU Emergency and Anaesthesia	Digital BP Monitor
+Alternative	BP Apparatus	P0197	ICU Emergency and Anaesthesia	Digital BP Monitor
+Alternative	Sphygmomanometer	P0197	ICU Emergency and Anaesthesia	Digital BP Monitor
+Alternative	NIBP Monitor	P0197	ICU Emergency and Anaesthesia	Digital BP Monitor
+Primary	Stethoscope	P0198	ICU Emergency and Anaesthesia	Stethoscope
+Alternative	Stethescope	P0198	ICU Emergency and Anaesthesia	Stethoscope
+Alternative	Digital Stethoscope	P0198	ICU Emergency and Anaesthesia	Stethoscope
+Alternative	Medical Stethoscope	P0198	ICU Emergency and Anaesthesia	Stethoscope
+Primary	Resuscitator	P0199	ICU Emergency and Anaesthesia	Resuscitator
+Alternative	Ambu Bag	P0199	ICU Emergency and Anaesthesia	Resuscitator
+Alternative	Manual Resuscitator	P0199	ICU Emergency and Anaesthesia	Resuscitator
+Alternative	Bag Valve Mask	P0199	ICU Emergency and Anaesthesia	Resuscitator
+Alternative	BVM	P0199	ICU Emergency and Anaesthesia	Resuscitator
+Primary	Laryngoscope	P0200	ICU Emergency and Anaesthesia	Laryngoscope
+Alternative	Video Laryngoscope	P0200	ICU Emergency and Anaesthesia	Laryngoscope
+Alternative	Intubation Laryngoscope	P0200	ICU Emergency and Anaesthesia	Laryngoscope
+Primary	Capnograph	P0201	ICU Emergency and Anaesthesia	Capnograph
+Alternative	Capnography Monitor	P0201	ICU Emergency and Anaesthesia	Capnograph
+Alternative	ETCO2 Monitor	P0201	ICU Emergency and Anaesthesia	Capnograph
+Primary	Oxygen Generation Plant	P0202	ICU Emergency and Anaesthesia	Oxygen Generation Plant
+Alternative	PSA Oxygen Plant	P0202	ICU Emergency and Anaesthesia	Oxygen Generation Plant
+Alternative	Medical Oxygen Plant	P0202	ICU Emergency and Anaesthesia	Oxygen Generation Plant
+Alternative	Oxygen Generator	P0202	ICU Emergency and Anaesthesia	Oxygen Generation Plant
+Primary	Medical Gas Pipeline	P0203	ICU Emergency and Anaesthesia	Medical Gas Pipeline
+Alternative	MGPS	P0203	ICU Emergency and Anaesthesia	Medical Gas Pipeline
+Alternative	Medical Gas Pipeline System	P0203	ICU Emergency and Anaesthesia	Medical Gas Pipeline
+Alternative	Central Oxygen Pipeline	P0203	ICU Emergency and Anaesthesia	Medical Gas Pipeline
+Primary	CPR Machine	P0204	ICU Emergency and Anaesthesia	CPR Machine
+Alternative	Mechanical CPR Device	P0204	ICU Emergency and Anaesthesia	CPR Machine
+Alternative	Chest Compression System	P0204	ICU Emergency and Anaesthesia	CPR Machine
+Primary	Glucometer	P0205	ICU Emergency and Anaesthesia	Glucometer
+Alternative	Glucose Meter	P0205	ICU Emergency and Anaesthesia	Glucometer
+Alternative	Blood Sugar Testing Machine	P0205	ICU Emergency and Anaesthesia	Glucometer
+Alternative	Blood Glucose Monitor	P0205	ICU Emergency and Anaesthesia	Glucometer
+Primary	Ambulance	P0206	Medical Vehicles	Ambulance
+Alternative	Medical Ambulance	P0206	Medical Vehicles	Ambulance
+Alternative	Patient Ambulance	P0206	Medical Vehicles	Ambulance
+Alternative	Ambulance Vehicle	P0206	Medical Vehicles	Ambulance
+Alternative	Ambulance Van	P0206	Medical Vehicles	Ambulance
+Primary	Basic Life Support Ambulance	P0207	Medical Vehicles	Basic Life Support Ambulance
+Alternative	BLS Ambulance	P0207	Medical Vehicles	Basic Life Support Ambulance
+Alternative	Basic Ambulance	P0207	Medical Vehicles	Basic Life Support Ambulance
+Alternative	Type C Ambulance	P0207	Medical Vehicles	Basic Life Support Ambulance
+Primary	Advanced Life Support Ambulance	P0208	Medical Vehicles	Advanced Life Support Ambulance
+Alternative	ALS Ambulance	P0208	Medical Vehicles	Advanced Life Support Ambulance
+Alternative	ICU Ambulance	P0208	Medical Vehicles	Advanced Life Support Ambulance
+Alternative	Type D Ambulance	P0208	Medical Vehicles	Advanced Life Support Ambulance
+Primary	Patient Transport Ambulance	P0209	Medical Vehicles	Patient Transport Ambulance
+Alternative	PTA	P0209	Medical Vehicles	Patient Transport Ambulance
+Alternative	Patient Transport Vehicle	P0209	Medical Vehicles	Patient Transport Ambulance
+Alternative	Type B Ambulance	P0209	Medical Vehicles	Patient Transport Ambulance
+Primary	Neonatal Ambulance	P0210	Medical Vehicles	Neonatal Ambulance
+Alternative	Newborn Ambulance	P0210	Medical Vehicles	Neonatal Ambulance
+Alternative	NICU Ambulance	P0210	Medical Vehicles	Neonatal Ambulance
+Primary	Refrigerated Vehicle	P0211	Medical Vehicles	Refrigerated Vehicle
+Alternative	Refrigeration Vehicle	P0211	Medical Vehicles	Refrigerated Vehicle
+Alternative	Reefer Vehicle	P0211	Medical Vehicles	Refrigerated Vehicle
+Alternative	Refrigerated Van	P0211	Medical Vehicles	Refrigerated Vehicle
+Alternative	Refrigerated Truck	P0211	Medical Vehicles	Refrigerated Vehicle
+Alternative	Reefer Truck	P0211	Medical Vehicles	Refrigerated Vehicle
+Primary	Vaccine Transport Vehicle	P0212	Medical Vehicles	Vaccine Transport Vehicle
+Alternative	Vaccine Delivery Van	P0212	Medical Vehicles	Vaccine Transport Vehicle
+Alternative	Vaccine Van	P0212	Medical Vehicles	Vaccine Transport Vehicle
+Alternative	Vaccine Transportation Vehicle	P0212	Medical Vehicles	Vaccine Transport Vehicle
+Primary	Cold Chain Vehicle	P0213	Medical Vehicles	Cold Chain Vehicle
+Alternative	Cold Chain Van	P0213	Medical Vehicles	Cold Chain Vehicle
+Alternative	Cold Chain Truck	P0213	Medical Vehicles	Cold Chain Vehicle
+Alternative	Temperature Controlled Vehicle	P0213	Medical Vehicles	Cold Chain Vehicle
+Primary	Insulated Vehicle	P0214	Medical Vehicles	Insulated Vehicle
+Alternative	Insulated Van	P0214	Medical Vehicles	Insulated Vehicle
+Alternative	Insulated Truck	P0214	Medical Vehicles	Insulated Vehicle
+Alternative	Insulated Container Vehicle	P0214	Medical Vehicles	Insulated Vehicle
+Primary	Mobile Medical Unit	P0215	Medical Vehicles	Mobile Medical Unit
+Alternative	MMU	P0215	Medical Vehicles	Mobile Medical Unit
+Alternative	Mobile Medical Van	P0215	Medical Vehicles	Mobile Medical Unit
+Alternative	Mobile Health Unit	P0215	Medical Vehicles	Mobile Medical Unit
+Alternative	Mobile Clinic	P0215	Medical Vehicles	Mobile Medical Unit
+Primary	Mobile Testing Laboratory	P0216	Medical Vehicles	Mobile Testing Laboratory
+Alternative	Mobile Testing Lab	P0216	Medical Vehicles	Mobile Testing Laboratory
+Alternative	Mobile Laboratory	P0216	Medical Vehicles	Mobile Testing Laboratory
+Alternative	Laboratory Van	P0216	Medical Vehicles	Mobile Testing Laboratory
+Alternative	Mobile Lab Vehicle	P0216	Medical Vehicles	Mobile Testing Laboratory
+Primary	Mobile Blood Collection Vehicle	P0217	Medical Vehicles	Mobile Blood Collection Vehicle
+Alternative	Blood Donation Van	P0217	Medical Vehicles	Mobile Blood Collection Vehicle
+Alternative	Blood Collection Van	P0217	Medical Vehicles	Mobile Blood Collection Vehicle
+Alternative	Blood Mobile	P0217	Medical Vehicles	Mobile Blood Collection Vehicle
+Alternative	Mobile Blood Bank	P0217	Medical Vehicles	Mobile Blood Collection Vehicle
+Primary	Mobile Dental Van	P0218	Medical Vehicles	Mobile Dental Van
+Alternative	Dental Mobile Unit	P0218	Medical Vehicles	Mobile Dental Van
+Alternative	Dental Clinic Vehicle	P0218	Medical Vehicles	Mobile Dental Van
+Primary	Mobile Diagnostic Vehicle	P0219	Medical Vehicles	Mobile Diagnostic Vehicle
+Alternative	Diagnostic Van	P0219	Medical Vehicles	Mobile Diagnostic Vehicle
+Alternative	Mobile Diagnostic Unit	P0219	Medical Vehicles	Mobile Diagnostic Vehicle
+Primary	Mobile X-Ray Vehicle	P0220	Medical Vehicles	Mobile X-Ray Vehicle
+Alternative	Mobile Radiology Van	P0220	Medical Vehicles	Mobile X-Ray Vehicle
+Alternative	X Ray Van	P0220	Medical Vehicles	Mobile X-Ray Vehicle
+Primary	Mobile Cancer Screening Unit	P0221	Medical Vehicles	Mobile Cancer Screening Unit
+Alternative	Cancer Screening Van	P0221	Medical Vehicles	Mobile Cancer Screening Unit
+Alternative	Mobile Oncology Unit	P0221	Medical Vehicles	Mobile Cancer Screening Unit
+Primary	Mobile Veterinary Unit	P0222	Medical Vehicles	Mobile Veterinary Unit
+Alternative	Veterinary Ambulance	P0222	Medical Vehicles	Mobile Veterinary Unit
+Alternative	Animal Ambulance	P0222	Medical Vehicles	Mobile Veterinary Unit
+Alternative	Veterinary Mobile Van	P0222	Medical Vehicles	Mobile Veterinary Unit
+Primary	Mortuary Van	P0223	Medical Vehicles	Mortuary Van
+Alternative	Dead Body Carrier	P0223	Medical Vehicles	Mortuary Van
+Alternative	Hearse Van	P0223	Medical Vehicles	Mortuary Van
+Alternative	Dead Body Transportation Vehicle	P0223	Medical Vehicles	Mortuary Van
+Primary	Biomedical Waste Vehicle	P0224	Medical Vehicles	Biomedical Waste Vehicle
+Alternative	BMW Collection Vehicle	P0224	Medical Vehicles	Biomedical Waste Vehicle
+Alternative	Medical Waste Transportation Van	P0224	Medical Vehicles	Biomedical Waste Vehicle
+Primary	Ambulance Fabrication	P0225	Medical Vehicles	Ambulance Fabrication
+Alternative	Ambulance Body Building	P0225	Medical Vehicles	Ambulance Fabrication
+Alternative	Ambulance Conversion	P0225	Medical Vehicles	Ambulance Fabrication
+Alternative	Medical Vehicle Fabrication	P0225	Medical Vehicles	Ambulance Fabrication
+Primary	Refrigerated Container	P0226	Medical Vehicles	Refrigerated Container
+Alternative	Reefer Container	P0226	Medical Vehicles	Refrigerated Container
+Alternative	Refrigerated Vehicle Body	P0226	Medical Vehicles	Refrigerated Container
+Alternative	Insulated Vehicle Body	P0226	Medical Vehicles	Refrigerated Container
+Primary	Mobile Hospital	P0227	Medical Vehicles	Mobile Hospital
+Alternative	Hospital on Wheels	P0227	Medical Vehicles	Mobile Hospital
+Alternative	Mobile Field Hospital	P0227	Medical Vehicles	Mobile Hospital
+Alternative	Containerized Hospital	P0227	Medical Vehicles	Mobile Hospital
+Primary	X Ray Machine	P0228	Radiology and Imaging	X Ray Machine
+Alternative	X-Ray Machine	P0228	Radiology and Imaging	X Ray Machine
+Alternative	Radiography Machine	P0228	Radiology and Imaging	X Ray Machine
+Alternative	Digital X Ray	P0228	Radiology and Imaging	X Ray Machine
+Primary	Portable X Ray	P0229	Radiology and Imaging	Portable X Ray
+Alternative	Mobile X Ray Machine	P0229	Radiology and Imaging	Portable X Ray
+Alternative	Portable Radiography System	P0229	Radiology and Imaging	Portable X Ray
+Primary	Digital Radiography	P0230	Radiology and Imaging	Digital Radiography
+Alternative	DR System	P0230	Radiology and Imaging	Digital Radiography
+Alternative	DR X Ray	P0230	Radiology and Imaging	Digital Radiography
+Alternative	Digital Radiography System	P0230	Radiology and Imaging	Digital Radiography
+Primary	Computed Radiography	P0231	Radiology and Imaging	Computed Radiography
+Alternative	CR System	P0231	Radiology and Imaging	Computed Radiography
+Alternative	CR Reader	P0231	Radiology and Imaging	Computed Radiography
+Primary	CT Scanner	P0232	Radiology and Imaging	CT Scanner
+Alternative	CT Scan Machine	P0232	Radiology and Imaging	CT Scanner
+Alternative	Computed Tomography Scanner	P0232	Radiology and Imaging	CT Scanner
+Primary	MRI Machine	P0233	Radiology and Imaging	MRI Machine
+Alternative	Magnetic Resonance Imaging System	P0233	Radiology and Imaging	MRI Machine
+Alternative	MRI Scanner	P0233	Radiology and Imaging	MRI Machine
+Primary	Ultrasound Machine	P0234	Radiology and Imaging	Ultrasound Machine
+Alternative	USG Machine	P0234	Radiology and Imaging	Ultrasound Machine
+Alternative	Ultrasonography Machine	P0234	Radiology and Imaging	Ultrasound Machine
+Alternative	Sonography Machine	P0234	Radiology and Imaging	Ultrasound Machine
+Primary	Colour Doppler	P0235	Radiology and Imaging	Colour Doppler
+Alternative	Color Doppler	P0235	Radiology and Imaging	Colour Doppler
+Alternative	Doppler Ultrasound	P0235	Radiology and Imaging	Colour Doppler
+Primary	C Arm Machine	P0236	Radiology and Imaging	C Arm Machine
+Alternative	C-Arm	P0236	Radiology and Imaging	C Arm Machine
+Alternative	Mobile Fluoroscopy System	P0236	Radiology and Imaging	C Arm Machine
+Primary	Mammography Machine	P0237	Radiology and Imaging	Mammography Machine
+Alternative	Mammogram Machine	P0237	Radiology and Imaging	Mammography Machine
+Alternative	Digital Mammography System	P0237	Radiology and Imaging	Mammography Machine
+Primary	Bone Densitometer	P0238	Radiology and Imaging	Bone Densitometer
+Alternative	DEXA Scanner	P0238	Radiology and Imaging	Bone Densitometer
+Alternative	DXA Scanner	P0238	Radiology and Imaging	Bone Densitometer
+Alternative	BMD Machine	P0238	Radiology and Imaging	Bone Densitometer
+Primary	X Ray View Box	P0239	Radiology and Imaging	X Ray View Box
+Alternative	X Ray Film Viewer	P0239	Radiology and Imaging	X Ray View Box
+Alternative	LED X Ray View Box	P0239	Radiology and Imaging	X Ray View Box
+Primary	Lead Apron	P0240	Radiology and Imaging	Lead Apron
+Alternative	Radiation Protection Apron	P0240	Radiology and Imaging	Lead Apron
+Alternative	X Ray Protective Apron	P0240	Radiology and Imaging	Lead Apron
+Primary	Dental X Ray	P0241	Radiology and Imaging	Dental X Ray
+Alternative	Dental Radiography Machine	P0241	Radiology and Imaging	Dental X Ray
+Alternative	IOPA X Ray	P0241	Radiology and Imaging	Dental X Ray
+Alternative	RVG System	P0241	Radiology and Imaging	Dental X Ray
+Primary	PET CT Scanner	P0242	Radiology and Imaging	PET CT Scanner
+Alternative	PET Scanner	P0242	Radiology and Imaging	PET CT Scanner
+Alternative	Positron Emission Tomography System	P0242	Radiology and Imaging	PET CT Scanner
+Primary	Infant Radiant Warmer	P0243	Neonatal and Gynaecology	Infant Radiant Warmer
+Alternative	Baby Warmer	P0243	Neonatal and Gynaecology	Infant Radiant Warmer
+Alternative	Neonatal Warmer	P0243	Neonatal and Gynaecology	Infant Radiant Warmer
+Alternative	Radiant Heat Warmer	P0243	Neonatal and Gynaecology	Infant Radiant Warmer
+Primary	Infant Incubator	P0244	Neonatal and Gynaecology	Infant Incubator
+Alternative	Neonatal Incubator	P0244	Neonatal and Gynaecology	Infant Incubator
+Alternative	Baby Incubator	P0244	Neonatal and Gynaecology	Infant Incubator
+Primary	Transport Incubator	P0245	Neonatal and Gynaecology	Transport Incubator
+Alternative	Neonatal Transport Incubator	P0245	Neonatal and Gynaecology	Transport Incubator
+Alternative	Mobile Infant Incubator	P0245	Neonatal and Gynaecology	Transport Incubator
+Primary	Phototherapy Unit	P0246	Neonatal and Gynaecology	Phototherapy Unit
+Alternative	LED Phototherapy	P0246	Neonatal and Gynaecology	Phototherapy Unit
+Alternative	Bilirubin Phototherapy	P0246	Neonatal and Gynaecology	Phototherapy Unit
+Alternative	Double Surface Phototherapy	P0246	Neonatal and Gynaecology	Phototherapy Unit
+Primary	Fetal Doppler	P0247	Neonatal and Gynaecology	Fetal Doppler
+Alternative	Foetal Doppler	P0247	Neonatal and Gynaecology	Fetal Doppler
+Alternative	Fetal Heart Monitor	P0247	Neonatal and Gynaecology	Fetal Doppler
+Primary	Fetal Monitor	P0248	Neonatal and Gynaecology	Fetal Monitor
+Alternative	Foetal Monitor	P0248	Neonatal and Gynaecology	Fetal Monitor
+Alternative	CTG Machine	P0248	Neonatal and Gynaecology	Fetal Monitor
+Alternative	Cardiotocograph	P0248	Neonatal and Gynaecology	Fetal Monitor
+Primary	Infant Resuscitation System	P0249	Neonatal and Gynaecology	Infant Resuscitation System
+Alternative	Neonatal Resuscitator	P0249	Neonatal and Gynaecology	Infant Resuscitation System
+Alternative	Newborn Resuscitation Unit	P0249	Neonatal and Gynaecology	Infant Resuscitation System
+Primary	Baby Weighing Scale	P0250	Neonatal and Gynaecology	Baby Weighing Scale
+Alternative	Infant Weighing Scale	P0250	Neonatal and Gynaecology	Baby Weighing Scale
+Alternative	Neonatal Weighing Scale	P0250	Neonatal and Gynaecology	Baby Weighing Scale
+Primary	Breast Pump	P0251	Neonatal and Gynaecology	Breast Pump
+Alternative	Electric Breast Pump	P0251	Neonatal and Gynaecology	Breast Pump
+Alternative	Milk Expression Pump	P0251	Neonatal and Gynaecology	Breast Pump
+Primary	Bilirubin Meter	P0252	Neonatal and Gynaecology	Bilirubin Meter
+Alternative	Transcutaneous Bilirubinometer	P0252	Neonatal and Gynaecology	Bilirubin Meter
+Alternative	Jaundice Meter	P0252	Neonatal and Gynaecology	Bilirubin Meter
+Primary	Colposcope	P0253	Neonatal and Gynaecology	Colposcope
+Alternative	Video Colposcope	P0253	Neonatal and Gynaecology	Colposcope
+Alternative	Digital Colposcopy System	P0253	Neonatal and Gynaecology	Colposcope
+Primary	Hysteroscope	P0254	Neonatal and Gynaecology	Hysteroscope
+Alternative	Hysteroscopy System	P0254	Neonatal and Gynaecology	Hysteroscope
+Alternative	Diagnostic Hysteroscope	P0254	Neonatal and Gynaecology	Hysteroscope
+Primary	Vacuum Extractor	P0255	Neonatal and Gynaecology	Vacuum Extractor
+Alternative	Obstetric Vacuum Extractor	P0255	Neonatal and Gynaecology	Vacuum Extractor
+Alternative	Ventouse Delivery System	P0255	Neonatal and Gynaecology	Vacuum Extractor
+Primary	Dental Compressor	P0256	Dental ENT and Ophthalmic	Dental Compressor
+Alternative	Oil Free Dental Compressor	P0256	Dental ENT and Ophthalmic	Dental Compressor
+Alternative	Dental Air Compressor	P0256	Dental ENT and Ophthalmic	Dental Compressor
+Primary	Dental Scaler	P0257	Dental ENT and Ophthalmic	Dental Scaler
+Alternative	Ultrasonic Scaler	P0257	Dental ENT and Ophthalmic	Dental Scaler
+Alternative	Piezo Scaler	P0257	Dental ENT and Ophthalmic	Dental Scaler
+Primary	Dental Suction	P0258	Dental ENT and Ophthalmic	Dental Suction
+Alternative	Dental Suction Unit	P0258	Dental ENT and Ophthalmic	Dental Suction
+Alternative	Dental Aspirator	P0258	Dental ENT and Ophthalmic	Dental Suction
+Primary	Dental Handpiece	P0259	Dental ENT and Ophthalmic	Dental Handpiece
+Alternative	Airotor	P0259	Dental ENT and Ophthalmic	Dental Handpiece
+Alternative	Dental Turbine	P0259	Dental ENT and Ophthalmic	Dental Handpiece
+Alternative	Dental Hand Piece	P0259	Dental ENT and Ophthalmic	Dental Handpiece
+Primary	Dental Curing Light	P0260	Dental ENT and Ophthalmic	Dental Curing Light
+Alternative	LED Curing Light	P0260	Dental ENT and Ophthalmic	Dental Curing Light
+Alternative	Composite Curing Unit	P0260	Dental ENT and Ophthalmic	Dental Curing Light
+Primary	Apex Locator	P0261	Dental ENT and Ophthalmic	Apex Locator
+Alternative	Dental Apex Locator	P0261	Dental ENT and Ophthalmic	Apex Locator
+Alternative	Root Canal Locator	P0261	Dental ENT and Ophthalmic	Apex Locator
+Primary	Endomotor	P0262	Dental ENT and Ophthalmic	Endomotor
+Alternative	Endo Motor	P0262	Dental ENT and Ophthalmic	Endomotor
+Alternative	Endodontic Motor	P0262	Dental ENT and Ophthalmic	Endomotor
+Primary	Dental OPG	P0263	Dental ENT and Ophthalmic	Dental OPG
+Alternative	Orthopantomograph	P0263	Dental ENT and Ophthalmic	Dental OPG
+Alternative	Panoramic Dental X Ray	P0263	Dental ENT and Ophthalmic	Dental OPG
+Primary	ENT Workstation	P0264	Dental ENT and Ophthalmic	ENT Workstation
+Alternative	ENT Unit	P0264	Dental ENT and Ophthalmic	ENT Workstation
+Alternative	ENT Treatment Unit	P0264	Dental ENT and Ophthalmic	ENT Workstation
+Alternative	ENT Examination Unit	P0264	Dental ENT and Ophthalmic	ENT Workstation
+Primary	Audiometer	P0265	Dental ENT and Ophthalmic	Audiometer
+Alternative	Clinical Audiometer	P0265	Dental ENT and Ophthalmic	Audiometer
+Alternative	Diagnostic Audiometer	P0265	Dental ENT and Ophthalmic	Audiometer
+Primary	Tympanometer	P0266	Dental ENT and Ophthalmic	Tympanometer
+Alternative	Impedance Audiometer	P0266	Dental ENT and Ophthalmic	Tympanometer
+Alternative	Tympanometry Machine	P0266	Dental ENT and Ophthalmic	Tympanometer
+Primary	Otoscope	P0267	Dental ENT and Ophthalmic	Otoscope
+Alternative	Ear Examination Scope	P0267	Dental ENT and Ophthalmic	Otoscope
+Alternative	Video Otoscope	P0267	Dental ENT and Ophthalmic	Otoscope
+Primary	Slit Lamp	P0268	Dental ENT and Ophthalmic	Slit Lamp
+Alternative	Slit Lamp Biomicroscope	P0268	Dental ENT and Ophthalmic	Slit Lamp
+Alternative	Ophthalmic Slit Lamp	P0268	Dental ENT and Ophthalmic	Slit Lamp
+Primary	Autorefractometer	P0269	Dental ENT and Ophthalmic	Autorefractometer
+Alternative	Auto Refractometer	P0269	Dental ENT and Ophthalmic	Autorefractometer
+Alternative	Auto Ref Keratometer	P0269	Dental ENT and Ophthalmic	Autorefractometer
+Primary	Tonometer	P0270	Dental ENT and Ophthalmic	Tonometer
+Alternative	Applanation Tonometer	P0270	Dental ENT and Ophthalmic	Tonometer
+Alternative	Non Contact Tonometer	P0270	Dental ENT and Ophthalmic	Tonometer
+Primary	Ophthalmoscope	P0271	Dental ENT and Ophthalmic	Ophthalmoscope
+Alternative	Direct Ophthalmoscope	P0271	Dental ENT and Ophthalmic	Ophthalmoscope
+Alternative	Indirect Ophthalmoscope	P0271	Dental ENT and Ophthalmic	Ophthalmoscope
+Primary	Phaco Machine	P0272	Dental ENT and Ophthalmic	Phaco Machine
+Alternative	Phacoemulsification System	P0272	Dental ENT and Ophthalmic	Phaco Machine
+Alternative	Cataract Surgery Machine	P0272	Dental ENT and Ophthalmic	Phaco Machine
+Primary	Fundus Camera	P0273	Dental ENT and Ophthalmic	Fundus Camera
+Alternative	Retinal Camera	P0273	Dental ENT and Ophthalmic	Fundus Camera
+Alternative	Fundus Imaging System	P0273	Dental ENT and Ophthalmic	Fundus Camera
+Primary	OCT Machine	P0274	Dental ENT and Ophthalmic	OCT Machine
+Alternative	Optical Coherence Tomography	P0274	Dental ENT and Ophthalmic	OCT Machine
+Primary	Lensometer	P0275	Dental ENT and Ophthalmic	Lensometer
+Alternative	Lensmeter	P0275	Dental ENT and Ophthalmic	Lensometer
+Alternative	Focimeter	P0275	Dental ENT and Ophthalmic	Lensometer
+Primary	Vision Testing Equipment	P0276	Dental ENT and Ophthalmic	Vision Testing Equipment
+Alternative	Visual Acuity System	P0276	Dental ENT and Ophthalmic	Vision Testing Equipment
+Alternative	Eye Testing Equipment	P0276	Dental ENT and Ophthalmic	Vision Testing Equipment
+Primary	Physiotherapy Ultrasound	P0277	Physiotherapy and Rehabilitation	Physiotherapy Ultrasound
+Alternative	Ultrasound Therapy Machine	P0277	Physiotherapy and Rehabilitation	Physiotherapy Ultrasound
+Alternative	Therapeutic Ultrasound	P0277	Physiotherapy and Rehabilitation	Physiotherapy Ultrasound
+Primary	TENS Machine	P0278	Physiotherapy and Rehabilitation	TENS Machine
+Alternative	Transcutaneous Electrical Nerve Stimulator	P0278	Physiotherapy and Rehabilitation	TENS Machine
+Alternative	TENS Unit	P0278	Physiotherapy and Rehabilitation	TENS Machine
+Primary	IFT Machine	P0279	Physiotherapy and Rehabilitation	IFT Machine
+Alternative	Interferential Therapy	P0279	Physiotherapy and Rehabilitation	IFT Machine
+Alternative	Interferential Current Therapy	P0279	Physiotherapy and Rehabilitation	IFT Machine
+Primary	Shortwave Diathermy	P0280	Physiotherapy and Rehabilitation	Shortwave Diathermy
+Alternative	SWD Machine	P0280	Physiotherapy and Rehabilitation	Shortwave Diathermy
+Alternative	Short Wave Diathermy	P0280	Physiotherapy and Rehabilitation	Shortwave Diathermy
+Primary	Traction Machine	P0281	Physiotherapy and Rehabilitation	Traction Machine
+Alternative	Cervical Traction	P0281	Physiotherapy and Rehabilitation	Traction Machine
+Alternative	Lumbar Traction	P0281	Physiotherapy and Rehabilitation	Traction Machine
+Alternative	Traction Unit	P0281	Physiotherapy and Rehabilitation	Traction Machine
+Primary	Exercise Therapy Equipment	P0282	Physiotherapy and Rehabilitation	Exercise Therapy Equipment
+Alternative	Rehabilitation Equipment	P0282	Physiotherapy and Rehabilitation	Exercise Therapy Equipment
+Alternative	Physiotherapy Exercise Equipment	P0282	Physiotherapy and Rehabilitation	Exercise Therapy Equipment
+Primary	Parallel Bar	P0283	Physiotherapy and Rehabilitation	Parallel Bar
+Alternative	Walking Parallel Bar	P0283	Physiotherapy and Rehabilitation	Parallel Bar
+Alternative	Rehabilitation Parallel Bars	P0283	Physiotherapy and Rehabilitation	Parallel Bar
+Primary	Hydrotherapy Unit	P0284	Physiotherapy and Rehabilitation	Hydrotherapy Unit
+Alternative	Hydro Therapy Equipment	P0284	Physiotherapy and Rehabilitation	Hydrotherapy Unit
+Alternative	Whirlpool Therapy	P0284	Physiotherapy and Rehabilitation	Hydrotherapy Unit
+Primary	CPM Machine	P0285	Physiotherapy and Rehabilitation	CPM Machine
+Alternative	Continuous Passive Motion Machine	P0285	Physiotherapy and Rehabilitation	CPM Machine
+Primary	Walking Aid	P0286	Physiotherapy and Rehabilitation	Walking Aid
+Alternative	Walker	P0286	Physiotherapy and Rehabilitation	Walking Aid
+Alternative	Walking Frame	P0286	Physiotherapy and Rehabilitation	Walking Aid
+Alternative	Rollator	P0286	Physiotherapy and Rehabilitation	Walking Aid
+Primary	Crutches	P0287	Physiotherapy and Rehabilitation	Crutches
+Alternative	Axillary Crutch	P0287	Physiotherapy and Rehabilitation	Crutches
+Alternative	Elbow Crutch	P0287	Physiotherapy and Rehabilitation	Crutches
+Primary	Prosthetic Equipment	P0288	Physiotherapy and Rehabilitation	Prosthetic Equipment
+Alternative	Artificial Limb	P0288	Physiotherapy and Rehabilitation	Prosthetic Equipment
+Alternative	Prosthesis	P0288	Physiotherapy and Rehabilitation	Prosthetic Equipment
+Primary	Orthotic Equipment	P0289	Physiotherapy and Rehabilitation	Orthotic Equipment
+Alternative	Orthosis	P0289	Physiotherapy and Rehabilitation	Orthotic Equipment
+Alternative	Orthopaedic Support	P0289	Physiotherapy and Rehabilitation	Orthotic Equipment
+Primary	Dialysis Machine	P0290	Dialysis Mortuary and Waste	Dialysis Machine
+Alternative	Haemodialysis Machine	P0290	Dialysis Mortuary and Waste	Dialysis Machine
+Alternative	Hemodialysis Machine	P0290	Dialysis Mortuary and Waste	Dialysis Machine
+Alternative	HD Machine	P0290	Dialysis Mortuary and Waste	Dialysis Machine
+Primary	Dialysis RO Plant	P0291	Dialysis Mortuary and Waste	Dialysis RO Plant
+Alternative	Dialysis Water Treatment System	P0291	Dialysis Mortuary and Waste	Dialysis RO Plant
+Alternative	Dialysis RO System	P0291	Dialysis Mortuary and Waste	Dialysis RO Plant
+Primary	Dialyzer	P0292	Dialysis Mortuary and Waste	Dialyzer
+Alternative	Dialyser	P0292	Dialysis Mortuary and Waste	Dialyzer
+Alternative	Artificial Kidney	P0292	Dialysis Mortuary and Waste	Dialyzer
+Alternative	Hemodialyzer	P0292	Dialysis Mortuary and Waste	Dialyzer
+Primary	CRRT Machine	P0293	Dialysis Mortuary and Waste	CRRT Machine
+Alternative	Continuous Renal Replacement Therapy Machine	P0293	Dialysis Mortuary and Waste	CRRT Machine
+Primary	Mortuary Chamber	P0294	Dialysis Mortuary and Waste	Mortuary Chamber
+Alternative	Mortuary Cabinet	P0294	Dialysis Mortuary and Waste	Mortuary Chamber
+Alternative	Mortuary Refrigerator	P0294	Dialysis Mortuary and Waste	Mortuary Chamber
+Alternative	Dead Body Freezer	P0294	Dialysis Mortuary and Waste	Mortuary Chamber
+Alternative	Mortuary Cold Room	P0294	Dialysis Mortuary and Waste	Mortuary Chamber
+Primary	Post Mortem Table	P0295	Dialysis Mortuary and Waste	Post Mortem Table
+Alternative	Autopsy Table	P0295	Dialysis Mortuary and Waste	Post Mortem Table
+Alternative	Dissection Table	P0295	Dialysis Mortuary and Waste	Post Mortem Table
+Alternative	Postmortem Table	P0295	Dialysis Mortuary and Waste	Post Mortem Table
+Primary	Embalming Machine	P0296	Dialysis Mortuary and Waste	Embalming Machine
+Alternative	Embalming Pump	P0296	Dialysis Mortuary and Waste	Embalming Machine
+Alternative	Body Embalming Equipment	P0296	Dialysis Mortuary and Waste	Embalming Machine
+Primary	Cadaver Storage Tank	P0297	Dialysis Mortuary and Waste	Cadaver Storage Tank
+Alternative	Dead Body Preservation Tank	P0297	Dialysis Mortuary and Waste	Cadaver Storage Tank
+Alternative	Cadaver Preservation Tank	P0297	Dialysis Mortuary and Waste	Cadaver Storage Tank
+Primary	Biomedical Waste Incinerator	P0298	Dialysis Mortuary and Waste	Biomedical Waste Incinerator
+Alternative	Medical Waste Incinerator	P0298	Dialysis Mortuary and Waste	Biomedical Waste Incinerator
+Alternative	Hospital Waste Incinerator	P0298	Dialysis Mortuary and Waste	Biomedical Waste Incinerator
+Primary	Biomedical Waste Shredder	P0299	Dialysis Mortuary and Waste	Biomedical Waste Shredder
+Alternative	Medical Waste Shredder	P0299	Dialysis Mortuary and Waste	Biomedical Waste Shredder
+Alternative	Hospital Waste Shredding Machine	P0299	Dialysis Mortuary and Waste	Biomedical Waste Shredder
+Primary	Needle Destroyer	P0300	Dialysis Mortuary and Waste	Needle Destroyer
+Alternative	Needle Burner	P0300	Dialysis Mortuary and Waste	Needle Destroyer
+Alternative	Needle Cutter	P0300	Dialysis Mortuary and Waste	Needle Destroyer
+Alternative	Needle Destroying Machine	P0300	Dialysis Mortuary and Waste	Needle Destroyer
+Primary	Biomedical Waste Bin	P0301	Dialysis Mortuary and Waste	Biomedical Waste Bin
+Alternative	BMW Bin	P0301	Dialysis Mortuary and Waste	Biomedical Waste Bin
+Alternative	Hospital Waste Bin	P0301	Dialysis Mortuary and Waste	Biomedical Waste Bin
+Alternative	Colour Coded Waste Bin	P0301	Dialysis Mortuary and Waste	Biomedical Waste Bin
+Primary	Effluent Treatment Plant	P0302	Dialysis Mortuary and Waste	Effluent Treatment Plant
+Alternative	ETP	P0302	Dialysis Mortuary and Waste	Effluent Treatment Plant
+Alternative	Hospital ETP	P0302	Dialysis Mortuary and Waste	Effluent Treatment Plant
+Alternative	Wastewater Treatment Plant	P0302	Dialysis Mortuary and Waste	Effluent Treatment Plant
+Primary	Sewage Treatment Plant	P0303	Dialysis Mortuary and Waste	Sewage Treatment Plant
+Alternative	STP	P0303	Dialysis Mortuary and Waste	Sewage Treatment Plant
+Alternative	Hospital STP	P0303	Dialysis Mortuary and Waste	Sewage Treatment Plant
+Primary	DG Set	P0304	Hospital Utilities	DG Set
+Alternative	Diesel Generator	P0304	Hospital Utilities	DG Set
+Alternative	Diesel Generating Set	P0304	Hospital Utilities	DG Set
+Alternative	Generator Set	P0304	Hospital Utilities	DG Set
+Alternative	Genset	P0304	Hospital Utilities	DG Set
+Primary	UPS	P0305	Hospital Utilities	UPS
+Alternative	Uninterruptible Power Supply	P0305	Hospital Utilities	UPS
+Alternative	Online UPS	P0305	Hospital Utilities	UPS
+Alternative	Medical UPS	P0305	Hospital Utilities	UPS
+Primary	Voltage Stabilizer	P0306	Hospital Utilities	Voltage Stabilizer
+Alternative	Automatic Voltage Stabilizer	P0306	Hospital Utilities	Voltage Stabilizer
+Alternative	Servo Stabilizer	P0306	Hospital Utilities	Voltage Stabilizer
+Primary	Hospital Washing Machine	P0307	Hospital Utilities	Hospital Washing Machine
+Alternative	Industrial Washing Machine	P0307	Hospital Utilities	Hospital Washing Machine
+Alternative	Hospital Laundry Machine	P0307	Hospital Utilities	Hospital Washing Machine
+Primary	Washer Extractor	P0308	Hospital Utilities	Washer Extractor
+Alternative	Industrial Washer Extractor	P0308	Hospital Utilities	Washer Extractor
+Alternative	Laundry Washer	P0308	Hospital Utilities	Washer Extractor
+Primary	Laundry Dryer	P0309	Hospital Utilities	Laundry Dryer
+Alternative	Tumble Dryer	P0309	Hospital Utilities	Laundry Dryer
+Alternative	Industrial Dryer	P0309	Hospital Utilities	Laundry Dryer
+Primary	Hospital HVAC	P0310	Hospital Utilities	Hospital HVAC
+Alternative	HVAC System	P0310	Hospital Utilities	Hospital HVAC
+Alternative	Air Handling Unit	P0310	Hospital Utilities	Hospital HVAC
+Alternative	AHU	P0310	Hospital Utilities	Hospital HVAC
+Alternative	OT HVAC	P0310	Hospital Utilities	Hospital HVAC
+Primary	HEPA Filter	P0311	Hospital Utilities	HEPA Filter
+Alternative	High Efficiency Particulate Air Filter	P0311	Hospital Utilities	HEPA Filter
+Alternative	HEPA Filtration System	P0311	Hospital Utilities	HEPA Filter
+Primary	Air Purifier	P0312	Hospital Utilities	Air Purifier
+Alternative	Medical Air Purifier	P0312	Hospital Utilities	Air Purifier
+Alternative	Hospital Air Purification System	P0312	Hospital Utilities	Air Purifier
+Primary	Water Cooler	P0313	Hospital Utilities	Water Cooler
+Alternative	Drinking Water Cooler	P0313	Hospital Utilities	Water Cooler
+Alternative	Water Dispenser	P0313	Hospital Utilities	Water Cooler
+Primary	Hospital Management Software	P0314	Hospital Utilities	Hospital Management Software
+Alternative	HMIS	P0314	Hospital Utilities	Hospital Management Software
+Alternative	HMS	P0314	Hospital Utilities	Hospital Management Software
+Alternative	Hospital Information Management System	P0314	Hospital Utilities	Hospital Management Software
+Primary	Laboratory Information System	P0315	Hospital Utilities	Laboratory Information System
+Alternative	LIS	P0315	Hospital Utilities	Laboratory Information System
+Alternative	LIMS	P0315	Hospital Utilities	Laboratory Information System
+Alternative	Laboratory Information Management System	P0315	Hospital Utilities	Laboratory Information System
+Primary	Nurse Call System	P0316	Hospital Utilities	Nurse Call System
+Alternative	Nursing Call Bell	P0316	Hospital Utilities	Nurse Call System
+Alternative	Patient Call System	P0316	Hospital Utilities	Nurse Call System
+Primary	Fogging Machine	P0317	Hospital Utilities	Fogging Machine
+Alternative	Fumigation Machine	P0317	Hospital Utilities	Fogging Machine
+Alternative	ULV Fogger	P0317	Hospital Utilities	Fogging Machine
+Alternative	Disinfection Fogger	P0317	Hospital Utilities	Fogging Machine
+Primary	Medical Weighing Scale	P0318	Hospital Utilities	Medical Weighing Scale
+Alternative	Patient Weighing Scale	P0318	Hospital Utilities	Medical Weighing Scale
+Alternative	Digital Weighing Machine	P0318	Hospital Utilities	Medical Weighing Scale
+Primary	Height Measuring Scale	P0319	Hospital Utilities	Height Measuring Scale
+Alternative	Stadiometer	P0319	Hospital Utilities	Height Measuring Scale
+Alternative	Height Measuring Device	P0319	Hospital Utilities	Height Measuring Scale
+Primary	Examination Lamp	P0320	Hospital Utilities	Examination Lamp
+Alternative	Medical Examination Lamp	P0320	Hospital Utilities	Examination Lamp
+Primary	Syringe	P0321	Consumables and Accessories	Syringe
+Alternative	Disposable Syringe	P0321	Consumables and Accessories	Syringe
+Alternative	Hypodermic Syringe	P0321	Consumables and Accessories	Syringe
+Alternative	Auto Disable Syringe	P0321	Consumables and Accessories	Syringe
+Primary	Surgical Gloves	P0322	Consumables and Accessories	Surgical Gloves
+Alternative	Sterile Gloves	P0322	Consumables and Accessories	Surgical Gloves
+Alternative	Examination Gloves	P0322	Consumables and Accessories	Surgical Gloves
+Alternative	Latex Gloves	P0322	Consumables and Accessories	Surgical Gloves
+Alternative	Nitrile Gloves	P0322	Consumables and Accessories	Surgical Gloves
+Primary	Face Mask	P0323	Consumables and Accessories	Face Mask
+Alternative	Surgical Mask	P0323	Consumables and Accessories	Face Mask
+Alternative	Medical Mask	P0323	Consumables and Accessories	Face Mask
+Alternative	N95 Mask	P0323	Consumables and Accessories	Face Mask
+Primary	PPE Kit	P0324	Consumables and Accessories	PPE Kit
+Alternative	Personal Protective Equipment	P0324	Consumables and Accessories	PPE Kit
+Alternative	Protective Clothing	P0324	Consumables and Accessories	PPE Kit
+Primary	IV Cannula	P0325	Consumables and Accessories	IV Cannula
+Alternative	Intravenous Cannula	P0325	Consumables and Accessories	IV Cannula
+Alternative	IV Catheter	P0325	Consumables and Accessories	IV Cannula
+Primary	IV Set	P0326	Consumables and Accessories	IV Set
+Alternative	Infusion Set	P0326	Consumables and Accessories	IV Set
+Alternative	Intravenous Administration Set	P0326	Consumables and Accessories	IV Set
+Primary	Blood Transfusion Set	P0327	Consumables and Accessories	Blood Transfusion Set
+Alternative	BT Set	P0327	Consumables and Accessories	Blood Transfusion Set
+Alternative	Blood Administration Set	P0327	Consumables and Accessories	Blood Transfusion Set
+Primary	Urinary Catheter	P0328	Consumables and Accessories	Urinary Catheter
+Alternative	Foley Catheter	P0328	Consumables and Accessories	Urinary Catheter
+Alternative	Urine Catheter	P0328	Consumables and Accessories	Urinary Catheter
+Primary	Urine Bag	P0329	Consumables and Accessories	Urine Bag
+Alternative	Urine Collection Bag	P0329	Consumables and Accessories	Urine Bag
+Alternative	Uro Bag	P0329	Consumables and Accessories	Urine Bag
+Primary	Surgical Dressing	P0330	Consumables and Accessories	Surgical Dressing
+Alternative	Gauze	P0330	Consumables and Accessories	Surgical Dressing
+Alternative	Cotton Dressing	P0330	Consumables and Accessories	Surgical Dressing
+Alternative	Bandage	P0330	Consumables and Accessories	Surgical Dressing
+Alternative	Wound Dressing	P0330	Consumables and Accessories	Surgical Dressing
+Primary	Surgical Suture	P0331	Consumables and Accessories	Surgical Suture
+Alternative	Sutures	P0331	Consumables and Accessories	Surgical Suture
+Alternative	Surgical Stitching Material	P0331	Consumables and Accessories	Surgical Suture
+Primary	Endotracheal Tube	P0332	Consumables and Accessories	Endotracheal Tube
+Alternative	ET Tube	P0332	Consumables and Accessories	Endotracheal Tube
+Alternative	ETT	P0332	Consumables and Accessories	Endotracheal Tube
+Alternative	Intubation Tube	P0332	Consumables and Accessories	Endotracheal Tube
+Primary	Oxygen Mask	P0333	Consumables and Accessories	Oxygen Mask
+Alternative	Medical Oxygen Mask	P0333	Consumables and Accessories	Oxygen Mask
+Alternative	Oxygen Delivery Mask	P0333	Consumables and Accessories	Oxygen Mask
+Primary	Sample Collection Tube	P0334	Consumables and Accessories	Sample Collection Tube
+Alternative	Vacutainer	P0334	Consumables and Accessories	Sample Collection Tube
+Alternative	Blood Collection Tube	P0334	Consumables and Accessories	Sample Collection Tube
+Alternative	EDTA Tube	P0334	Consumables and Accessories	Sample Collection Tube
+Primary	Test Kit	P0335	Consumables and Accessories	Test Kit
+Alternative	Diagnostic Kit	P0335	Consumables and Accessories	Test Kit
+Alternative	Rapid Test Kit	P0335	Consumables and Accessories	Test Kit
+Alternative	Reagent Kit	P0335	Consumables and Accessories	Test Kit
+Alternative	Medical Testing Kit	P0335	Consumables and Accessories	Test Kit
+Primary	Laboratory Reagent	P0336	Consumables and Accessories	Laboratory Reagent
+Alternative	Diagnostic Reagent	P0336	Consumables and Accessories	Laboratory Reagent
+Alternative	Lab Reagent	P0336	Consumables and Accessories	Laboratory Reagent
+Alternative	Biochemistry Reagent	P0336	Consumables and Accessories	Laboratory Reagent
+Primary	Petri Dish	P0337	Consumables and Accessories	Petri Dish
+Alternative	Petridish	P0337	Consumables and Accessories	Petri Dish
+Alternative	Culture Plate	P0337	Consumables and Accessories	Petri Dish
+Primary	Cryovial	P0338	Consumables and Accessories	Cryovial
+Alternative	Cryo Vial	P0338	Consumables and Accessories	Cryovial
+Alternative	Cryogenic Vial	P0338	Consumables and Accessories	Cryovial
+Alternative	Sample Storage Vial	P0338	Consumables and Accessories	Cryovial
+Primary	Pipette Tip	P0339	Consumables and Accessories	Pipette Tip
+Alternative	Micropipette Tip	P0339	Consumables and Accessories	Pipette Tip
+Alternative	Disposable Pipette Tip	P0339	Consumables and Accessories	Pipette Tip
+Primary	Surgical Gown	P0340	Consumables and Accessories	Surgical Gown
+Alternative	OT Gown	P0340	Consumables and Accessories	Surgical Gown
+Alternative	Sterile Gown	P0340	Consumables and Accessories	Surgical Gown
+Alternative	Operation Gown	P0340	Consumables and Accessories	Surgical Gown
+General	Medical Equipment		General	
+General	Medical Equipments		General	
+General	Hospital Equipment		General	
+General	Hospital Equipments		General	
+General	Medical Devices		General	
+General	Laboratory Equipment		General	
+General	Scientific Instruments		General	
+General	Scientific Equipment		General	
+General	Blood Bank Equipment		General	
+General	Blood Centre Equipment		General	
+General	Blood Center Equipment		General	
+General	Blood Component Separation Unit		General	
+General	Blood Storage Centre		General	
+General	Cold Chain Equipment		General	
+General	Vaccine Cold Chain		General	
+General	Immunization Equipment		General	
+General	Immunisation Equipment		General	
+General	WHO PQS		General	
+General	WHO-PQS		General	
+General	WHO Prequalified		General	
+General	WHO Prequalified Equipment		General	
+General	Hospital Furniture		General	
+General	Medical Furniture		General	
+General	Surgical Equipment		General	
+General	Diagnostic Equipment		General	
+General	Biomedical Equipment		General	
+General	Medical Machinery		General	
+General	Hospital Machinery		General	
+General	Medical College Equipment		General	
+General	Healthcare Equipment		General	
+General	Medical Accessories		General	
+General	Medical Consumables		General	
+General	Medical Vehicle		General	
+General	Mobile Healthcare		General	
+General	Refrigeration Equipment		General	
+General	Cold Storage Equipment		General	
+General	Supply and Installation of Equipment		General	
+General	Establishment of Blood Bank		General	
+General	Establishment of Laboratory		General	
+General	Establishment of Medical College		General	
+General	Establishment of Hospital		General	
+General	Upgradation of Hospital		General	
+General	Strengthening of Healthcare Facilities		General	
+General	Turnkey Hospital Project		General	
+General	Bunch Bid		General	
+General	Custom Bid for Goods		General	
+General	BOQ Bid		General	
+General	Rate Contract		General	
+General	Annual Rate Contract		General	
+General	Procurement of Equipment		General	
+General	Supply of Machinery and Equipment		General	

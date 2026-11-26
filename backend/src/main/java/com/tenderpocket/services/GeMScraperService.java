@@ -146,15 +146,36 @@ public class GeMScraperService {
         return java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata")).toLocalDate();
     }
 
+    /** Also search GeM for the alternative names in the client's keyword list. Off by default: one search each is slow. */
+    @Value("${gem.search-alternative-keywords:false}")
+    private boolean searchAlternativeKeywords;
+
+    private GemKeywordCatalog keywordCatalog;
+
+    /** The built-in keywords plus the client's master list. */
+    synchronized GemKeywordCatalog keywordCatalog() {
+        if (keywordCatalog == null) {
+            keywordCatalog = GemKeywordCatalog.load(RAW_KEYWORDS, searchAlternativeKeywords);
+            System.out.println(String.format("[GeM Sync] Keywords: %d searched on GeM, %d used to recognise a bid.",
+                    keywordCatalog.searchKeywords.size(), keywordCatalog.matchKeywords.size()));
+        }
+        return keywordCatalog;
+    }
+
     public int syncTenders(boolean allDates, List<String> customKeywords) throws Exception {
-        List<String> keywords = customKeywords != null && !customKeywords.isEmpty() ? customKeywords : RAW_KEYWORDS;
+        boolean custom = customKeywords != null && !customKeywords.isEmpty();
         if (!syncLock.tryLock()) {
             System.out.println("[GeM Sync] Another GeM sync is still running; skipping this run.");
             return 0;
         }
         try {
             // Last 2 days: today and yesterday
-            return runSync(keywords, allDates ? null : todayInIndia().minusDays(1), maxPagesPerKeyword, true);
+            LocalDate cutoff = allDates ? null : todayInIndia().minusDays(1);
+            if (custom) {
+                return runSync(customKeywords, customKeywords, customKeywords, cutoff, maxPagesPerKeyword, true);
+            }
+            GemKeywordCatalog catalog = keywordCatalog();
+            return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS, cutoff, maxPagesPerKeyword, true);
         } finally {
             syncLock.unlock();
         }
@@ -168,7 +189,9 @@ public class GeMScraperService {
     public int catchUp(int days, int maxPages) throws Exception {
         syncLock.lock();
         try {
-            return runSync(RAW_KEYWORDS, todayInIndia().minusDays(days), maxPages, false);
+            GemKeywordCatalog catalog = keywordCatalog();
+            return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS,
+                    todayInIndia().minusDays(days), maxPages, false);
         } finally {
             syncLock.unlock();
         }
@@ -224,7 +247,15 @@ public class GeMScraperService {
         return imported;
     }
 
-    private int runSync(List<String> keywords, LocalDate cutoffDate, int maxPages, boolean stopWhenCaughtUp) throws Exception {
+    /**
+     * @param keywords      searched on GeM, one search each
+     * @param matchKeywords a returned bid is kept when one of these matches its item name
+     * @param exactKeywords a returned bid is also kept when one of these appears anywhere in it, letter for
+     *                      letter. This is the rule the sync had before; it stays limited to the built-in list,
+     *                      because as plain text a short keyword such as "EMS" sits inside "items".
+     */
+    private int runSync(List<String> keywords, List<String> matchKeywords, List<String> exactKeywords,
+                        LocalDate cutoffDate, int maxPages, boolean stopWhenCaughtUp) throws Exception {
         int importCount = 0;
         int searches = 0, failedSearches = 0, rejected = 0;
         Set<String> nearMisses = new LinkedHashSet<>();
@@ -361,10 +392,11 @@ public class GeMScraperService {
                     String fullSearchableText = (items != null ? items : "") + " " + (dept != null ? dept : "") + " " + doc.toString();
                     // A bid is kept when a keyword appears in it word for word (the original rule), or when
                     // every word of a keyword is found in the item name, allowing for wording differences.
-                    int keywordMatches = countMatchingKeywords(fullSearchableText, keywords);
-                    if (keywordMatches < 1 && KeywordMatcher.firstMatch(keywords, items) == null) {
+                    int keywordMatches = countMatchingKeywords(fullSearchableText, exactKeywords);
+                    String matchedKeyword = KeywordMatcher.firstMatch(matchKeywords, items);
+                    if (keywordMatches < 1 && matchedKeyword == null) {
                         rejected++;
-                        String near = KeywordMatcher.nearMiss(keywords, items);
+                        String near = KeywordMatcher.nearMiss(matchKeywords, items);
                         if (near != null && nearMisses.size() < 40) {
                             nearMisses.add(String.format("%s \"%s\" (nearly matched \"%s\")", bidNo, items, near));
                         }
@@ -373,7 +405,8 @@ public class GeMScraperService {
                     }
 
                     importCount++;
-                    registerNewBid(doc, String.format("Imported automatically by daily GeM Sync job matching keyword \"%s\".", keyword));
+                    registerNewBid(doc, String.format("Imported automatically by daily GeM Sync job matching keyword \"%s\".",
+                            matchedKeyword != null ? matchedKeyword : keyword));
                   } catch (Exception docError) {
                     // One malformed bid must not cost the rest of the keyword. Before pagination
                     // that only lost the remainder of a single page; now it would lose every
