@@ -979,6 +979,16 @@ public class TenderController {
     /** Tender IDs go into page links (/tenders/{id}), so they are limited to URL-safe characters. */
     private static final String TENDER_ID_PATTERN = "^[A-Za-z0-9._-]{1,100}$";
 
+    /**
+     * A Tender ID is part of page links (/tenders/<id>) and file paths, so it can only hold letters, digits,
+     * '.', '_' and '-'. Whatever else is typed ("GEM/2026/B/8067128", spaces) is replaced by '-', so the user
+     * is not turned away for it: "GEM/2026/B/8067128" is saved as "GEM-2026-B-8067128".
+     */
+    static String urlSafeTenderId(String typed) {
+        if (typed == null) return null;
+        return typed.trim().replaceAll("[^A-Za-z0-9._-]+", "-").replaceAll("-{2,}", "-").replaceAll("^-+|-+$", "");
+    }
+
     /** Tender247's own tender number (T247 ID) is always numeric. */
     private static final String T247_ID_PATTERN = "^\\d{1,50}$";
 
@@ -1030,26 +1040,34 @@ public class TenderController {
                     + "Put GeM or department numbers in Organization Tender ID.");
         }
 
-        // 2. Required: tender ID, name and link. A Tender247 tender is keyed by its T247 ID (as email sync does),
+        // 2. Required: tender ID and name. A Tender247 tender is keyed by its T247 ID (as email sync does),
         //    so the Tender ID can be left blank when the T247 ID is given.
-        String id = createText(body, "id");
-        if (id == null && t247Id != null && !fieldErrors.containsKey("source_id")) {
+        String typedId = createText(body, "id");
+        String id = urlSafeTenderId(typedId);
+        if (id != null && id.isEmpty()) id = null;
+        // A number typed with '/' or spaces (a bid number, usually) is kept as written in the Organization
+        // Tender ID when that was left blank, so it stays searchable and decides GeM / Non-GeM.
+        if (refNo == null && id != null && !id.equals(typedId) && !TenderClassifier.isPlaceholderRefNo(typedId)) {
+            refNo = TenderClassifier.isValidGemBidNumber(typedId) ? TenderClassifier.extractGemBidNumber(typedId) : typedId;
+        }
+        if (id == null && typedId == null && t247Id != null && !fieldErrors.containsKey("source_id")) {
             id = t247Id;
         }
         String title = createText(body, "title");
         String originalUrl = createText(body, "original_url");
         if (id == null) {
-            fieldErrors.put("id", "Tender ID is required (or fill in the T247 ID to use it as the Tender ID).");
+            fieldErrors.put("id", typedId == null
+                    ? "Tender ID is required (or fill in the T247 ID to use it as the Tender ID)."
+                    : "Tender ID must contain at least one letter or number.");
         } else if (!id.matches(TENDER_ID_PATTERN) || id.matches("^\\.+$")) {
-            fieldErrors.put("id", "Tender ID can only contain letters, numbers, '-', '_' and '.' (no spaces or '/'). "
-                    + "Put a bid number like GEM/2026/B/1234567 in Organization Tender ID instead.");
+            fieldErrors.put("id", id.length() > 100 ? "Tender ID cannot be longer than 100 characters."
+                    : "Tender ID must contain at least one letter or number.");
         }
         if (title == null) {
             fieldErrors.put("title", "Tender name is required.");
         }
-        if (originalUrl == null) {
-            fieldErrors.put("original_url", "Tender link is required.");
-        } else if (!isValidUrl(originalUrl)) {
+        // The link is optional: a tender received on paper or by email has none.
+        if (originalUrl != null && !isValidUrl(originalUrl)) {
             fieldErrors.put("original_url", "Enter a valid URL (e.g. https://...).");
         }
         String documentUrl = createText(body, "document_url");
@@ -1146,7 +1164,8 @@ public class TenderController {
         Tender tender = new Tender();
         tender.setId(id);
         tender.setTitle(title);
-        tender.setOriginalUrl(originalUrl);
+        // The column does not allow NULL, so a tender without a link stores an empty one.
+        tender.setOriginalUrl(originalUrl != null ? originalUrl : "");
         tender.setRefNo(refNo);
         tender.setAuthority(createText(body, "authority"));
         tender.setEstimatedCostRaw(createText(body, "estimated_cost_raw"));
