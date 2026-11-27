@@ -76,6 +76,17 @@ public interface TenderRepository extends JpaRepository<Tender, String> {
     Page<Tender> findByLocation(String location, Pageable pageable);
     Page<Tender> findBySource(String source, Pageable pageable);
 
+    interface GemLinkCandidate {
+        String getId();
+        String getRefNo();
+        String getDueDate();
+    }
+
+    /** Tenders with a GeM bid number whose link does not point at GeM yet: they came from another source. */
+    @Query("SELECT t.id AS id, t.refNo AS refNo, t.dueDate AS dueDate FROM Tender t "
+            + "WHERE UPPER(t.refNo) LIKE 'GEM/%' AND (t.originalUrl IS NULL OR LOWER(t.originalUrl) NOT LIKE '%gem.gov.in%')")
+    List<GemLinkCandidate> findGemTendersWithoutGemLink();
+
     boolean existsByRefNo(String refNo);
     boolean existsBySourceId(String sourceId);
     Optional<Tender> findFirstByRefNo(String refNo);

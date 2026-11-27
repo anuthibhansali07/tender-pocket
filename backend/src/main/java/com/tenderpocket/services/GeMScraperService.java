@@ -101,6 +101,13 @@ public class GeMScraperService {
     private long resumeOverlapMinutes;
 
     /**
+     * After the keyword searches, at most this many tenders from other sources are looked up on GeM by bid
+     * number to get their official link and bid document. 0 turns it off.
+     */
+    @Value("${gem.link-lookups-per-sync:100}")
+    private int linkLookupsPerSync;
+
+    /**
      * Whether GeM's "page" parameter counts from 1 or 0. Verified against the live endpoint by
      * comparing the result set for an explicit page against the result set for no page parameter
      * at all. Exposed as configuration so it can be corrected without a rebuild.
@@ -187,8 +194,14 @@ public class GeMScraperService {
                 return runSync(customKeywords, customKeywords, customKeywords, cutoff, maxPagesPerKeyword, true, false);
             }
             GemKeywordCatalog catalog = keywordCatalog();
-            return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS, cutoff, maxPagesPerKeyword, true,
+            int imported = runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS, cutoff, maxPagesPerKeyword, true,
                     cutoff != null);
+            try {
+                linkTendersToGem(linkLookupsPerSync);
+            } catch (Exception e) {
+                System.err.println("[GeM Sync] Linking tenders from other sources to GeM failed: " + e.getMessage());
+            }
+            return imported;
         } finally {
             syncLock.unlock();
         }
@@ -354,21 +367,7 @@ public class GeMScraperService {
                     }
 
                     if (existingOpt.isPresent()) {
-                        Tender existing = existingOpt.get();
-                        String bIdParent = getJsonString(doc, "b_id_parent");
-                        String docDownloadId = bIdParent != null ? bIdParent : bId;
-                        String officialUrl = "https://bidplus.gem.gov.in/showbidDocument/" + docDownloadId;
-                        String bidNoParent = getJsonString(doc, "b_bid_number_parent");
-                        String officialRefNo = bidNoParent != null ? bidNoParent : bidNo;
-
-                        enrichExistingRecordFromGeM(existing, officialRefNo, bidNo, officialUrl, doc);
-                        tenderRepository.save(existing);
-                        System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s from GeM",
-                                existing.getId(), existing.getRefNo()));
-
-                        if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
-                            retryPendingS3UploadIfPresent(existing.getId());
-                        }
+                        enrichAndSave(existingOpt.get(), doc);
                         consecutiveKnown++;
                         if (stopWhenCaughtUp && consecutiveKnown >= stopAfterKnown) {
                             System.out.println(String.format(
@@ -488,6 +487,117 @@ public class GeMScraperService {
             for (String line : nearMisses) System.out.println("  - " + line);
         }
         return importCount;
+    }
+
+    /** Adds the official GeM link, the bid details and the bid document to a tender already in the database. */
+    private void enrichAndSave(Tender existing, JsonNode doc) {
+        String bId = getJsonString(doc, "b_id");
+        String bidNo = getJsonString(doc, "b_bid_number");
+        String bIdParent = getJsonString(doc, "b_id_parent");
+        String docDownloadId = bIdParent != null ? bIdParent : bId;
+        String officialUrl = "https://bidplus.gem.gov.in/showbidDocument/" + docDownloadId;
+        String bidNoParent = getJsonString(doc, "b_bid_number_parent");
+        String officialRefNo = bidNoParent != null ? bidNoParent : bidNo;
+
+        enrichExistingRecordFromGeM(existing, officialRefNo, bidNo, officialUrl, doc);
+        tenderRepository.save(existing);
+        System.out.println(String.format("  - Enriched existing tender id=%s refNo=%s from GeM",
+                existing.getId(), existing.getRefNo()));
+
+        if (awsS3Enabled && objectStorageService != null && objectStorageService.isRemote()) {
+            retryPendingS3UploadIfPresent(existing.getId());
+        }
+    }
+
+    /** Name prefix of the sync_markers rows that record a tender was looked up on GeM by its bid number. */
+    static final String LINK_PREFIX = "gem-link:";
+
+    /**
+     * Gives tenders that came from another source (a Tender247 email, or added by hand) their official GeM
+     * link and bid document, by looking each one up on GeM by its bid number.
+     *
+     * The keyword searches used to do this by chance, when they met the bid again within two days. Now that a
+     * search stops at its last run, it rarely reaches a bid that Tender247 sent a day after it was published.
+     *
+     * Each tender is looked up once: the result is recorded whether GeM lists the bid or not. A lookup that
+     * fails is not recorded and is tried again on the next sync. Tenders past their due date are left alone,
+     * and the newest bids go first. Returns the number of tenders linked.
+     */
+    int linkTendersToGem(int limit) {
+        if (limit <= 0 || syncMarkerRepository == null) return 0;
+
+        Set<String> alreadyLookedUp = new HashSet<>();
+        for (com.tenderpocket.models.SyncMarker marker : syncMarkerRepository.findByNameStartingWith(LINK_PREFIX)) {
+            alreadyLookedUp.add(marker.getName());
+        }
+        LocalDate today = todayInIndia();
+        List<TenderRepository.GemLinkCandidate> waiting = new ArrayList<>();
+        for (TenderRepository.GemLinkCandidate candidate : tenderRepository.findGemTendersWithoutGemLink()) {
+            if (candidate.getRefNo() == null || EmailSyncService.isPastDue(candidate.getDueDate(), today)) continue;
+            if (alreadyLookedUp.contains(linkMarkerName(candidate.getRefNo()))) continue;
+            waiting.add(candidate);
+        }
+        waiting.sort(Comparator.comparingLong((TenderRepository.GemLinkCandidate c) -> bidSerial(c.getRefNo())).reversed());
+
+        int linked = 0, notListed = 0, failed = 0, consecutiveFailures = 0, lookedUp = 0;
+        for (TenderRepository.GemLinkCandidate candidate : waiting) {
+            if (lookedUp >= limit || consecutiveFailures >= 3) break;
+            String number = candidate.getRefNo().trim();
+            lookedUp++;
+            try {
+                JsonNode docs = searchKeywordWithRetry(number, firstPageIndex);
+                if (docs == null) {
+                    failed++;
+                    consecutiveFailures++;
+                } else {
+                    consecutiveFailures = 0;
+                    JsonNode match = null;
+                    for (JsonNode doc : docs) {
+                        if (number.equalsIgnoreCase(getJsonString(doc, "b_bid_number"))
+                                || number.equalsIgnoreCase(getJsonString(doc, "b_bid_number_parent"))) {
+                            match = doc;
+                            break;
+                        }
+                    }
+                    Optional<Tender> existing = match == null ? Optional.empty() : tenderRepository.findById(candidate.getId());
+                    if (existing.isPresent()) {
+                        enrichAndSave(existing.get(), match);
+                        linked++;
+                        syncMarkerRepository.save(new com.tenderpocket.models.SyncMarker(linkMarkerName(number), "linked"));
+                    } else {
+                        notListed++;
+                        syncMarkerRepository.save(new com.tenderpocket.models.SyncMarker(linkMarkerName(number),
+                                "not among GeM's open bids"));
+                    }
+                }
+                Thread.sleep(requestPauseMs);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                failed++;
+                System.err.println("[GeM Sync] Could not link " + number + " to its GeM bid: " + e.getMessage());
+            }
+        }
+        System.out.println(String.format(
+                "[GeM Sync] Tenders from other sources: %d linked to their GeM bid, %d not among GeM's open bids, "
+                        + "%d lookup(s) failed, %d left for the next sync.",
+                linked, notListed, failed, Math.max(0, waiting.size() - lookedUp)));
+        return linked;
+    }
+
+    private static String linkMarkerName(String refNo) {
+        return LINK_PREFIX + refNo.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /** The running number at the end of a GeM bid number; newer bids have a higher one. */
+    private static long bidSerial(String refNo) {
+        Matcher digits = Pattern.compile("(\\d+)\\s*$").matcher(refNo == null ? "" : refNo);
+        try {
+            return digits.find() ? Long.parseLong(digits.group(1)) : 0L;
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     /** When each keyword was last searched to the end, for the current keyword lists. Records for other lists are removed. */
