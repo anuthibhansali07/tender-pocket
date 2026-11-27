@@ -45,6 +45,36 @@ class KeywordMatcherTest {
     }
 
     @Test
+    void aLongerWordMatchesOnlyBehindAKnownPrefix() {
+        assertTrue(KeywordMatcher.matches("Chemistry Analyser", "Biochemistry Analyzer (Semi-Automated)"));
+        assertTrue(KeywordMatcher.matches("Dialysis Machine", "Hemodialysis Machine with SLED and HDF"));
+        assertTrue(KeywordMatcher.matches("Dialysis Machine", "Haemodialysis Machine"));
+        // "extraction" ends in "traction", but "ex" is not a prefix that keeps the meaning.
+        assertFalse(KeywordMatcher.matches("Traction Machine", "Banana Fibre Extraction Machine and tools"));
+        assertFalse(KeywordMatcher.matches("Pressure Monitor", "Tyre Overpressure Monitor"));
+    }
+
+    @Test
+    void keywordWordsSitNextToEachOtherWithAtMostOneWordBetween() {
+        assertTrue(KeywordMatcher.matches("Analytical Balance", "Micro/Semi-Micro/Analytical weighing balance"));
+        assertTrue(KeywordMatcher.matches("Syringe Pump", "Syringe Infusion Pump"));
+        assertTrue(KeywordMatcher.matches("Electro Surgical Unit", "Pedestal Lights,Electro surgical Cautery Unit"));
+        assertTrue(KeywordMatcher.matches("Emergency Trolley", "Emergency Recovery Trolley (V2)"));
+        assertTrue(KeywordMatcher.matches("ICU Bed", "Paediatric Patient Bed for ICU and HDU"));
+        assertTrue(KeywordMatcher.matches("Horizontal Autoclave", "M1480902060: Autoclave Horizontal Big Size"));
+        // The words are all there, but too far apart to be the product.
+        assertFalse(KeywordMatcher.matches("Wheel Chair", "Mid-back Revolving Chair Adjustable Height with Wheels"));
+        assertFalse(KeywordMatcher.matches("Laminar Cabinet", "HEPA Filter for Esco Laminar Air Flow Cabinet"));
+        assertFalse(KeywordMatcher.matches("Ultrasound Machine", "Ultrasound Combination Therapy Machine"));
+    }
+
+    @Test
+    void aKeywordThatRepeatsAWordNeedsItOnlyOnce() {
+        assertTrue(KeywordMatcher.matches("Particle Board Box bed Particle Board", "Particle Board Box Bed"));
+        assertFalse(KeywordMatcher.matches("Particle Board Box bed Particle Board", "Particle Board"));
+    }
+
+    @Test
     void firstMatchAndNearMiss() {
         List<String> keywords = List.of("Hospital Bed", "Modular Multipara Monitor", "Centrifuge");
         assertEquals("Centrifuge", KeywordMatcher.firstMatch(keywords, "Refrigerated Centrifuge For General And Research Purpose"));

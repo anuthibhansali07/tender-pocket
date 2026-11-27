@@ -11,11 +11,13 @@ import java.util.regex.Pattern;
  * Decides whether a GeM item name is one of the products named by a keyword.
  *
  * A keyword matches when every one of its words is found in the same item of the bid (a multi-item bid
- * lists its items separated by commas), close together and in any order. Words are compared without regard
- * to capitals, punctuation, GeM's "(V2)" tags, UK/US spelling and plurals. A long word may also differ in
- * its ending ("Operation Table" matches "Operating Table") or sit inside a compound ("Chemistry Analyser"
- * matches "Biochemistry Analyzer"). Short words and one-word keywords must match exactly, apart from the
- * plural, so "Table" never matches "Cable" and "Ventilator" never matches "Ventilation".
+ * lists its items separated by commas), next to each other and in any order; one other word may sit between
+ * them ("Analytical weighing balance" for "Analytical Balance"). Words are compared without regard to
+ * capitals, punctuation, GeM's "(V2)" tags, UK/US spelling and plurals. A long word may also differ in its
+ * ending ("Operation Table" matches "Operating Table") or carry a known prefix ("Chemistry Analyser" matches
+ * "Biochemistry Analyzer", but "Traction" does not match "Extraction"). Short words and one-word keywords
+ * must match exactly, apart from the plural, so "Table" never matches "Cable" and "Ventilator" never
+ * matches "Ventilation".
  */
 public final class KeywordMatcher {
 
@@ -30,6 +32,13 @@ public final class KeywordMatcher {
 
     private static final String[] ENDINGS =
             {"ation", "ating", "ions", "ion", "ing", "ers", "ors", "er", "or", "ed", "es", "s"};
+
+    /** A keyword word may be the end of a longer word only behind one of these: "bio" + "chemistry", "hemo" + "dialysis". */
+    private static final Set<String> COMPOUND_PREFIXES = Set.of("bio", "hemo", "haemo", "micro", "ultra", "auto",
+            "electro", "video", "immuno", "cryo", "neo", "multi", "mini", "semi", "photo", "thermo", "hydro");
+
+    /** How many other words may sit between the words of a keyword. */
+    private static final int EXTRA_WORDS_ALLOWED = 1;
 
     /** Words shorter than this must match exactly (apart from the plural). */
     private static final int MIN_FLEXIBLE_LENGTH = 7;
@@ -68,34 +77,51 @@ public final class KeywordMatcher {
         if (singleWordKeyword) return 0;
         if (keywordWord.length() < MIN_FLEXIBLE_LENGTH || itemWord.length() < MIN_FLEXIBLE_LENGTH) return 0;
         if (stem(keywordWord).equals(stem(itemWord))) return 1;
-        if (itemWord.length() > keywordWord.length() && itemWord.endsWith(keywordWord)) return 1;
+        if (itemWord.endsWith(keywordWord)
+                && COMPOUND_PREFIXES.contains(itemWord.substring(0, itemWord.length() - keywordWord.length()))) return 1;
         return 0;
     }
 
-    /** How many of the keyword's words are found in one item, or -1 when all are found but too far apart. */
+    /** A keyword's words, each once ("Particle Board Box bed Particle Board" names four words). */
+    private static List<String> keywordWords(String keyword) {
+        return new ArrayList<>(new java.util.LinkedHashSet<>(words(keyword)));
+    }
+
+    /**
+     * The most keyword words found together in one item: each in a different word of one run of consecutive
+     * item words, the run being as long as the keyword plus the extra words allowed.
+     */
     private static int wordsFound(List<String> keywordWords, List<String> itemWords) {
-        boolean single = keywordWords.size() == 1;
-        int found = 0, first = Integer.MAX_VALUE, last = -1;
-        for (String keywordWord : keywordWords) {
-            int position = -1, best = 0;
-            for (int i = 0; i < itemWords.size() && best < 2; i++) {
-                int quality = wordMatch(keywordWord, itemWords.get(i), single);
-                if (quality > best) {
-                    best = quality;
-                    position = i;
+        int n = keywordWords.size();
+        boolean single = n == 1;
+        int runLength = single ? 1 : n + EXTRA_WORDS_ALLOWED;
+        int best = 0;
+        for (int start = 0; start < itemWords.size() && best < n; start++) {
+            int end = Math.min(itemWords.size(), start + runLength);
+            boolean[] used = new boolean[end - start];
+            boolean[] done = new boolean[n];
+            int found = 0;
+            // The same word claims its place first, then a word that differs in ending or prefix.
+            for (int quality = 2; quality >= 1; quality--) {
+                for (int k = 0; k < n; k++) {
+                    if (done[k]) continue;
+                    for (int i = start; i < end; i++) {
+                        if (!used[i - start] && wordMatch(keywordWords.get(k), itemWords.get(i), single) == quality) {
+                            used[i - start] = true;
+                            done[k] = true;
+                            found++;
+                            break;
+                        }
+                    }
                 }
             }
-            if (position < 0) continue;
-            found++;
-            first = Math.min(first, position);
-            last = Math.max(last, position);
+            best = Math.max(best, found);
         }
-        if (found == keywordWords.size() && last - first > keywordWords.size() + 1) return -1;
-        return found;
+        return best;
     }
 
     public static boolean matches(String keyword, String itemName) {
-        List<String> keywordWords = words(keyword);
+        List<String> keywordWords = keywordWords(keyword);
         if (keywordWords.isEmpty() || itemName == null) return false;
         for (String item : itemName.split("[,;]")) {
             if (wordsFound(keywordWords, words(item)) == keywordWords.size()) return true;
@@ -120,7 +146,7 @@ public final class KeywordMatcher {
     public static String nearMiss(List<String> keywords, String itemName) {
         if (keywords == null || itemName == null || itemName.isBlank()) return null;
         for (String keyword : keywords) {
-            List<String> keywordWords = words(keyword);
+            List<String> keywordWords = keywordWords(keyword);
             if (keywordWords.size() < 3) continue;
             for (String item : itemName.split("[,;]")) {
                 if (wordsFound(keywordWords, words(item)) == keywordWords.size() - 1) return keyword;
