@@ -592,18 +592,35 @@ public class EmailSyncService {
         return extractT247Key(redirectFollower.apply(href));
     }
 
+    /**
+     * Follows the alert's tracking link to the Tender247 address it leads to, and returns that address.
+     *
+     * The redirects are followed one at a time and the next address is read as plain text. The key in it is
+     * base64, and the tracking service turns a "+" in it into a space, which is not a valid address: the
+     * built-in redirect handling refused about half of the links for that reason. An address that carries the
+     * key is returned as it is, without being requested.
+     */
     static String followRedirects(String href) {
         try {
             HttpClient client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.ALWAYS)
+                    .followRedirects(HttpClient.Redirect.NEVER)
                     .connectTimeout(java.time.Duration.ofSeconds(15))
                     .build();
-            HttpRequest request = HttpRequest.newBuilder(URI.create(href))
-                    .timeout(java.time.Duration.ofSeconds(30))
-                    .header("User-Agent", BROWSER_USER_AGENT)
-                    .GET()
-                    .build();
-            return client.send(request, HttpResponse.BodyHandlers.discarding()).uri().toString();
+            String current = href.trim();
+            for (int hop = 0; hop < 6; hop++) {
+                URI uri = URI.create(current.replace(" ", "%20"));
+                HttpRequest request = HttpRequest.newBuilder(uri)
+                        .timeout(java.time.Duration.ofSeconds(30))
+                        .header("User-Agent", BROWSER_USER_AGENT)
+                        .GET()
+                        .build();
+                HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+                String next = response.headers().firstValue("Location").orElse("").trim();
+                if (response.statusCode() < 300 || response.statusCode() >= 400 || next.isEmpty()) return current;
+                if (extractT247Key(next) != null) return next;
+                current = uri.resolve(next.replace(" ", "%20")).toString();
+            }
+            return current;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted while following the link", e);
@@ -613,7 +630,7 @@ public class EmailSyncService {
     }
 
     /** The request Tender247's own page sends for an alert list. A shorter body is answered with no tenders. */
-    private static Map<String, Object> t247ListRequest(String userId, String queryId, String mailDate, int page) {
+    private static Map<String, Object> t247ListRequest(Object userId, Object queryId, String mailDate, int page) {
         Map<String, Object> body = new HashMap<>();
         for (String field : List.of("tender_number", "search_text", "refine_search_text", "publication_date_from",
                 "publication_date_to", "closing_date_from", "closing_date_to", "statezone_ids", "city_ids", "state_ids",
@@ -640,6 +657,21 @@ public class EmailSyncService {
         body.put("user_email_service_query_id", queryId);
         body.put("mail_date", mailDate);
         return body;
+    }
+
+    /**
+     * A value from Tender247's login answer, as a number when it is one. The list request is refused with
+     * "user_id must be a number" when these ids are sent as text.
+     */
+    static Object numberWhenNumeric(JsonNode value) {
+        if (value == null || value.isNull()) return null;
+        if (value.isNumber()) return value.numberValue();
+        String text = value.asText("").trim();
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException notANumber) {
+            return text;
+        }
     }
 
     private List<Map<String, String>> fetchTendersFromT247Api(String key) throws Exception {
@@ -679,7 +711,8 @@ public class EmailSyncService {
         List<Map<String, String>> tenders = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
         for (int page = 1; page <= T247_MAX_PAGES; page++) {
-          HttpEntity<Map<String, Object>> searchRequest = new HttpEntity<>(t247ListRequest(userId, queryId, mailDate, page), headers);
+          HttpEntity<Map<String, Object>> searchRequest = new HttpEntity<>(t247ListRequest(
+                  numberWhenNumeric(dataNode.get("user_id")), numberWhenNumeric(dataNode.get("user_query_id")), mailDate, page), headers);
           ResponseEntity<JsonNode> searchResponse = restTemplate.postForEntity(searchUrl, searchRequest, JsonNode.class);
           JsonNode docs = searchResponse.getBody() == null ? null : searchResponse.getBody().get("Data");
           if (docs == null || !docs.isArray() || docs.size() == 0) break;

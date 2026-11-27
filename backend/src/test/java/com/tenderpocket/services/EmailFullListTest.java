@@ -49,7 +49,7 @@ class EmailFullListTest {
         alertEmail = Files.readString(Path.of("src/test/resources/fixtures/email-179-medical-equipment.html"), StandardCharsets.UTF_8);
 
         ObjectNode login = json.createObjectNode();
-        login.put("token", "jwt").put("user_id", "1003059").put("user_query_id", "q-7").put("mail_date", "2026-11-18");
+        login.put("token", "jwt").put("user_id", 1003059).put("user_query_id", "4407").put("mail_date", "2026-11-18");
         ObjectNode loginRoot = json.createObjectNode();
         loginRoot.set("Data", json.createArrayNode().add(login));
         when(restTemplate.postForEntity(contains("/login/user/key"), any(), eq(JsonNode.class)))
@@ -96,7 +96,9 @@ class EmailFullListTest {
         verify(restTemplate, times(2)).postForEntity(contains("/search-tender"), requests.capture(), eq(JsonNode.class));
         assertEquals(1, requests.getAllValues().get(0).getBody().get("page_no"));
         assertEquals(2, requests.getAllValues().get(1).getBody().get("page_no"));
-        assertEquals("q-7", requests.getAllValues().get(0).getBody().get("user_email_service_query_id"));
+        // Tender247 refuses the request with "must be a number" when these ids are sent as text.
+        assertEquals(1003059, requests.getAllValues().get(0).getBody().get("user_id"));
+        assertEquals(4407L, requests.getAllValues().get(0).getBody().get("user_email_service_query_id"));
         assertTrue(requests.getAllValues().get(0).getBody().containsKey("sort_by"), "Tender247 answers a short request with no tenders");
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<HttpEntity<Map<String, String>>> login = ArgumentCaptor.forClass((Class) HttpEntity.class);
@@ -175,5 +177,50 @@ class EmailFullListTest {
         assertFalse(EmailSyncService.isPastDue("", today));
         assertFalse(EmailSyncService.isPastDue("Refer document", today));
         assertFalse(EmailSyncService.isPastDue(null, today));
+    }
+
+    /** A tracking service that answers every request with a redirect to {@code location}. */
+    private com.sun.net.httpserver.HttpServer redirectingTo(String location) throws Exception {
+        com.sun.net.httpserver.HttpServer server =
+                com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/tr/cl/", exchange -> {
+            exchange.getResponseHeaders().add("Location", location);
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.createContext("/hop", exchange -> {
+            exchange.getResponseHeaders().add("Location", "/tr/cl/abc");
+            exchange.sendResponseHeaders(301, -1);
+            exchange.close();
+        });
+        server.start();
+        return server;
+    }
+
+    @Test
+    void aKeyWithASpaceInTheRedirectIsStillRead() throws Exception {
+        // The tracking service turns the "+" of a base64 key into a space, which is not a valid address.
+        String tender247 = "http://mail.tender247.com/MailTenders?key=5KGKAnnLCYzO584Sb0adeUQtOChsvNfPj4URBnVv7 8=";
+        com.sun.net.httpserver.HttpServer server = redirectingTo(tender247);
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+
+            String reached = EmailSyncService.followRedirects(base + "/tr/cl/abc");
+            assertEquals(tender247, reached);
+            assertEquals("5KGKAnnLCYzO584Sb0adeUQtOChsvNfPj4URBnVv7 8=", EmailSyncService.extractT247Key(reached));
+
+            // A chain of redirects, the first one relative
+            assertEquals(tender247, EmailSyncService.followRedirects(base + "/hop"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void idsFromTheLoginAreSentAsNumbers() {
+        assertEquals(1003059, EmailSyncService.numberWhenNumeric(json.getNodeFactory().numberNode(1003059)));
+        assertEquals(4407L, EmailSyncService.numberWhenNumeric(json.getNodeFactory().textNode(" 4407 ")));
+        assertEquals("q-7", EmailSyncService.numberWhenNumeric(json.getNodeFactory().textNode("q-7")));
+        assertNull(EmailSyncService.numberWhenNumeric(json.getNodeFactory().nullNode()));
     }
 }
