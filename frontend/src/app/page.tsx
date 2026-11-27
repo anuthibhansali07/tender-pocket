@@ -99,7 +99,7 @@ function assignedTendersOf(answer: { tenders: Tender[] }): Tender[] {
 type TabType = 'dashboard' | 'status' | 'tenders' | 'analytics' | 'settings' | 'audit' | 'team' | 'work-summary' | 'approvals' | 'company-docs';
 
 // ---- Add Tender form (MIS Team and Admin) ----
-// Keys match the backend's POST /api/tenders fields. Only id, title and original_url are required.
+// Keys match the backend's POST /api/tenders fields. Only id and title are required.
 const EMPTY_ADD_TENDER_FORM: Record<string, string> = {
   id: '', title: '', original_url: '',
   ref_no: '', authority: '', source: '', source_id: '',
@@ -174,6 +174,11 @@ function validateAddTenderFiles(files: File[]): string | null {
 
 // Tender IDs are used in page links (/tenders/<id>), so they must be URL-safe. Same rule as the backend.
 const ADD_TENDER_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+// Anything else that is typed ('/', spaces, ...) is saved as '-': "GEM/2026/B/8067128" becomes
+// "GEM-2026-B-8067128". The backend does the same; this copy only shows the user what will be saved.
+function urlSafeTenderId(typed: string): string {
+  return typed.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
+}
 // Tender247's own tender number (T247 ID) is always numeric. Same rule as the backend.
 const ADD_TENDER_T247_ID_PATTERN = /^\d{1,50}$/;
 
@@ -181,10 +186,10 @@ const ADD_TENDER_T247_ID_PATTERN = /^\d{1,50}$/;
 // Organization Tender ID is stored in ref_no and T247 ID in source_id, the same columns the syncs use.
 const ADD_TENDER_MAIN_FIELDS: { key: string; label: string; placeholder: string; required: boolean; wide: boolean }[] = [
   { key: 'source_id', label: 'T247 ID', placeholder: 'e.g. 48213377 (numbers only)', required: false, wide: false },
-  { key: 'id', label: 'Tender ID', placeholder: 'Leave blank to use the T247 ID', required: true, wide: false },
+  { key: 'id', label: 'Tender ID', placeholder: 'e.g. GEM/2026/B/1234567 (blank = use the T247 ID)', required: true, wide: false },
   { key: 'ref_no', label: 'Organization Tender ID', placeholder: 'e.g. GEM/2026/B/1234567 or 2026_AIIMS_12345_1', required: false, wide: true },
   { key: 'title', label: 'Tender Name', placeholder: 'e.g. Supply of ECG Machines', required: true, wide: true },
-  { key: 'original_url', label: 'Tender Link', placeholder: 'https://...', required: true, wide: true },
+  { key: 'original_url', label: 'Tender Link', placeholder: 'https://... (optional)', required: false, wide: true },
 ];
 
 function validateAddTenderForm(form: Record<string, string>): Record<string, string> {
@@ -197,14 +202,18 @@ function validateAddTenderForm(form: Record<string, string>): Record<string, str
   const id = form.id.trim();
   if (!id) {
     if (!t247Id) errors.id = 'Tender ID is required (or fill in the T247 ID to use it as the Tender ID).';
-  } else if (!ADD_TENDER_ID_PATTERN.test(id) || /^\.+$/.test(id)) {
-    errors.id = "Use only letters, numbers, '-', '_' and '.' (no spaces or '/'). Put a bid number like GEM/2026/B/1234567 in Organization Tender ID.";
+  } else {
+    const savedId = urlSafeTenderId(id);
+    if (savedId.length > 100) {
+      errors.id = 'Tender ID cannot be longer than 100 characters.';
+    } else if (!ADD_TENDER_ID_PATTERN.test(savedId) || /^\.+$/.test(savedId)) {
+      errors.id = 'Tender ID must contain at least one letter or number.';
+    }
   }
   if (!form.title.trim()) errors.title = 'Tender name is required.';
+  // The link is optional: a tender received on paper or by email has none.
   const url = form.original_url.trim();
-  if (!url) {
-    errors.original_url = 'Tender link is required.';
-  } else if (!/^https?:\/\/[^\s/]+/i.test(url)) {
+  if (url && !/^https?:\/\/[^\s/]+/i.test(url)) {
     errors.original_url = 'Enter a valid link starting with http:// or https://';
   }
   const docUrl = form.document_url.trim();
@@ -6320,9 +6329,13 @@ export default function Dashboard() {
                   <div>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Source Portal Link</span>
                     <div style={{ marginTop: '6px' }}>
+                      {selectedTender.original_url ? (
                       <a href={selectedTender.original_url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 16px', textDecoration: 'none' }}>
                         View Official Portal Page <ExternalLink size={14} />
                       </a>
+                      ) : (
+                        <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>No link was added for this tender.</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -8372,11 +8385,18 @@ export default function Dashboard() {
                       {addTenderErrors[f.key] && (
                         <span style={{ fontSize: '11px', color: 'var(--accent-red)' }}>{addTenderErrors[f.key]}</span>
                       )}
+                      {f.key === 'id' && !addTenderErrors.id && addTenderForm.id.trim() !== ''
+                        && urlSafeTenderId(addTenderForm.id) !== addTenderForm.id.trim() && urlSafeTenderId(addTenderForm.id) !== '' && (
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          Will be saved as <strong>{urlSafeTenderId(addTenderForm.id)}</strong>, because a Tender ID is used in page links.
+                          {addTenderForm.ref_no.trim() === '' && ' The number as typed is kept in Organization Tender ID.'}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
                 <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no))}</strong> (GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM)
+                  Tender Type: <strong>{getClassificationLabel(classifyByRefNo(addTenderForm.ref_no.trim() !== '' || urlSafeTenderId(addTenderForm.id) === addTenderForm.id.trim() ? addTenderForm.ref_no : addTenderForm.id))}</strong> (GeM when the Organization Tender ID starts with GEM, otherwise Non-GeM)
                 </p>
 
                 <h4 style={{ margin: '20px 0 12px 0', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>

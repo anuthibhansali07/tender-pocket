@@ -1496,7 +1496,7 @@ public class TenderControllerTest {
     }
 
     @Test
-    void testCreateTenderRequiresIdNameAndLink() {
+    void testCreateTenderRequiresIdAndNameButNotLink() {
         authenticate("misteam", "MIS Team");
         Map<String, Object> body = newTenderBody("   ", "", null);
 
@@ -1505,7 +1505,7 @@ public class TenderControllerTest {
         Map<?, ?> errors = (Map<?, ?>) ((Map<?, ?>) response.getBody()).get("errors");
         assertTrue(errors.containsKey("id"));
         assertTrue(errors.containsKey("title"));
-        assertTrue(errors.containsKey("original_url"));
+        assertFalse(errors.containsKey("original_url"), "the tender link is optional");
         verify(tenderRepository, never()).save(any());
 
         ResponseEntity<?> emptyBody = tenderController.createTender(null);
@@ -1513,9 +1513,53 @@ public class TenderControllerTest {
     }
 
     @Test
-    void testCreateTenderRejectsIdThatWouldBreakPageLinks() {
+    void testCreateTenderWithoutLinkIsAccepted() {
         authenticate("misteam", "MIS Team");
-        for (String badId : List.of("GEM/2026/B/123", "has space", "a?b", "a#b", "..", "%2F")) {
+
+        ResponseEntity<?> response = tenderController.createTender(newTenderBody("MANUAL-002", "Laboratory Refrigerator", null));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        assertEquals("", savedTender().getOriginalUrl(), "a tender without a link stores an empty one (the column is NOT NULL)");
+    }
+
+    @Test
+    void testCreateTenderTurnsSpecialCharactersInIdIntoHyphens() {
+        // A Tender ID is part of page links, so '/', spaces and the like are replaced, not refused.
+        Map<String, String> typedToSaved = new LinkedHashMap<>();
+        typedToSaved.put("GEM/2026/B/8067128", "GEM-2026-B-8067128");
+        typedToSaved.put("has space", "has-space");
+        typedToSaved.put("a?b", "a-b");
+        typedToSaved.put("a#b", "a-b");
+        typedToSaved.put(" /RDPR/2026-27/IND15581/ ", "RDPR-2026-27-IND15581");
+        typedToSaved.put("2026_MES_798138_1", "2026_MES_798138_1");
+        for (Map.Entry<String, String> entry : typedToSaved.entrySet()) {
+            assertEquals(entry.getValue(), TenderController.urlSafeTenderId(entry.getKey()));
+        }
+
+        authenticate("misteam", "MIS Team");
+        ResponseEntity<?> response = tenderController.createTender(newTenderBody("GEM/2026/B/8067128", "Laboratory Refrigerator", null));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode(), "Response body: " + response.getBody());
+        Tender saved = savedTender();
+        assertEquals("GEM-2026-B-8067128", saved.getId());
+        assertEquals("GEM/2026/B/8067128", saved.getRefNo(), "the number as typed is kept as the Organization Tender ID");
+    }
+
+    @Test
+    void testCreateTenderKeepsTheOrganizationTenderIdThatWasEntered() {
+        authenticate("misteam", "MIS Team");
+        Map<String, Object> body = newTenderBody("GEM/2026/B/8067128", "Laboratory Refrigerator", null);
+        body.put("ref_no", "GMC/BVN/2026/14");
+
+        tenderController.createTender(body);
+
+        assertEquals("GMC/BVN/2026/14", savedTender().getRefNo());
+    }
+
+    @Test
+    void testCreateTenderRejectsIdWithNoLettersOrNumbers() {
+        authenticate("misteam", "MIS Team");
+        for (String badId : List.of("..", "///", "?#", "-")) {
             ResponseEntity<?> response = tenderController.createTender(newTenderBody(badId, "Tender", "https://example.com/t"));
             assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode(), "ID '" + badId + "' must be rejected");
         }

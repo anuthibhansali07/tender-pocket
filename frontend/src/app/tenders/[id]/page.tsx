@@ -1118,7 +1118,8 @@ export default function TenderDetailPage() {
   };
 
   const validateSpecUrl = (urlStr: string): string | null => {
-    if (!urlStr || !urlStr.trim()) return "Source URL cannot be empty.";
+    // A tender added by hand may have no link; leaving it empty keeps whatever is saved.
+    if (!urlStr || !urlStr.trim()) return null;
     const s = urlStr.trim();
     if (!s.startsWith('http://') && !s.startsWith('https://')) {
       return "Enter a valid URL (e.g. https://...).";
@@ -2638,9 +2639,13 @@ export default function TenderDetailPage() {
                       <div>
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Source URLs</span>
                         <div style={{ marginTop: '6px' }}>
+                          {selectedTender.original_url ? (
                           <a href={selectedTender.original_url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 16px', textDecoration: 'none' }}>
                             View Portal Details Page <ExternalLink size={14} />
                           </a>
+                          ) : (
+                            <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>No link was added for this tender.</span>
+                          )}
                         </div>
                       </div>
                     </div>

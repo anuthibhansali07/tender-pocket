@@ -3,6 +3,7 @@ package com.tenderpocket.scheduler;
 import com.tenderpocket.services.EmailSyncService;
 import com.tenderpocket.services.GeMScraperService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,13 @@ public class SyncScheduler {
 
     @Autowired
     private GeMScraperService geMScraperService;
+
+    /**
+     * Off for a local test against the real mailbox: the scheduled email sync marks alert emails as read,
+     * which would hide them from the production server. The one-time catch-up only reads.
+     */
+    @Value("${sync.scheduled.enabled:true}")
+    private boolean scheduledSyncEnabled = true;
 
     // Run synchronization tasks on startup (15s after boot) and every 6 hours
     @Scheduled(initialDelay = 15000, fixedDelay = 21600000)
@@ -32,6 +40,10 @@ public class SyncScheduler {
     }
 
     private void performSync() {
+        if (!scheduledSyncEnabled) {
+            System.out.println("[Scheduler] Scheduled sync is switched off (SYNC_SCHEDULED_ENABLED=false). Nothing to do.");
+            return;
+        }
         try {
             // 1. Sync emails from Tender247 (if credentials provided)
             try {
