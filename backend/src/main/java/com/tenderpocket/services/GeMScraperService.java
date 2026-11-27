@@ -50,6 +50,10 @@ public class GeMScraperService {
     @Autowired(required = false)
     private ObjectStorageService objectStorageService;
 
+    /** Holds when each keyword was last searched to the end; see GemSearchProgress. */
+    @Autowired(required = false)
+    private com.tenderpocket.repositories.SyncMarkerRepository syncMarkerRepository;
+
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
@@ -84,9 +88,17 @@ public class GeMScraperService {
     @Value("${gem.stop-after-known:20}")
     private int stopAfterKnown;
 
-    /** Pause between requests to GeM. Unchanged from the previous hardcoded 2500ms. */
-    @Value("${gem.request-pause-ms:2500}")
+    /** Pause between requests to GeM. Was 2500ms; the 488-search keyword test ran at 1000ms without being blocked. */
+    @Value("${gem.request-pause-ms:1500}")
     private long requestPauseMs;
+
+    /**
+     * A keyword search stops at bids published this long before its last successful search. The overlap covers
+     * bids GeM lists some time after their start. 0 or less turns resuming off: every sync then reads each
+     * keyword back to the start of yesterday, as before.
+     */
+    @Value("${gem.resume-overlap-minutes:180}")
+    private long resumeOverlapMinutes;
 
     /**
      * Whether GeM's "page" parameter counts from 1 or 0. Verified against the live endpoint by
@@ -172,10 +184,11 @@ public class GeMScraperService {
             // Last 2 days: today and yesterday
             LocalDate cutoff = allDates ? null : todayInIndia().minusDays(1);
             if (custom) {
-                return runSync(customKeywords, customKeywords, customKeywords, cutoff, maxPagesPerKeyword, true);
+                return runSync(customKeywords, customKeywords, customKeywords, cutoff, maxPagesPerKeyword, true, false);
             }
             GemKeywordCatalog catalog = keywordCatalog();
-            return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS, cutoff, maxPagesPerKeyword, true);
+            return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS, cutoff, maxPagesPerKeyword, true,
+                    cutoff != null);
         } finally {
             syncLock.unlock();
         }
@@ -191,7 +204,7 @@ public class GeMScraperService {
         try {
             GemKeywordCatalog catalog = keywordCatalog();
             return runSync(catalog.searchKeywords, catalog.matchKeywords, RAW_KEYWORDS,
-                    todayInIndia().minusDays(days), maxPages, false);
+                    todayInIndia().minusDays(days), maxPages, false, false);
         } finally {
             syncLock.unlock();
         }
@@ -253,12 +266,22 @@ public class GeMScraperService {
      * @param exactKeywords a returned bid is also kept when one of these appears anywhere in it, letter for
      *                      letter. This is the rule the sync had before; it stays limited to the built-in list,
      *                      because as plain text a short keyword such as "EMS" sits inside "items".
+     * @param resume        stop each keyword at bids published before its last successful search, and record
+     *                      this one. Only the regular sync does this; see GemSearchProgress.
      */
-    private int runSync(List<String> keywords, List<String> matchKeywords, List<String> exactKeywords,
-                        LocalDate cutoffDate, int maxPages, boolean stopWhenCaughtUp) throws Exception {
+    int runSync(List<String> keywords, List<String> matchKeywords, List<String> exactKeywords,
+                LocalDate cutoffDate, int maxPages, boolean stopWhenCaughtUp, boolean resume) throws Exception {
         int importCount = 0;
-        int searches = 0, failedSearches = 0, rejected = 0;
+        int searches = 0, failedSearches = 0, rejected = 0, pagesRead = 0, resumed = 0;
         Set<String> nearMisses = new LinkedHashSet<>();
+
+        String fingerprint = null;
+        Map<String, java.time.Instant> lastSearches = new HashMap<>();
+        java.time.Duration overlap = java.time.Duration.ofMinutes(Math.max(0, resumeOverlapMinutes));
+        if (resume && resumeOverlapMinutes > 0 && syncMarkerRepository != null) {
+            fingerprint = GemSearchProgress.fingerprint(matchKeywords, exactKeywords);
+            lastSearches = loadLastSearches(fingerprint);
+        }
 
         System.out.println("--- GeM Java Sync Engine Started ---");
         System.out.println("Processing keyword count: " + keywords.size()
@@ -277,9 +300,15 @@ public class GeMScraperService {
             int consecutiveKnown = 0;
             boolean caughtUp = false;
 
+            // Taken before the first request, so a bid published while this keyword is being read is not skipped next time.
+            java.time.Instant searchStarted = java.time.Instant.now();
+            String markerName = fingerprint == null ? null : GemSearchProgress.markerName(fingerprint, searchText);
+            java.time.Instant lastSearch = markerName == null ? null : lastSearches.get(markerName);
+
             while (!caughtUp && pagesFetched < maxPages) {
                 JsonNode docs = searchKeywordWithRetry(searchText, page);
                 pagesFetched++;
+                pagesRead++;
 
                 // null means the page failed twice, including after re-authentication. Give up on
                 // this keyword rather than silently treating it as "no more results".
@@ -290,7 +319,10 @@ public class GeMScraperService {
 
                 System.out.println(String.format("  - page %d: %d ongoing bid(s) for \"%s\"",
                         page, docs.size(), keyword));
-                if (docs.size() == 0) break;
+                if (docs.size() == 0) {
+                    caughtUp = true;
+                    break;
+                }
 
                 for (JsonNode doc : docs) {
                   try {
@@ -385,6 +417,17 @@ public class GeMScraperService {
                         }
                     }
 
+                    // The last successful search of this keyword already returned this bid, and everything
+                    // after it is older still.
+                    if (GemSearchProgress.coveredByLastSearch(GemSearchProgress.bidStart(start), lastSearch, overlap)) {
+                        System.out.println(String.format(
+                                "  - reached bid %s started %s, already read by the last search of \"%s\"; stopping paging.",
+                                bidNo, start, keyword));
+                        resumed++;
+                        caughtUp = true;
+                        break;
+                    }
+
                     String items = getJsonString(doc, "b_category_name");
                     String dept = getJsonString(doc, "ba_official_details_deptName");
 
@@ -428,16 +471,60 @@ public class GeMScraperService {
                     return importCount;
                 }
             }
+
+            // Recorded only when the keyword was read to a natural end. After a failed page, or when the page
+            // limit cut it short, the next sync starts from the previous record again.
+            if (markerName != null && caughtUp) {
+                saveLastSearch(markerName, searchStarted);
+            }
         }
 
         System.out.println(String.format(
-                "[GeM Sync] Summary: %d keyword searches (%d failed), %d new bid(s) imported, %d rejected by the keyword check.",
-                searches, failedSearches, importCount, rejected));
+                "[GeM Sync] Summary: %d keyword searches (%d failed), %d page(s) read, %d search(es) stopped at their last search, "
+                        + "%d new bid(s) imported, %d rejected by the keyword check.",
+                searches, failedSearches, pagesRead, resumed, importCount, rejected));
         if (!nearMisses.isEmpty()) {
             System.out.println("[GeM Sync] Rejected bids that came close to a keyword (review the keyword list if these are relevant):");
             for (String line : nearMisses) System.out.println("  - " + line);
         }
         return importCount;
+    }
+
+    /** When each keyword was last searched to the end, for the current keyword lists. Records for other lists are removed. */
+    private Map<String, java.time.Instant> loadLastSearches(String fingerprint) {
+        Map<String, java.time.Instant> lastSearches = new HashMap<>();
+        try {
+            String current = GemSearchProgress.PREFIX + fingerprint + ":";
+            List<com.tenderpocket.models.SyncMarker> outdated = new ArrayList<>();
+            for (com.tenderpocket.models.SyncMarker marker : syncMarkerRepository.findByNameStartingWith(GemSearchProgress.PREFIX)) {
+                if (!marker.getName().startsWith(current)) {
+                    outdated.add(marker);
+                    continue;
+                }
+                try {
+                    lastSearches.put(marker.getName(), java.time.Instant.parse(marker.getDetails()));
+                } catch (Exception unreadable) {
+                    // no usable time: this keyword is read in full once
+                }
+            }
+            if (!outdated.isEmpty()) {
+                syncMarkerRepository.deleteAll(outdated);
+                System.out.println("[GeM Sync] The keyword list changed since the last sync; every keyword is read in full this time.");
+            }
+            System.out.println(String.format("[GeM Sync] %d keyword search(es) continue from their last search.", lastSearches.size()));
+        } catch (Exception e) {
+            System.err.println("[GeM Sync] Could not read the last search times; every keyword is read in full: " + e.getMessage());
+            lastSearches.clear();
+        }
+        return lastSearches;
+    }
+
+    private void saveLastSearch(String markerName, java.time.Instant searchStarted) {
+        try {
+            syncMarkerRepository.save(new com.tenderpocket.models.SyncMarker(markerName, searchStarted.toString()));
+        } catch (Exception e) {
+            System.err.println("[GeM Sync] Could not record the search time for " + markerName + ": " + e.getMessage());
+        }
     }
 
     /** Saves a GeM bid that is not in the database yet and fetches its document. */
@@ -752,7 +839,7 @@ public class GeMScraperService {
      * rather than "no more results" - the previous code skipped a failed keyword outright,
      * losing roughly 7% of keywords per sync to transient non-200 responses with no retry.
      */
-    private JsonNode searchKeywordWithRetry(String keyword, int page) {
+    JsonNode searchKeywordWithRetry(String keyword, int page) {
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
                 return searchKeyword(keyword, page);
